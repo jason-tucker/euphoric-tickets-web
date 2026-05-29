@@ -43,7 +43,7 @@ COPY --from=builder /build/.next/static ./.next/static
 # don't follow through a Docker COPY of just the top-level symlink. The
 # previous flat copy left drizzle-kit unable to require('esbuild') at
 # runtime. Install it cleanly here at the same pinned version instead.
-RUN npm install --no-save --prefix /opt/drizzle drizzle-kit@0.31.10 drizzle-orm@0.45.2
+RUN npm install --no-save --prefix /opt/drizzle drizzle-kit@0.31.10 drizzle-orm@0.45.2 postgres@3.4.9
 COPY drizzle.docker.config.cjs ./drizzle.docker.config.cjs
 COPY --from=builder /build/src/db/schema /app/src/db/schema-source
 

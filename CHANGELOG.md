@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.6] — 2026-05-29
+
+### Fixed
+- `Dockerfile`: drizzle-kit also needs a Postgres driver visible from `/opt/drizzle` to actually connect during schema push. Add `postgres@3.4.9` (lockfile pin, matches the app's `postgres.js` driver) to the isolated prefix.
+
 ## [0.1.5] — 2026-05-29
 
 ### Fixed
