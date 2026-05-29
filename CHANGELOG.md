@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] — 2026-05-29
+
+### Added
+- `ticket_panels` table moved into the shared web schema so the bot (which writes to it for `/panel post` + `/panel refresh`) can read/write on the consolidated DB after its A1+A2 rewire (euphoric-tickets v0.3.0). Columns: id, business_id (uuid nullable FK), guild_id (text), channel_id (text), message_id (text unique), posted_by_discord_id (text), created_at. The web doesn't surface this table yet — that's Phase C (euphoric-tickets#6).
+
 ## [0.6.0] — 2026-05-29
 
 ### Added — Phase G: Hosts and Clients (web#12)
