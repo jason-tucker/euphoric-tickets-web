@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.0] — 2026-05-29
+
+### Added
+- Global sudo flag on the `users` table (`is_sudo boolean not null default false`). Sudo users resolve as `owner` of every business in both `listMyBusinesses` and `resolveBusinessAccess`, so they can see and administer every tenant without being a member of its Discord guild. Toggled by direct SQL for now; the planned `/admin` UI for managing this is still future work.
+
 ## [0.1.14] — 2026-05-29
 
 ### Fixed

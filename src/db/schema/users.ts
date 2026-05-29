@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -6,6 +6,9 @@ export const users = pgTable('users', {
   name: text('name'),
   email: text('email'),
   image: text('image'),
+  // Global sudo — read as `owner` on every business. Toggled manually via
+  // SQL for now; a /admin UI to manage this is future work.
+  isSudo: boolean('is_sudo').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

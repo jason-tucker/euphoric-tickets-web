@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { auth, type DiscordGuildSnapshot } from './auth'
 import { db } from '@/db/client'
-import { businesses, businessMembers, type Business } from '@/db/schema'
+import { businesses, businessMembers, users, type Business } from '@/db/schema'
 
 export type AccessLevel = 'member' | 'admin' | 'owner'
 
@@ -44,9 +44,17 @@ function deriveLevel(b: Business, guilds: DiscordGuildSnapshot[]): AccessLevel |
 // Cheap path: list businesses the user can see without making extra Discord
 // API calls. Returns `member`-level on each; if you need to know whether
 // the user is an admin, call `resolveBusinessAccess(slug)` per business.
+//
+// Sudo users see every business as `owner`, regardless of guild membership.
 export async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
   const session = await auth()
   if (!session?.user?.id) return []
+
+  if (await isSudo(session.user.id)) {
+    const rows = await db.select().from(businesses)
+    return rows.map((b) => ({ business: b, level: 'owner' as const }))
+  }
+
   const guilds = session.guilds ?? []
   if (guilds.length === 0) return []
 
@@ -64,15 +72,30 @@ export async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
   return out
 }
 
+async function isSudo(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ isSudo: users.isSudo })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  return !!row?.isSudo
+}
+
 // Full resolution: looks up the user's roles in this business's guild via
 // the bot's permissions, then matches against `business.adminRoleIds`.
 // Falls back to `member` if the user is in the guild but role lookup fails.
+// Sudo users are treated as `owner` of every business regardless of guild.
 export async function resolveBusinessAccess(slug: string): Promise<ResolvedBusiness | null> {
   const session = await auth()
   if (!session?.user?.id) return null
 
   const [b] = await db.select().from(businesses).where(eq(businesses.slug, slug)).limit(1)
   if (!b) return null
+
+  if (await isSudo(session.user.id)) {
+    await touchMember(b.id, session.user.id, 'owner', [])
+    return { business: b, level: 'owner' }
+  }
 
   const guild = (session.guilds ?? []).find((g) => g.id === b.discordGuildId)
   if (!guild) return null
