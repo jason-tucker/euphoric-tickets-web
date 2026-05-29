@@ -8,8 +8,15 @@ import { users } from '@/db/schema'
 //   identify              — discord id, username, avatar
 //   email                 — user email (cosmetic only)
 //   guilds                — list of guilds the user is in (for business resolution)
-//   guilds.members.read   — the user's roles per guild (for admin resolution)
-const DISCORD_SCOPES = 'identify email guilds guilds.members.read'
+//
+// `guilds.members.read` is intentionally omitted for now. It forces Discord's
+// authorize page into a "Select a server" flow that stalls without visible
+// feedback when no eligible server is offered; the simpler scope set lets
+// the OAuth flow complete reliably. Admin resolution falls back to the
+// `permissions` field on the guild snapshot (owner / ADMINISTRATOR only)
+// until we either ship the bot into every linked guild or move role
+// resolution server-side via the bot token alone.
+const DISCORD_SCOPES = 'identify email guilds'
 
 export type DiscordGuildSnapshot = {
   id: string

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.9] — 2026-05-29
+
+### Fixed
+- `src/server/auth.ts`: Discord's authorize page hung — clicking "Authorize" did nothing and the URL never left `discord.com/oauth2/authorize?…`. The `guilds.members.read` scope forces Discord into a "Select a server" flow that needs the application's bot to be in at least one of the user's servers; with the bot not yet added anywhere, the dropdown rendered empty and the button no-op'd with no visible error. Drop the scope so OAuth completes; admin resolution now falls back to the `permissions` field on each guild snapshot (only the guild owner / ADMINISTRATOR users get admin until we ship the bot into linked guilds).
+
 ## [0.1.8] — 2026-05-29
 
 ### Fixed
