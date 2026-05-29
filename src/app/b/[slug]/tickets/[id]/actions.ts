@@ -8,7 +8,9 @@ import { ticketCategories, tickets, ticketMessages } from '@/db/schema'
 import { requireBusinessAccess, requireSession } from '@/server/permissions'
 import {
   archiveTicketChannel,
+  createPrivateThread,
   deleteDiscordChannel,
+  postBotMessageToThread,
   postWebhook,
   resolveWebhookIdentity,
 } from '@/lib/discord'
@@ -176,6 +178,75 @@ export async function closeTicket(slug: string, ticketId: number): Promise<void>
   }
 
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
+// Add a staff-only internal note. Inserts a ticket_messages row with
+// source='internal'. Lazily creates a private Discord thread on the per-ticket
+// channel on the first internal note and posts the note there too (as the
+// bot — threads can't accept webhook spoofs the same way channels can, and
+// internal notes are never opener-visible so identity matters less).
+export async function addInternalNote(
+  slug: string,
+  ticketId: number,
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireSession()
+  const access = await requireBusinessAccess(slug, 'admin')
+  const body = String(formData.get('body') ?? '').trim()
+  if (!body) return { ok: false, error: 'Empty note' }
+  if (body.length > 2000) return { ok: false, error: 'Note exceeds 2000 chars' }
+
+  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
+  if (!t || t.businessId !== access.business.id) return { ok: false, error: 'Not found' }
+
+  let threadId = t.discordInternalThreadId
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (botToken && t.discordChannelId && !threadId) {
+    try {
+      const thread = await createPrivateThread({
+        botToken,
+        channelId: t.discordChannelId,
+        name: `notes-${t.id}`,
+      })
+      threadId = thread.id
+      await db
+        .update(tickets)
+        .set({ discordInternalThreadId: threadId })
+        .where(eq(tickets.id, ticketId))
+    } catch (err) {
+      console.error('[addInternalNote] create thread failed; note saved web-only', err)
+    }
+  }
+
+  let discordMessageId: string | null = null
+  if (botToken && threadId) {
+    try {
+      const posted = await postBotMessageToThread({
+        botToken,
+        threadId,
+        content: `📝 **${session.user.name ?? 'Staff'}**: ${body}`,
+      })
+      discordMessageId = posted.id
+    } catch (err) {
+      console.error('[addInternalNote] post to thread failed; note saved web-only', err)
+    }
+  }
+
+  await db.insert(ticketMessages).values({
+    ticketId: t.id,
+    authorUserId: session.user.id,
+    body,
+    source: 'internal',
+    discordMessageId,
+  })
+
+  await db
+    .update(tickets)
+    .set({ lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
+
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+  return { ok: true }
 }
 
 // Hard-delete the Discord channel attached to a closed ticket. Keeps the

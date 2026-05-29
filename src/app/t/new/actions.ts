@@ -20,6 +20,8 @@ const schema = z.object({
   categoryId: z.string().uuid().optional().or(z.literal('')),
   subject: z.string().min(3).max(120),
   body: z.string().min(3).max(1900),
+  kind: z.enum(['normal', 'project']).default('normal'),
+  parentTicketId: z.string().regex(/^\d+$/).optional().or(z.literal('')),
 })
 
 function channelSlug(subject: string, id: number): string {
@@ -40,6 +42,8 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     categoryId: String(formData.get('categoryId') ?? '') || undefined,
     subject: String(formData.get('subject') ?? ''),
     body: String(formData.get('body') ?? ''),
+    kind: (String(formData.get('kind') ?? 'normal') as 'normal' | 'project'),
+    parentTicketId: String(formData.get('parentTicketId') ?? '') || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -56,6 +60,18 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     if (c && c.businessId === access.business.id) category = c
   }
 
+  // Validate parent — must exist, belong to the same business, and be a
+  // project ticket. Sub-tickets inherit kind='normal'.
+  let parentTicketId: number | null = null
+  if (parsed.data.parentTicketId) {
+    const pid = Number(parsed.data.parentTicketId)
+    const [parent] = await db.select().from(tickets).where(eq(tickets.id, pid)).limit(1)
+    if (!parent) throw new Error('Parent ticket not found.')
+    if (parent.businessId !== access.business.id) throw new Error('Parent ticket is for a different community.')
+    if (parent.kind !== 'project') throw new Error('Parent must be a project ticket.')
+    parentTicketId = pid
+  }
+
   const [row] = await db
     .insert(tickets)
     .values({
@@ -64,6 +80,9 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       categoryId: category?.id ?? null,
       subject: parsed.data.subject,
       status: 'open',
+      // Sub-tickets are always normal; only top-level tickets can be projects.
+      kind: parentTicketId ? 'normal' : parsed.data.kind,
+      parentTicketId,
     })
     .returning()
 

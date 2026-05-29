@@ -221,6 +221,54 @@ export async function archiveTicketChannel(input: {
   })
 }
 
+// Create a private thread off a ticket channel for staff-only internal
+// notes. Created lazily on the first internal note. Type 12 = PRIVATE_THREAD.
+export async function createPrivateThread(input: {
+  botToken: string
+  channelId: string
+  name: string
+}): Promise<{ id: string }> {
+  const { botToken, channelId, name } = input
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}/threads`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: name.slice(0, 90),
+      type: 12, // PRIVATE_THREAD
+      auto_archive_duration: 10080, // 7 days
+      invitable: false,
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`createPrivateThread failed: ${res.status} ${await res.text()}`)
+  }
+  return (await res.json()) as { id: string }
+}
+
+// Post a message into a thread using the bot's identity. (Threads can't
+// take webhook posts the same way channels do, so internal notes use the
+// bot identity instead of the per-user spoof. Acceptable because internal
+// notes are never user-visible.)
+export async function postBotMessageToThread(input: {
+  botToken: string
+  threadId: string
+  content: string
+}): Promise<{ id: string }> {
+  const { botToken, threadId, content } = input
+  const res = await fetch(`${DISCORD_API}/channels/${threadId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: content.slice(0, 2000),
+      allowed_mentions: { parse: [] },
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`postBotMessageToThread failed: ${res.status} ${await res.text()}`)
+  }
+  return (await res.json()) as { id: string }
+}
+
 // Hard-delete a Discord channel (used by the manual delete button on a
 // closed ticket). The DB row + ticket_messages stay so transcripts survive.
 export async function deleteDiscordChannel(input: {

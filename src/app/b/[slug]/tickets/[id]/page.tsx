@@ -13,6 +13,7 @@ import { db } from '@/db/client'
 import { businessMembers, tickets, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import {
+  addInternalNote,
   assignTicket,
   claimTicket,
   closeTicket,
@@ -51,7 +52,7 @@ export default async function TicketDetailPage({
         .where(eq(businessMembers.businessId, access.business.id))
     : []
 
-  const messages = await db
+  const allMessages = await db
     .select({
       id: ticketMessages.id,
       body: ticketMessages.body,
@@ -66,6 +67,23 @@ export default async function TicketDetailPage({
     .where(eq(ticketMessages.ticketId, t.id))
     .orderBy(asc(ticketMessages.createdAt))
 
+  // Internal notes are NEVER shown to the opener — even if they reload
+  // the page. Admins see them in a separate panel below the conversation.
+  const messages = allMessages.filter((m) => m.source !== 'internal')
+  const internalNotes = isAdmin ? allMessages.filter((m) => m.source === 'internal') : []
+
+  // Project tickets: list child sub-tickets. Sub-tickets: link to parent.
+  const subTickets = t.kind === 'project'
+    ? await db
+        .select({ id: tickets.id, subject: tickets.subject, status: tickets.status, lastActivityAt: tickets.lastActivityAt })
+        .from(tickets)
+        .where(eq(tickets.parentTicketId, t.id))
+        .orderBy(asc(tickets.id))
+    : []
+  const [parentTicket] = t.parentTicketId
+    ? await db.select({ id: tickets.id, subject: tickets.subject }).from(tickets).where(eq(tickets.id, t.parentTicketId)).limit(1)
+    : [null as null]
+
   const canClose = t.status !== 'closed' && (isAdmin || t.openerUserId === access.session.user.id)
 
   async function claim() { 'use server'; await claimTicket(slug, t.id) }
@@ -74,6 +92,7 @@ export default async function TicketDetailPage({
   async function close() { 'use server'; await closeTicket(slug, t.id) }
   async function reopen() { 'use server'; await reopenTicket(slug, t.id) }
   async function deleteChannel() { 'use server'; await deleteTicketChannel(slug, t.id) }
+  async function note(formData: FormData) { 'use server'; await addInternalNote(slug, t.id, formData) }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
@@ -89,10 +108,23 @@ export default async function TicketDetailPage({
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Hash className="h-3 w-3" />
             <span className="font-mono">{t.id}</span>
+            {t.kind === 'project' && (
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
+                project
+              </span>
+            )}
             <span>·</span>
             <span>opened {relativeTime(t.openedAt)} by {opener?.name ?? '?'}</span>
           </div>
           <h1 className="mt-1 break-words text-2xl font-semibold">{t.subject}</h1>
+          {parentTicket && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Sub-ticket of{' '}
+              <Link href={`/b/${slug}/tickets/${parentTicket.id}`} className="font-medium hover:underline">
+                #{parentTicket.id} — {parentTicket.subject}
+              </Link>
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={t.status} />
@@ -146,6 +178,38 @@ export default async function TicketDetailPage({
         </div>
       )}
 
+      {t.kind === 'project' && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Sub-tickets ({subTickets.length})</CardTitle>
+            <Button asChild size="sm" variant="secondary">
+              <Link href={`/t/new?b=${slug}&parent=${t.id}`}>Add sub-ticket</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {subTickets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No sub-tickets yet — break work down into focused pieces using the button above.
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {subTickets.map((s) => (
+                  <li key={s.id} className="py-2">
+                    <Link href={`/b/${slug}/tickets/${s.id}`} className="flex items-center gap-2 hover:underline">
+                      <Hash className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
+                      <span className="flex-1 truncate text-sm">{s.subject}</span>
+                      <StatusBadge status={s.status} />
+                      <span className="text-xs text-muted-foreground">{relativeTime(s.lastActivityAt)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Conversation</CardTitle>
@@ -190,6 +254,51 @@ export default async function TicketDetailPage({
             <p className="mt-2 text-xs text-muted-foreground">
               Cmd/Ctrl+Enter to send. Your reply posts to the linked Discord channel as you (your Discord name + avatar).
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="text-base">Internal notes — staff only</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {internalNotes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No internal notes yet. Notes are never shown to the opener and live in a
+                private Discord thread that&apos;s created on first note.
+              </p>
+            ) : (
+              internalNotes.map((m) => (
+                <div key={m.id} className="flex gap-3">
+                  <Avatar className="h-7 w-7">
+                    {m.authorImage && <AvatarImage src={m.authorImage} alt="" />}
+                    <AvatarFallback className="text-[10px]">{(m.authorName ?? 'S').slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-medium">{m.authorName ?? 'Staff'}</span>
+                      <span className="text-xs text-muted-foreground">{relativeTime(m.createdAt)}</span>
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap break-words rounded-md bg-background/60 p-2 text-sm">
+                      {m.body}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+            <form action={note} className="space-y-2 border-t border-amber-500/20 pt-3">
+              <textarea
+                name="body"
+                required
+                rows={2}
+                maxLength={2000}
+                placeholder="Add an internal note (staff-only)…"
+                className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              />
+              <Button type="submit" size="sm" variant="secondary">Add note</Button>
+            </form>
           </CardContent>
         </Card>
       )}

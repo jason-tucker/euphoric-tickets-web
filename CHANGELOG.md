@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0] — 2026-05-29
+
+### Added
+- **Internal notes (D3)** — staff-only `ticket_messages` with `source='internal'`. Never shown to the opener (filter on the server, not just the UI). First note lazily creates a Discord **private thread** (`type: 12 PRIVATE_THREAD`, `invitable: false`) on the per-ticket channel and posts subsequent notes there as the bot. UI: amber-tinted panel below the conversation on `/b/[slug]/tickets/[id]`, admin-only.
+- **Project + sub-tickets (E2)** — `/t/new` now has a Type select (Normal / Project). Sub-ticket flow: project ticket page shows a Sub-tickets card listing children + "Add sub-ticket" link, which deep-links to `/t/new?b=<slug>&parent=<id>` and hides the Type selector. Validation rejects parents that don't belong to the same business, aren't `kind='project'`, or don't exist. Sub-tickets are always `kind='normal'` regardless of form submission.
+- **`/clients` rollup view (F1)** — top-level page with one card per business showing open count, project count, last activity. Sudo sees every business; admins/owners see only the ones they administer. New link in the avatar dropdown.
+- **Terminology helper (F2)** — `src/lib/terminology.ts` with `nounSingular`/`nounPlural`/`titleSingular`/`titlePlural` driven by `businesses.terminology`. `/clients` page already reads from it; per-page label rewrites land as later patches.
+
+### Changed
+- Middleware now matches `/clients/...` so the auth-cookie guard applies.
+
+Bot-side parity (internal-note slash command, project + sub-ticket commands, equivalent rollup queries) is queued under euphoric-tickets #5, #8.
+
 ## [0.4.0] — 2026-05-29
 
 ### Added

@@ -10,10 +10,11 @@ import { ticketCategories } from '@/db/schema'
 import { inArray } from 'drizzle-orm'
 import { openTicketAction } from './actions'
 
-export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ b?: string }> }) {
+export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ b?: string; parent?: string }> }) {
   await requireSession()
   const sp = await searchParams
   const myBusinesses = await listMyBusinesses()
+  const parentId = sp.parent && /^\d+$/.test(sp.parent) ? Number(sp.parent) : null
 
   if (myBusinesses.length === 0) {
     return (
@@ -61,6 +62,12 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
         <Card>
           <CardContent className="pt-6">
             <form action={openTicketAction} className="space-y-4">
+              {parentId && <input type="hidden" name="parentTicketId" value={parentId} />}
+              {parentId && (
+                <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  Opening a sub-ticket of <span className="font-mono">#{parentId}</span>. Type is forced to Normal.
+                </p>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="businessSlug">Community</Label>
                 <select
@@ -93,6 +100,21 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                   </p>
                 )}
               </div>
+
+              {!parentId && (
+                <div className="space-y-1">
+                  <Label htmlFor="kind">Type</Label>
+                  <select
+                    id="kind"
+                    name="kind"
+                    defaultValue="normal"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="normal">Normal — one-off issue</option>
+                    <option value="project">Project — long-term work / retainer with sub-tickets</option>
+                  </select>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <Label htmlFor="subject">Subject</Label>

@@ -94,6 +94,11 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                     </DropdownMenuItem>
                   </>
                 )}
+                {(isSudo || myBusinesses.some((b) => b.level === 'admin' || b.level === 'owner')) && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/clients">All clients / businesses</Link>
+                  </DropdownMenuItem>
+                )}
                 {isSudo && (
                   <>
                     <DropdownMenuSeparator />
