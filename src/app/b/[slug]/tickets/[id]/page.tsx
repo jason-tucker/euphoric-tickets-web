@@ -10,9 +10,16 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { requireBusinessAccess } from '@/server/permissions'
 import { db } from '@/db/client'
-import { tickets, ticketMessages, users } from '@/db/schema'
+import { businessMembers, tickets, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
-import { claimTicket, closeTicket, reopenTicket } from './actions'
+import {
+  assignTicket,
+  claimTicket,
+  closeTicket,
+  deleteTicketChannel,
+  reopenTicket,
+  unclaimTicket,
+} from './actions'
 
 export default async function TicketDetailPage({
   params,
@@ -31,6 +38,18 @@ export default async function TicketDetailPage({
   if (!isAdmin && t.openerUserId !== access.session.user.id) notFound()
 
   const [opener] = await db.select().from(users).where(eq(users.id, t.openerUserId)).limit(1)
+  const [assignee] = t.assigneeUserId
+    ? await db.select().from(users).where(eq(users.id, t.assigneeUserId)).limit(1)
+    : [null as null]
+
+  // Staff list for the Assign dropdown — only the business's known members.
+  const staff = isAdmin
+    ? await db
+        .select({ id: users.id, name: users.name })
+        .from(businessMembers)
+        .innerJoin(users, eq(users.id, businessMembers.userId))
+        .where(eq(businessMembers.businessId, access.business.id))
+    : []
 
   const messages = await db
     .select({
@@ -50,8 +69,11 @@ export default async function TicketDetailPage({
   const canClose = t.status !== 'closed' && (isAdmin || t.openerUserId === access.session.user.id)
 
   async function claim() { 'use server'; await claimTicket(slug, t.id) }
+  async function unclaim() { 'use server'; await unclaimTicket(slug, t.id) }
+  async function assign(formData: FormData) { 'use server'; await assignTicket(slug, t.id, formData) }
   async function close() { 'use server'; await closeTicket(slug, t.id) }
   async function reopen() { 'use server'; await reopenTicket(slug, t.id) }
+  async function deleteChannel() { 'use server'; await deleteTicketChannel(slug, t.id) }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
@@ -74,8 +96,32 @@ export default async function TicketDetailPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={t.status} />
-          {isAdmin && t.status === 'open' && (
+          {assignee && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {t.status === 'claimed' ? 'claimed by' : 'assigned to'} {assignee.name ?? '?'}
+            </span>
+          )}
+          {isAdmin && t.status !== 'closed' && (t.assigneeUserId === null) && (
             <form action={claim}><Button size="sm" variant="secondary">Claim</Button></form>
+          )}
+          {isAdmin && t.assigneeUserId && t.status !== 'closed' && (
+            <form action={unclaim}><Button size="sm" variant="outline">Unclaim</Button></form>
+          )}
+          {isAdmin && t.status !== 'closed' && (
+            <form action={assign} className="flex items-center gap-1">
+              <select
+                name="assigneeId"
+                defaultValue={t.assigneeUserId ?? ''}
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+                aria-label="Assign to"
+              >
+                <option value="">— unassigned —</option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name ?? s.id.slice(0, 8)}</option>
+                ))}
+              </select>
+              <Button size="sm" variant="secondary" type="submit">Assign</Button>
+            </form>
           )}
           {canClose && (
             <form action={close}><Button size="sm" variant="outline">Close</Button></form>
@@ -83,8 +129,22 @@ export default async function TicketDetailPage({
           {isAdmin && t.status === 'closed' && (
             <form action={reopen}><Button size="sm" variant="secondary">Reopen</Button></form>
           )}
+          {isAdmin && t.status === 'closed' && t.discordChannelId && (
+            <form action={deleteChannel}>
+              <Button size="sm" variant="destructive">Delete channel</Button>
+            </form>
+          )}
         </div>
       </div>
+
+      {t.status === 'closed' && t.closedAt && (
+        <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Closed {relativeTime(t.closedAt)}.
+          {t.discordChannelId
+            ? ' Discord channel was moved to the closed category.'
+            : ' Discord channel has been deleted; transcript stays here.'}
+        </div>
+      )}
 
       <Card>
         <CardHeader>

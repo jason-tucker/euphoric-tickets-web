@@ -92,6 +92,32 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
               </p>
             </div>
             <div className="space-y-1">
+              <Label htmlFor="discordClosedCategoryId">Closed-tickets Discord category ID (optional)</Label>
+              <Input
+                id="discordClosedCategoryId"
+                name="discordClosedCategoryId"
+                defaultValue={business.discordClosedCategoryId ?? ''}
+                pattern="\d{17,20}"
+                placeholder="e.g. 1234567890123456789"
+              />
+              <p className="text-xs text-muted-foreground">
+                On close the per-ticket channel is moved here (instead of just renamed). Per-category overrides win when set.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="deleteClosedAfterDays">Auto-delete closed channels after (days)</Label>
+              <Input
+                id="deleteClosedAfterDays"
+                name="deleteClosedAfterDays"
+                defaultValue={business.deleteClosedAfterDays ?? ''}
+                pattern="\d+"
+                placeholder="leave blank to never auto-delete"
+              />
+              <p className="text-xs text-muted-foreground">
+                The bot sweep runs hourly. DB transcripts always survive.
+              </p>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="webhookUrl">Fallback webhook URL (optional)</Label>
               <Input
                 id="webhookUrl"
@@ -101,6 +127,30 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
               />
               <p className="text-xs text-muted-foreground">
                 Used only when per-ticket channel creation isn&apos;t configured (no bot token or no category mapped). Every reply goes to this one channel as a user-spoofed webhook post.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Display</CardTitle>
+            <CardDescription>How this tenant is named in the UI.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              <Label htmlFor="terminology">Terminology</Label>
+              <select
+                id="terminology"
+                name="terminology"
+                defaultValue={business.terminology}
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="business">Business</option>
+                <option value="client">Client</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Affects navigation labels. Same data either way.
               </p>
             </div>
           </CardContent>
@@ -132,13 +182,18 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                     </div>
                     {c.discordParentCategoryId ? (
                       <div className="mt-0.5 text-[10px] font-mono text-muted-foreground">
-                        Discord category → {c.discordParentCategoryId}
+                        Open → {c.discordParentCategoryId}
                       </div>
                     ) : (
                       <div className="mt-0.5 text-[10px] text-muted-foreground">
-                        Uses business fallback Discord category
+                        Open uses business fallback
                       </div>
                     )}
+                    {c.discordClosedCategoryId ? (
+                      <div className="text-[10px] font-mono text-muted-foreground">
+                        Closed → {c.discordClosedCategoryId}
+                      </div>
+                    ) : null}
                   </div>
                   <form action={deleteCategoryAction.bind(null, slug, c.id)}>
                     <Button type="submit" variant="ghost" size="icon" aria-label={`Delete ${c.label}`}>
@@ -176,17 +231,31 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 <Input id="cat-sortOrder" name="sortOrder" defaultValue="0" pattern="-?\d+" />
               </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="cat-discordParentCategoryId">Discord channel category ID (optional)</Label>
-              <Input
-                id="cat-discordParentCategoryId"
-                name="discordParentCategoryId"
-                pattern="\d{17,20}"
-                placeholder="e.g. 1234567890123456789"
-              />
-              <p className="text-xs text-muted-foreground">
-                Per-ticket channels for this category get created under this Discord category. Leave blank to use the business&apos;s fallback.
-              </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="cat-discordParentCategoryId">Open Discord category ID</Label>
+                <Input
+                  id="cat-discordParentCategoryId"
+                  name="discordParentCategoryId"
+                  pattern="\d{17,20}"
+                  placeholder="1234567890123456789"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Per-ticket channels open here. Blank → business fallback.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cat-discordClosedCategoryId">Closed Discord category ID</Label>
+                <Input
+                  id="cat-discordClosedCategoryId"
+                  name="discordClosedCategoryId"
+                  pattern="\d{17,20}"
+                  placeholder="1234567890123456789"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Closed channels move here. Blank → business fallback.
+                </p>
+              </div>
             </div>
             <Button type="submit" variant="secondary">Add category</Button>
           </form>

@@ -11,6 +11,7 @@ import {
   createChannelWebhook,
   createTicketChannel,
   postWebhook,
+  resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
 
@@ -107,10 +108,18 @@ export async function openTicketAction(formData: FormData): Promise<void> {
         })
         .where(eq(tickets.id, row.id))
 
+      const identity = await resolveWebhookIdentity({
+        botToken,
+        guildId: access.business.discordGuildId,
+        discordUserId: session.user.discordId,
+        globalName: session.user.name ?? 'Web user',
+        globalAvatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
+      })
+
       const posted = await postWebhook({
         webhookUrl: webhook.url,
-        username: session.user.name ?? 'Web user',
-        avatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
+        username: identity.username,
+        avatarUrl: identity.avatarUrl,
         content:
           `🎫 **#${row.id}** — *${parsed.data.subject}*` +
           (category ? ` _(${category.label})_` : '') +
@@ -134,10 +143,17 @@ export async function openTicketAction(formData: FormData): Promise<void> {
   // still sees the ticket. Only runs when the per-ticket flow above didn't.
   if (!postedToPerTicketChannel && access.business.webhookUrl) {
     try {
+      const identity = await resolveWebhookIdentity({
+        botToken,
+        guildId: access.business.discordGuildId,
+        discordUserId: session.user.discordId,
+        globalName: session.user.name ?? 'Web user',
+        globalAvatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
+      })
       await postWebhook({
         webhookUrl: access.business.webhookUrl,
-        username: session.user.name ?? 'Web user',
-        avatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
+        username: identity.username,
+        avatarUrl: identity.avatarUrl,
         content:
           `🎫 **New ticket #${row.id}** — *${parsed.data.subject}*\n\n` +
           parsed.data.body.slice(0, 1500),

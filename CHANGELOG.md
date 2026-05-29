@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0] — 2026-05-29
+
+### Added
+- **Server-specific webhook identity (D1)** — `resolveWebhookIdentity()` fetches the user's per-guild nickname + per-guild avatar via the bot token before every user-spoofed webhook post. Web replies now show your guild nickname/avatar in Discord instead of your global Discord profile. Falls back to global identity when bot token is missing or guild lookup fails.
+- **Unclaim + Assign (D4)** — `unclaimTicket()` releases a claimed ticket back to the unassigned pool (allowed for current assignee or any admin); `assignTicket()` admin-only dropdown picks a staff member by id. Wired into the ticket-detail page header with an inline `<select>`.
+- **On-close channel move (B1)** — closing a ticket moves its per-ticket channel into the configured "closed" Discord category (per-ticket-category override → business fallback → no move). `closeTicket()` resolves the destination at call time. Still renames with `closed-` prefix.
+- **Manual delete-channel button (B3)** — admins can hard-delete the Discord channel of a closed ticket. DB row + ticket_messages stay so transcripts survive. Visible only when `status='closed'` AND `discord_channel_id` is set.
+- **Closed-state banner (B4)** — closed tickets show a "Closed X ago. Channel was moved/deleted." banner above the conversation thread.
+
+### Changed
+- Settings UI now exposes `discord_closed_category_id` (business + per-category), `delete_closed_after_days`, and `terminology` (business / client) — all editable from `/b/[slug]/settings` per the feature-parity principle (#10).
+
+Bot-side parity (slash commands for these same actions) lives at euphoric-tickets#11 + #5 and is queued for a follow-up.
+
 ## [0.3.1] — 2026-05-29
 
 ### Added (schema only — UI follows in subsequent patches)

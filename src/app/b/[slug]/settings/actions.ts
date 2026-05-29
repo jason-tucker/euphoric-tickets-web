@@ -21,6 +21,9 @@ const settingsSchema = z.object({
     .optional()
     .or(z.literal('')),
   discordFallbackCategoryId: snowflake.optional().or(z.literal('')),
+  discordClosedCategoryId: snowflake.optional().or(z.literal('')),
+  deleteClosedAfterDays: z.string().regex(/^\d+$/).optional().or(z.literal('')),
+  terminology: z.enum(['business', 'client']),
 })
 
 export async function saveBusinessSettings(slug: string, formData: FormData): Promise<void> {
@@ -33,6 +36,9 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     adminRoleIds: String(formData.get('adminRoleIds') ?? '').trim(),
     webhookUrl: String(formData.get('webhookUrl') ?? '').trim(),
     discordFallbackCategoryId: String(formData.get('discordFallbackCategoryId') ?? '').trim(),
+    discordClosedCategoryId: String(formData.get('discordClosedCategoryId') ?? '').trim(),
+    deleteClosedAfterDays: String(formData.get('deleteClosedAfterDays') ?? '').trim(),
+    terminology: (formData.get('terminology') === 'client' ? 'client' : 'business') as 'business' | 'client',
   }
 
   const parsed = settingsSchema.safeParse({
@@ -41,6 +47,8 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     webhookUrl: raw.webhookUrl || undefined,
     adminRoleIds: raw.adminRoleIds || undefined,
     discordFallbackCategoryId: raw.discordFallbackCategoryId || undefined,
+    discordClosedCategoryId: raw.discordClosedCategoryId || undefined,
+    deleteClosedAfterDays: raw.deleteClosedAfterDays || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -53,6 +61,11 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
       adminRoleIds: parsed.data.adminRoleIds ?? '',
       webhookUrl: parsed.data.webhookUrl ?? null,
       discordFallbackCategoryId: parsed.data.discordFallbackCategoryId ?? null,
+      discordClosedCategoryId: parsed.data.discordClosedCategoryId ?? null,
+      deleteClosedAfterDays: parsed.data.deleteClosedAfterDays
+        ? Number(parsed.data.deleteClosedAfterDays)
+        : null,
+      terminology: parsed.data.terminology,
       updatedAt: sql`now()`,
     })
     .where(eq(businesses.id, business.id))
@@ -68,6 +81,7 @@ const categorySchema = z.object({
   description: z.string().max(200).optional(),
   sortOrder: z.string().regex(/^-?\d+$/).optional(),
   discordParentCategoryId: snowflake.optional().or(z.literal('')),
+  discordClosedCategoryId: snowflake.optional().or(z.literal('')),
 })
 
 export async function addCategoryAction(slug: string, formData: FormData): Promise<void> {
@@ -80,6 +94,7 @@ export async function addCategoryAction(slug: string, formData: FormData): Promi
     description: String(formData.get('description') ?? '').trim() || undefined,
     sortOrder: String(formData.get('sortOrder') ?? '').trim() || undefined,
     discordParentCategoryId: String(formData.get('discordParentCategoryId') ?? '').trim() || undefined,
+    discordClosedCategoryId: String(formData.get('discordClosedCategoryId') ?? '').trim() || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -91,6 +106,7 @@ export async function addCategoryAction(slug: string, formData: FormData): Promi
     description: parsed.data.description ?? null,
     sortOrder: parsed.data.sortOrder ?? '0',
     discordParentCategoryId: parsed.data.discordParentCategoryId ?? null,
+    discordClosedCategoryId: parsed.data.discordClosedCategoryId ?? null,
   })
 
   revalidatePath(`/b/${slug}/settings`)

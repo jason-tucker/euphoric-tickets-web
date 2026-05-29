@@ -34,7 +34,41 @@ export async function fetchGuildMemberAsBot(
   })
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`fetchGuildMember failed: ${res.status} ${await res.text()}`)
-  return (await res.json()) as DiscordGuildMember
+  return (await res.json()) as DiscordGuildMember & { avatar?: string | null }
+}
+
+// Resolve the best display identity for a user inside a specific guild.
+// Falls back gracefully when the bot can't see the guild or the user isn't
+// a member: returns the caller's globalName + globalAvatarUrl untouched.
+//
+// Guild member avatars live at a different CDN path than user avatars —
+// see https://discord.com/developers/docs/reference#image-formatting.
+export async function resolveWebhookIdentity(input: {
+  botToken: string | undefined
+  guildId: string | null
+  discordUserId: string
+  globalName: string
+  globalAvatarUrl: string | null
+}): Promise<{ username: string; avatarUrl: string | null }> {
+  const { botToken, guildId, discordUserId, globalName, globalAvatarUrl } = input
+
+  if (!botToken || !guildId) return { username: globalName, avatarUrl: globalAvatarUrl }
+
+  try {
+    const member = await fetchGuildMemberAsBot(botToken, guildId, discordUserId)
+    if (!member) return { username: globalName, avatarUrl: globalAvatarUrl }
+
+    const username = member.nick ?? globalName
+    let avatarUrl = globalAvatarUrl
+    const memberAvatar = (member as { avatar?: string | null }).avatar
+    if (memberAvatar) {
+      const ext = memberAvatar.startsWith('a_') ? 'gif' : 'png'
+      avatarUrl = `https://cdn.discordapp.com/guilds/${guildId}/users/${discordUserId}/avatars/${memberAvatar}.${ext}?size=128`
+    }
+    return { username, avatarUrl }
+  } catch {
+    return { username: globalName, avatarUrl: globalAvatarUrl }
+  }
 }
 
 export type WebhookPostInput = {
@@ -156,31 +190,50 @@ export async function createChannelWebhook(input: {
   }
 }
 
-// Archive (rename + lock) the per-ticket channel. We don't outright delete
-// it so transcripts remain visible to staff after close. Best-effort — if
-// it fails we still mark the ticket closed in the DB.
+// Archive the per-ticket channel on close: rename with `closed-` prefix, and
+// optionally move it under a different Discord category (the per-business or
+// per-ticket-category "closed" destination). We don't outright delete the
+// channel so transcripts remain visible to staff. Best-effort — if anything
+// here fails we still mark the ticket closed in the DB.
 export async function archiveTicketChannel(input: {
   botToken: string
   channelId: string
+  closedCategoryId?: string | null
   prefix?: string
 }): Promise<void> {
-  const { botToken, channelId, prefix = 'closed-' } = input
+  const { botToken, channelId, closedCategoryId, prefix = 'closed-' } = input
 
   const currentRes = await fetch(`${DISCORD_API}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${botToken}` },
   })
   if (!currentRes.ok) return
-  const current = (await currentRes.json()) as { name?: string }
+  const current = (await currentRes.json()) as { name?: string; parent_id?: string | null }
 
   const newName = `${prefix}${(current.name ?? 'ticket').replace(new RegExp(`^${prefix}`), '')}`.slice(0, 90)
+
+  const patch: Record<string, unknown> = { name: newName }
+  if (closedCategoryId) patch.parent_id = closedCategoryId
 
   await fetch(`${DISCORD_API}/channels/${channelId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: newName,
-      // Lock the channel: deny SEND_MESSAGES for @everyone.
-      // Existing overrides survive; this just adds the deny bit.
-    }),
+    body: JSON.stringify(patch),
   })
+}
+
+// Hard-delete a Discord channel (used by the manual delete button on a
+// closed ticket). The DB row + ticket_messages stay so transcripts survive.
+export async function deleteDiscordChannel(input: {
+  botToken: string
+  channelId: string
+}): Promise<void> {
+  const { botToken, channelId } = input
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken}` },
+  })
+  // 404 = already gone — that's fine.
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`deleteDiscordChannel failed: ${res.status} ${await res.text()}`)
+  }
 }
