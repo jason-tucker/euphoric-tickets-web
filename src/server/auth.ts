@@ -69,14 +69,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, account, profile, trigger }) {
       const t = token as Record<string, unknown>
-      console.log('[auth][jwt] enter', {
-        hasAccount: !!account,
-        hasProfile: !!profile,
-        trigger,
-        tokenUserId: t.userId,
-        tokenDiscordId: t.discordId,
-        tokenGuildsLen: Array.isArray(t.guilds) ? (t.guilds as unknown[]).length : 'n/a',
-      })
       // First login — Discord profile + access token arrive here.
       if (account?.provider === 'discord' && profile) {
         const discordId = String(profile.id)
@@ -116,7 +108,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         t.discordAccessToken = account.access_token
         t.guilds = []
         t.guildsFetchedAt = 0
-        console.log('[auth][jwt] first-login set', { userId: t.userId, discordId, insertedLen: inserted.length })
       }
 
       // Refresh guild list when stale or explicitly asked.
@@ -145,16 +136,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       }
 
-      console.log('[auth][jwt] exit', {
-        userId: t.userId,
-        guildsLen: Array.isArray(t.guilds) ? (t.guilds as unknown[]).length : 'n/a',
-      })
       return token
     },
 
     async session({ session, token }) {
       const t = token as Record<string, unknown>
-      console.log('[auth][session] enter', { tokenUserId: t.userId, tokenDiscordId: t.discordId })
       // Mutate in place — assigning a fresh object trips NextAuth's
       // AdapterUser intersection check because our augmented Session.user
       // is a different shape. Mutation keeps the underlying type unchanged
@@ -166,7 +152,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       u.avatarHash = (t.avatarHash as string | null | undefined) ?? null
       session.discordAccessToken = t.discordAccessToken as string | undefined
       session.guilds = (t.guilds as DiscordGuildSnapshot[] | undefined) ?? []
-      console.log('[auth][session] exit', { userId: u.id, discordId: u.discordId, guildsLen: session.guilds.length })
       return session
     },
   },

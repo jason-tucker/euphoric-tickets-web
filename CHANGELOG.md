@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.14] — 2026-05-29
+
+### Fixed
+- `src/middleware.ts`: root cause of the `ERR_TOO_MANY_REDIRECTS` loop. The middleware only checked for the unchunked `__Secure-authjs.session-token` cookie. Auth.js v5 splits large JWT-encrypted session payloads across `.0`, `.1`, … chunked cookies once the encoded value exceeds the per-cookie size budget — and for users in many Discord guilds (95 in the reporter's case), it does. Middleware saw no cookie → redirected to /login. /login's `auth()` reassembled the chunks → bounced back to /dashboard. Match the cookie name by prefix so chunked sessions count as signed in.
+
+### Changed
+- `src/server/auth.ts`: removed the temporary `[auth][jwt]` / `[auth][session]` `console.log` instrumentation added in v0.1.13. The middleware mismatch was the actual cause, not anything inside the callbacks.
+
 ## [0.1.13] — 2026-05-29
 
 ### Changed
