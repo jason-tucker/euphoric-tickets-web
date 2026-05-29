@@ -44,8 +44,12 @@ COPY --from=builder /build/.next/static ./.next/static
 # previous flat copy left drizzle-kit unable to require('esbuild') at
 # runtime. Install it cleanly here at the same pinned version instead.
 RUN npm install --no-save --prefix /opt/drizzle drizzle-kit@0.31.10 drizzle-orm@0.45.2 postgres@3.4.9
-COPY drizzle.docker.config.cjs ./drizzle.docker.config.cjs
-COPY --from=builder /build/src/db/schema /app/src/db/schema-source
+# Schema source lives next to drizzle-kit so its `drizzle-orm/pg-core`
+# imports resolve to /opt/drizzle/node_modules — Next's standalone bundle
+# inlines drizzle-orm and doesn't ship it as a separate /app/node_modules
+# package, so the schema files can't resolve it from there.
+COPY --from=builder /build/src/db/schema /opt/drizzle/schema
+COPY drizzle.docker.config.cjs /opt/drizzle/drizzle.config.cjs
 
 COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
