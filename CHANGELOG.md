@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.4] — 2026-05-29
+
+### Fixed
+- `scripts/docker-entrypoint.sh`: drizzle-kit (running from `/opt/drizzle`) couldn't resolve drizzle-orm — it lives in Next's `/app/node_modules` bundle, out of drizzle-kit's normal lookup path. Set `NODE_PATH=/app/node_modules` for the schema-push command only, leaving the Next server's environment unchanged.
+
 ## [0.1.3] — 2026-05-29
 
 ### Fixed
