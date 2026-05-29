@@ -33,16 +33,10 @@ declare module 'next-auth' {
   }
 }
 
-declare module 'next-auth/jwt' {
-  interface JWT {
-    userId?: string
-    discordId?: string
-    avatarHash?: string | null
-    discordAccessToken?: string
-    guilds?: DiscordGuildSnapshot[]
-    guildsFetchedAt?: number
-  }
-}
+// We don't augment `next-auth/jwt` — Next.js's `tsc` plugin trips on it
+// even though the module exists. The `token` argument inside the jwt
+// callback is loosely typed and we add fields to it via property
+// assignment. That's fine: only this file reads them back.
 
 // Re-fetch guild list at most every 10 minutes to keep session size small
 // and avoid spamming Discord on every request.
@@ -61,6 +55,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, account, profile, trigger }) {
+      const t = token as Record<string, unknown>
       // First login — Discord profile + access token arrive here.
       if (account?.provider === 'discord' && profile) {
         const discordId = String(profile.id)
@@ -94,25 +89,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           })
           .returning({ id: users.id })
 
-        token.userId = inserted[0]!.id
-        token.discordId = discordId
-        token.avatarHash = discordProfile.avatar ?? null
-        token.discordAccessToken = account.access_token
-        token.guilds = []
-        token.guildsFetchedAt = 0
+        t.userId = inserted[0]!.id
+        t.discordId = discordId
+        t.avatarHash = discordProfile.avatar ?? null
+        t.discordAccessToken = account.access_token
+        t.guilds = []
+        t.guildsFetchedAt = 0
       }
 
       // Refresh guild list when stale or explicitly asked.
-      const stale = !token.guildsFetchedAt || Date.now() - token.guildsFetchedAt > GUILDS_REFRESH_MS
-      if ((stale || trigger === 'update') && token.discordAccessToken) {
+      const accessToken = t.discordAccessToken as string | undefined
+      const lastFetched = (t.guildsFetchedAt as number | undefined) ?? 0
+      const stale = lastFetched === 0 || Date.now() - lastFetched > GUILDS_REFRESH_MS
+      if ((stale || trigger === 'update') && accessToken) {
         try {
           const res = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-            headers: { Authorization: `Bearer ${token.discordAccessToken}` },
+            headers: { Authorization: `Bearer ${accessToken}` },
             cache: 'no-store',
           })
           if (res.ok) {
-            token.guilds = (await res.json()) as DiscordGuildSnapshot[]
-            token.guildsFetchedAt = Date.now()
+            t.guilds = (await res.json()) as DiscordGuildSnapshot[]
+            t.guildsFetchedAt = Date.now()
           }
         } catch {
           // Discord hiccup — keep the stale snapshot rather than locking the
@@ -124,16 +121,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
 
     async session({ session, token }) {
+      const t = token as Record<string, unknown>
       session.user = {
-        id: (token.userId as string) ?? '',
-        discordId: (token.discordId as string) ?? '',
+        id: (t.userId as string) ?? '',
+        discordId: (t.discordId as string) ?? '',
         name: session.user?.name ?? null,
         email: session.user?.email ?? null,
         image: session.user?.image ?? null,
-        avatarHash: token.avatarHash ?? null,
+        avatarHash: (t.avatarHash as string | null | undefined) ?? null,
       }
-      session.discordAccessToken = token.discordAccessToken
-      session.guilds = token.guilds ?? []
+      session.discordAccessToken = t.discordAccessToken as string | undefined
+      session.guilds = (t.guilds as DiscordGuildSnapshot[] | undefined) ?? []
       return session
     },
   },
