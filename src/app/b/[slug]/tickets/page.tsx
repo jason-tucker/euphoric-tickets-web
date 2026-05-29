@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusBadge } from '@/components/app/status-badge'
 import { requireBusinessAccess } from '@/server/permissions'
 import { db } from '@/db/client'
-import { tickets, ticketStatuses, users, type TicketStatus } from '@/db/schema'
+import { businesses, tickets, ticketStatuses, users, type TicketStatus } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +27,16 @@ export default async function TicketQueuePage({
   const isValid = isAll || (ticketStatuses as readonly string[]).includes(filter)
   const status = isValid && !isAll ? (filter as TicketStatus) : null
 
+  // Client-kind business → queue is tickets where THIS business is the
+  // client_business_id (across whatever host operates them). Host-kind →
+  // tickets where business_id = this business.
+  const businessFilter =
+    business.kind === 'client'
+      ? eq(tickets.clientBusinessId, business.id)
+      : eq(tickets.businessId, business.id)
+
+  const clientBusinessAlias = businesses
+
   const rows = await db
     .select({
       id: tickets.id,
@@ -38,10 +48,13 @@ export default async function TicketQueuePage({
       openedAt: tickets.openedAt,
       lastActivityAt: tickets.lastActivityAt,
       assigneeId: tickets.assigneeUserId,
+      clientBusinessId: tickets.clientBusinessId,
+      clientBusinessName: clientBusinessAlias.name,
     })
     .from(tickets)
     .leftJoin(users, eq(users.id, tickets.openerUserId))
-    .where(status ? and(eq(tickets.businessId, business.id), eq(tickets.status, status)) : eq(tickets.businessId, business.id))
+    .leftJoin(clientBusinessAlias, eq(clientBusinessAlias.id, tickets.clientBusinessId))
+    .where(status ? and(businessFilter, eq(tickets.status, status)) : businessFilter)
     .orderBy(desc(tickets.lastActivityAt))
     .limit(200)
 
@@ -68,6 +81,9 @@ export default async function TicketQueuePage({
                   <TableHead className="w-12">#</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead className="hidden md:table-cell">Opener</TableHead>
+                  {business.kind === 'host' && (
+                    <TableHead className="hidden md:table-cell">Client</TableHead>
+                  )}
                   <TableHead className="w-20">Status</TableHead>
                   <TableHead className="hidden w-32 sm:table-cell">Last activity</TableHead>
                 </TableRow>
@@ -84,6 +100,11 @@ export default async function TicketQueuePage({
                     <TableCell className="hidden text-sm md:table-cell">
                       <span className="text-muted-foreground">{t.openerName ?? '?'}</span>
                     </TableCell>
+                    {business.kind === 'host' && (
+                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+                        {t.clientBusinessName ?? '—'}
+                      </TableCell>
+                    )}
                     <TableCell><StatusBadge status={t.status} /></TableCell>
                     <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                       {relativeTime(t.lastActivityAt)}

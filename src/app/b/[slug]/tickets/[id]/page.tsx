@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { requireBusinessAccess } from '@/server/permissions'
 import { db } from '@/db/client'
-import { businessMembers, tickets, ticketMessages, users } from '@/db/schema'
+import { businesses, businessMembers, tickets, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import {
   addInternalNote,
@@ -40,6 +40,9 @@ export default async function TicketDetailPage({
   if (!isAdmin && t.openerUserId !== access.session.user.id) notFound()
 
   const [opener] = await db.select().from(users).where(eq(users.id, t.openerUserId)).limit(1)
+  const [clientBusiness] = t.clientBusinessId
+    ? await db.select().from(businesses).where(eq(businesses.id, t.clientBusinessId)).limit(1)
+    : [null as null]
   const [assignee] = t.assigneeUserId
     ? await db.select().from(users).where(eq(users.id, t.assigneeUserId)).limit(1)
     : [null as null]
@@ -123,6 +126,14 @@ export default async function TicketDetailPage({
               Sub-ticket of{' '}
               <Link href={`/b/${slug}/tickets/${parentTicket.id}`} className="font-medium hover:underline">
                 #{parentTicket.id} — {parentTicket.subject}
+              </Link>
+            </p>
+          )}
+          {clientBusiness && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              For client{' '}
+              <Link href={`/b/${clientBusiness.slug}`} className="font-medium hover:underline">
+                {clientBusiness.name}
               </Link>
             </p>
           )}

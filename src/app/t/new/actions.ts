@@ -5,8 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { ticketCategories, tickets, ticketMessages } from '@/db/schema'
-import { resolveBusinessAccess, requireSession } from '@/server/permissions'
+import { businesses, ticketCategories, tickets, ticketMessages } from '@/db/schema'
+import { listMyBusinesses, resolveBusinessAccess, requireSession } from '@/server/permissions'
 import {
   createChannelWebhook,
   createTicketChannel,
@@ -22,6 +22,10 @@ const schema = z.object({
   body: z.string().min(3).max(1900),
   kind: z.enum(['normal', 'project']).default('normal'),
   parentTicketId: z.string().regex(/^\d+$/).optional().or(z.literal('')),
+  // If submitting from a client-kind business slug, the form posts the
+  // selected business id here; the action ensures the ticket lands on the
+  // right host (the client's parent) with client_business_id set.
+  asClientBusinessId: z.string().uuid().optional().or(z.literal('')),
 })
 
 // Tiny per-process dedupe: same opener + business + subject within 5s →
@@ -55,19 +59,54 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     body: String(formData.get('body') ?? ''),
     kind: (String(formData.get('kind') ?? 'normal') as 'normal' | 'project'),
     parentTicketId: String(formData.get('parentTicketId') ?? '') || undefined,
+    asClientBusinessId: String(formData.get('asClientBusinessId') ?? '') || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
   const access = await resolveBusinessAccess(parsed.data.businessSlug)
   if (!access) throw new Error('You are not a member of that community.')
 
-  // Dedupe rapid resubmits before doing any DB writes / Discord calls.
-  const key = dedupeKey(session.user.id, access.business.id, parsed.data.subject)
-  const recent = recentSubmits.get(key)
-  if (recent && Date.now() - recent.at < SUBMIT_DEDUPE_MS) {
-    redirect(`/b/${access.business.slug}/tickets/${recent.ticketId}`)
+  // Resolve the HOST that will operate this ticket vs the CLIENT it's for.
+  // If the form was submitted from a client-kind business, the ticket
+  // actually belongs to that client's parent host with client_business_id
+  // pointing back at the client. Validates that the user belongs to the
+  // client they're claiming to open on behalf of.
+  let hostBusiness = access.business
+  let clientBusinessId: string | null = null
+  if (access.business.kind === 'client' && access.business.parentBusinessId) {
+    const [host] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.id, access.business.parentBusinessId))
+      .limit(1)
+    if (!host) throw new Error('This client has no parent host configured.')
+    hostBusiness = host
+    clientBusinessId = access.business.id
+  } else if (parsed.data.asClientBusinessId) {
+    // User explicitly tagged a client business — allowed when they're a
+    // member of that client and the host they're posting from is its parent.
+    const [client] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.id, parsed.data.asClientBusinessId))
+      .limit(1)
+    if (client && client.kind === 'client' && client.parentBusinessId === hostBusiness.id) {
+      const my = await listMyBusinesses()
+      if (my.some((b) => b.business.id === client.id)) {
+        clientBusinessId = client.id
+      }
+    }
   }
 
+  // Dedupe rapid resubmits before doing any DB writes / Discord calls.
+  const key = dedupeKey(session.user.id, hostBusiness.id, parsed.data.subject)
+  const recent = recentSubmits.get(key)
+  if (recent && Date.now() - recent.at < SUBMIT_DEDUPE_MS) {
+    redirect(`/b/${hostBusiness.slug}/tickets/${recent.ticketId}`)
+  }
+
+  // Categories belong to the HOST that operates them — same regardless of
+  // whether the opener is the host's own staff or a client's member.
   let category: typeof ticketCategories.$inferSelect | null = null
   if (parsed.data.categoryId) {
     const [c] = await db
@@ -75,17 +114,17 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       .from(ticketCategories)
       .where(eq(ticketCategories.id, parsed.data.categoryId))
       .limit(1)
-    if (c && c.businessId === access.business.id) category = c
+    if (c && c.businessId === hostBusiness.id) category = c
   }
 
-  // Validate parent — must exist, belong to the same business, and be a
-  // project ticket. Sub-tickets inherit kind='normal'.
+  // Validate parent — must exist, belong to the same host, and be a project
+  // ticket. Sub-tickets inherit kind='normal'.
   let parentTicketId: number | null = null
   if (parsed.data.parentTicketId) {
     const pid = Number(parsed.data.parentTicketId)
     const [parent] = await db.select().from(tickets).where(eq(tickets.id, pid)).limit(1)
     if (!parent) throw new Error('Parent ticket not found.')
-    if (parent.businessId !== access.business.id) throw new Error('Parent ticket is for a different community.')
+    if (parent.businessId !== hostBusiness.id) throw new Error('Parent ticket is for a different host.')
     if (parent.kind !== 'project') throw new Error('Parent must be a project ticket.')
     parentTicketId = pid
   }
@@ -93,7 +132,8 @@ export async function openTicketAction(formData: FormData): Promise<void> {
   const [row] = await db
     .insert(tickets)
     .values({
-      businessId: access.business.id,
+      businessId: hostBusiness.id,
+      clientBusinessId,
       openerUserId: session.user.id,
       categoryId: category?.id ?? null,
       subject: parsed.data.subject,
@@ -121,19 +161,19 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     source: 'web',
   })
 
-  // Per-ticket Discord channel + webhook. Best-effort: if the bot token,
-  // guild config, or category target isn't set, fall back to the legacy
-  // single business webhook so the ticket still shows up somewhere.
+  // Per-ticket Discord channel + webhook lives under the HOST's guild
+  // (the operator). Best-effort: if the bot token, guild config, or
+  // category target isn't set, fall back to the legacy single host webhook.
   const botToken = process.env.DISCORD_BOT_TOKEN
   const parentCategoryId =
-    category?.discordParentCategoryId ?? access.business.discordFallbackCategoryId ?? null
+    category?.discordParentCategoryId ?? hostBusiness.discordFallbackCategoryId ?? null
 
   let postedToPerTicketChannel = false
-  if (botToken && access.business.discordGuildId && parentCategoryId) {
+  if (botToken && hostBusiness.discordGuildId && parentCategoryId) {
     try {
       const channel = await createTicketChannel({
         botToken,
-        guildId: access.business.discordGuildId,
+        guildId: hostBusiness.discordGuildId,
         parentCategoryId,
         name: channelSlug(parsed.data.subject, row.id),
         topic: `Opened by ${session.user.name ?? session.user.discordId} from the web — #${row.id}`,
@@ -157,11 +197,17 @@ export async function openTicketAction(formData: FormData): Promise<void> {
 
       const identity = await resolveWebhookIdentity({
         botToken,
-        guildId: access.business.discordGuildId,
+        guildId: hostBusiness.discordGuildId,
         discordUserId: session.user.discordId,
         globalName: session.user.name ?? 'Web user',
         globalAvatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
       })
+
+      // Mention the client business in the header so the host can spot
+      // which incoming org this ticket belongs to without clicking through.
+      const clientLabel = clientBusinessId
+        ? ` _(via client: ${access.business.kind === 'client' ? access.business.name : 'unknown'})_`
+        : ''
 
       const posted = await postWebhook({
         webhookUrl: webhook.url,
@@ -170,6 +216,7 @@ export async function openTicketAction(formData: FormData): Promise<void> {
         content:
           `🎫 **#${row.id}** — *${parsed.data.subject}*` +
           (category ? ` _(${category.label})_` : '') +
+          clientLabel +
           `\n\n${parsed.data.body.slice(0, 1700)}`,
       })
 
@@ -186,19 +233,18 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     }
   }
 
-  // Fallback: post a notice into the business-wide webhook channel so staff
-  // still sees the ticket. Only runs when the per-ticket flow above didn't.
-  if (!postedToPerTicketChannel && access.business.webhookUrl) {
+  // Fallback: post a notice into the host's single webhook channel.
+  if (!postedToPerTicketChannel && hostBusiness.webhookUrl) {
     try {
       const identity = await resolveWebhookIdentity({
         botToken,
-        guildId: access.business.discordGuildId,
+        guildId: hostBusiness.discordGuildId,
         discordUserId: session.user.discordId,
         globalName: session.user.name ?? 'Web user',
         globalAvatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
       })
       await postWebhook({
-        webhookUrl: access.business.webhookUrl,
+        webhookUrl: hostBusiness.webhookUrl,
         username: identity.username,
         avatarUrl: identity.avatarUrl,
         content:
@@ -211,6 +257,9 @@ export async function openTicketAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath('/dashboard')
-  revalidatePath(`/b/${access.business.slug}`)
-  redirect(`/b/${access.business.slug}/tickets/${row.id}`)
+  revalidatePath(`/b/${hostBusiness.slug}`)
+  // Always redirect to the HOST's ticket detail (the canonical operating
+  // surface). Client-side views read host-scoped URLs but filter by
+  // client_business_id.
+  redirect(`/b/${hostBusiness.slug}/tickets/${row.id}`)
 }

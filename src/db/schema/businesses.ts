@@ -37,6 +37,14 @@ export const businesses = pgTable('businesses', {
   // 'business' or 'client' — affects UI nouns. See euphoric-tickets-web#9.
   terminology: text('terminology', { enum: ['business', 'client'] }).notNull().default('business'),
 
+  // Structural distinction (web#12).
+  //   host   = vendor that operates the ticket system (e.g. EuphoricFM).
+  //   client = visitor org whose members come in and open tickets at a host
+  //            (e.g. Echo Studios working with EuphoricFM).
+  // Client businesses must have parent_business_id pointing at a host.
+  kind: text('kind', { enum: ['host', 'client'] }).notNull().default('host'),
+  parentBusinessId: uuid('parent_business_id'),
+
   // Free-form JSON for forward-compat (color, custom labels, etc.).
   settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
 

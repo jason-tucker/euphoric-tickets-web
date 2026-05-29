@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.0] — 2026-05-29
+
+### Added — Phase G: Hosts and Clients (web#12)
+Structurally distinguish two business kinds: **host** (vendor operating the ticket system, e.g. EuphoricFM, MKE) and **client** (visitor org coming in with members who open tickets, e.g. Echo Studios). Picked Shape A from the issue — single `businesses` table, `kind` column, `parent_business_id` for clients pointing at their host.
+
+- **Schema**
+  - `businesses.kind` (`'host'|'client'`, default `'host'`).
+  - `businesses.parent_business_id` (uuid, nullable) — required when `kind='client'`.
+  - `tickets.client_business_id` (uuid, nullable) — set on tickets opened on behalf of a client. Existing rows default to null and read as host-direct tickets.
+- **`/admin`**
+  - Create form now asks Kind first (Host / Client) and a Parent host dropdown that's required for clients.
+  - "All businesses" listing split into Hosts + Clients sections; client cards show their parent host inline.
+- **`/t/new`**
+  - When the user submits from a client-kind business slug, the action transparently routes the ticket onto the client's parent host with `client_business_id` set. Categories + dedupe key + redirect all use the host context.
+  - Same flow accepts an optional `asClientBusinessId` form field (for future "open on behalf of" UI on a host page); validated against the user's actual client memberships.
+  - Discord post header annotates `(via client: …)` when applicable so staff sees the source org without clicking through.
+- **Ticket detail** surfaces "For client &lt;X&gt;" linking to that client's slug.
+- **`/b/[slug]/tickets` queue**
+  - Host slugs filter by `business_id`; client slugs filter by `client_business_id`. Same page renders either way; the WHERE clause flips on `business.kind`.
+  - Adds a Client column on host queues so staff can scan which incoming org owns each ticket.
+- **`/clients` rollup** splits into a Hosts section and a Clients section, each with their own rollup query (`business_id` aggregation for hosts, `client_business_id` aggregation for clients).
+
+### Migration
+Existing data: every existing business is `kind='host'` with `parent_business_id=null`. Existing tickets are `client_business_id=null` and read as host-direct tickets. No backfill needed; drizzle-kit push at deploy adds the columns with their defaults.
+
 ## [0.5.1] — 2026-05-29
 
 ### Added

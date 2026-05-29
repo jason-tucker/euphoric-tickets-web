@@ -28,10 +28,12 @@ export default async function ClientsPage() {
         .map((b) => b.business)
 
   // Rollup counts per business.
-  const stats = await db
+  // For host-kind businesses the rollup is tickets they OPERATE (business_id).
+  // For client-kind businesses it's tickets they OWN (client_business_id).
+  // Two separate aggregations merged into one map.
+  const hostStats = await db
     .select({
       businessId: tickets.businessId,
-      total: sql<number>`count(*)::int`,
       open: sql<number>`count(*) filter (where ${tickets.status} != 'closed')::int`,
       projects: sql<number>`count(*) filter (where ${tickets.kind} = 'project' and ${tickets.status} != 'closed')::int`,
       lastActivity: sql<Date | null>`max(${tickets.lastActivityAt})`,
@@ -39,7 +41,29 @@ export default async function ClientsPage() {
     .from(tickets)
     .groupBy(tickets.businessId)
 
-  const statsByBusiness = new Map(stats.map((s) => [s.businessId, s]))
+  const clientStats = await db
+    .select({
+      businessId: tickets.clientBusinessId,
+      open: sql<number>`count(*) filter (where ${tickets.status} != 'closed')::int`,
+      projects: sql<number>`count(*) filter (where ${tickets.kind} = 'project' and ${tickets.status} != 'closed')::int`,
+      lastActivity: sql<Date | null>`max(${tickets.lastActivityAt})`,
+    })
+    .from(tickets)
+    .where(sql`${tickets.clientBusinessId} is not null`)
+    .groupBy(tickets.clientBusinessId)
+
+  const statsByBusiness = new Map<string, { open: number; projects: number; lastActivity: Date | null }>()
+  for (const s of hostStats) {
+    statsByBusiness.set(s.businessId, { open: s.open, projects: s.projects, lastActivity: s.lastActivity })
+  }
+  for (const s of clientStats) {
+    if (s.businessId) {
+      statsByBusiness.set(s.businessId, { open: s.open, projects: s.projects, lastActivity: s.lastActivity })
+    }
+  }
+
+  const hosts = adminScope.filter((b) => b.kind === 'host')
+  const clients = adminScope.filter((b) => b.kind === 'client')
 
   // Pick the noun label using the FIRST business's terminology setting —
   // not perfect for mixed-mode setups, but good-enough since most users
@@ -69,57 +93,86 @@ export default async function ClientsPage() {
             </CardHeader>
           </Card>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {adminScope.map((b) => {
-              const s = statsByBusiness.get(b.id)
-              return (
-                <Link key={b.id} href={`/b/${b.slug}/tickets`} className="block">
-                  <Card className="transition-colors hover:bg-accent/50">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        {b.terminology === 'client' ? (
-                          <Briefcase className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        {b.name}
-                      </CardTitle>
-                      <CardDescription className="font-mono text-xs">/{b.slug}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <div className="font-semibold text-foreground text-sm">{s?.open ?? 0}</div>
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <MessageSquare className="h-3 w-3" />
-                            open
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-foreground text-sm">{s?.projects ?? 0}</div>
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Briefcase className="h-3 w-3" />
-                            projects
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-foreground text-sm">
-                            {s?.lastActivity ? relativeTime(s.lastActivity) : '—'}
-                          </div>
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Clock className="h-3 w-3" />
-                            active
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              )
-            })}
+          <div className="space-y-6">
+            <BusinessSection
+              kind="host"
+              businesses={hosts}
+              statsByBusiness={statsByBusiness}
+            />
+            <BusinessSection
+              kind="client"
+              businesses={clients}
+              statsByBusiness={statsByBusiness}
+            />
           </div>
         )}
       </main>
     </>
+  )
+}
+
+function BusinessSection({
+  kind,
+  businesses: list,
+  statsByBusiness,
+}: {
+  kind: 'host' | 'client'
+  businesses: Array<typeof businesses.$inferSelect>
+  statsByBusiness: Map<string, { open: number; projects: number; lastActivity: Date | null }>
+}) {
+  if (list.length === 0) return null
+  const title = kind === 'host' ? 'Hosts' : 'Clients'
+  const Icon = kind === 'host' ? Building2 : Briefcase
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {title} ({list.length})
+      </h2>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {list.map((b) => {
+          const s = statsByBusiness.get(b.id)
+          return (
+            <Link key={b.id} href={`/b/${b.slug}/tickets`} className="block">
+              <Card className="transition-colors hover:bg-accent/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    {b.name}
+                  </CardTitle>
+                  <CardDescription className="font-mono text-xs">/{b.slug}</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <div className="font-semibold text-foreground text-sm">{s?.open ?? 0}</div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <MessageSquare className="h-3 w-3" />
+                        open
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-foreground text-sm">{s?.projects ?? 0}</div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Briefcase className="h-3 w-3" />
+                        projects
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-foreground text-sm">
+                        {s?.lastActivity ? relativeTime(s.lastActivity) : '—'}
+                      </div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        active
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
   )
 }
