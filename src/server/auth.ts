@@ -122,14 +122,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async session({ session, token }) {
       const t = token as Record<string, unknown>
-      session.user = {
-        id: (t.userId as string) ?? '',
-        discordId: (t.discordId as string) ?? '',
-        name: session.user?.name ?? null,
-        email: session.user?.email ?? null,
-        image: session.user?.image ?? null,
-        avatarHash: (t.avatarHash as string | null | undefined) ?? null,
-      }
+      // Mutate in place — assigning a fresh object trips NextAuth's
+      // AdapterUser intersection check because our augmented Session.user
+      // is a different shape. Mutation keeps the underlying type unchanged
+      // while still adding our fields.
+      const u = session.user as Record<string, unknown>
+      u.id = (t.userId as string) ?? ''
+      u.discordId = (t.discordId as string) ?? ''
+      u.avatarHash = (t.avatarHash as string | null | undefined) ?? null
       session.discordAccessToken = t.discordAccessToken as string | undefined
       session.guilds = (t.guilds as DiscordGuildSnapshot[] | undefined) ?? []
       return session
