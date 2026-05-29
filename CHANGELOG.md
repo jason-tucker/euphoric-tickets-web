@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.13] — 2026-05-29
+
+### Changed
+- `src/server/auth.ts`: temporary `console.log` instrumentation around the `jwt` and `session` Auth.js callbacks to diagnose a persistent post-OAuth `ERR_TOO_MANY_REDIRECTS` loop between `/login` and `/dashboard`. To be removed in the next patch once the cause is identified.
+
 ## [0.1.12] — 2026-05-29
 
 ### Fixed
