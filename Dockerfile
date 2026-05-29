@@ -37,12 +37,15 @@ COPY --from=builder /build/.next/standalone ./
 COPY --from=builder /build/.next/static ./.next/static
 
 # Drizzle schema push happens via the entrypoint so first boot creates tables.
-COPY --from=builder /build/node_modules/drizzle-kit /app/node_modules/drizzle-kit
-COPY --from=builder /build/node_modules/.bin/drizzle-kit /app/node_modules/.bin/drizzle-kit
+# We can't simply copy node_modules/drizzle-kit from the builder: pnpm's
+# symlinked layout puts drizzle-kit's transitive deps (esbuild, tsx,
+# @esbuild-kit/*, @drizzle-team/brocli) under .pnpm/<pkg>@<ver>/, and those
+# don't follow through a Docker COPY of just the top-level symlink. The
+# previous flat copy left drizzle-kit unable to require('esbuild') at
+# runtime. Install it cleanly here at the same pinned version instead.
+RUN npm install --no-save --prefix /opt/drizzle drizzle-kit@0.31.10
 COPY drizzle.docker.config.cjs ./drizzle.docker.config.cjs
 COPY --from=builder /build/src/db/schema /app/src/db/schema-source
-# Copy the compiled schema that Next's bundling emitted into the standalone
-# server tree so drizzle-kit can read TypeScript-free JS at runtime.
 
 COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
