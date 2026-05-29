@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.11] — 2026-05-29
+
+### Fixed
+- `src/app/login/page.tsx`: `ERR_TOO_MANY_REDIRECTS` after a fresh login. The /login redirect-when-signed-in check tested `session?.user` (truthy whenever the JWT cookie decrypted into any user object) while /dashboard required `session?.user?.id`. A half-baked session — cookie present but jwt callback never populated `userId` — looped between them. Tighten /login to also require `user.id` so the two sides agree on what "signed in" means.
+
 ## [0.1.10] — 2026-05-29
 
 ### Fixed

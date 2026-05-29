@@ -10,7 +10,11 @@ export default async function LoginPage({
 }) {
   const session = await auth()
   const params = await searchParams
-  if (session?.user) redirect(params.next || '/dashboard')
+  // Require user.id to be set — a half-baked session (cookie present but the
+  // jwt callback didn't populate userId) would loop /login ↔ /dashboard
+  // since /dashboard insists on user.id but /login would otherwise treat
+  // any session.user as logged in.
+  if (session?.user?.id) redirect(params.next || '/dashboard')
 
   async function loginWithDiscord() {
     'use server'
