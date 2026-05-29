@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.12] — 2026-05-29
+
+### Fixed
+- `src/server/permissions.ts`, `src/app/dashboard/page.tsx`, `src/app/t/new/page.tsx`: replaced `sql\`... IN ${array}\`` patterns with drizzle's `inArray()` helper. The raw `sql` tag doesn't expand JS arrays into a Postgres tuple — every authenticated render of `/dashboard`, `/t/new`, or any business-scoped page would throw a SQL error on the very first DB lookup, surfacing as a silent hang in production. With this in place a logged-in user actually reaches `/dashboard` instead of the page never finishing.
+
 ## [0.1.11] — 2026-05-29
 
 ### Fixed

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { Plus, Building2 } from 'lucide-react'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
@@ -36,7 +36,7 @@ export default async function DashboardPage() {
       })
       .from(tickets)
       .innerJoin(businesses, eq(businesses.id, tickets.businessId))
-      .where(sql`${tickets.openerUserId} = ${session.user.id} AND ${tickets.businessId} IN ${businessIds}`)
+      .where(and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, businessIds)))
       .orderBy(desc(tickets.lastActivityAt))
       .limit(20)
   }

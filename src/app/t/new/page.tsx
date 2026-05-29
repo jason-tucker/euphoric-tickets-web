@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { listMyBusinesses, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
 import { ticketCategories } from '@/db/schema'
-import { sql } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 import { openTicketAction } from './actions'
 
 export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ b?: string }> }) {
@@ -43,7 +43,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
     ? await db
         .select()
         .from(ticketCategories)
-        .where(sql`${ticketCategories.businessId} IN ${businessIds}`)
+        .where(inArray(ticketCategories.businessId, businessIds))
     : []
   const cats = allCats.filter((c) => c.businessId === selectedBusiness.id)
 

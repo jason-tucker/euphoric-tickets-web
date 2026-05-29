@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { auth, type DiscordGuildSnapshot } from './auth'
 import { db } from '@/db/client'
 import { businesses, businessMembers, type Business } from '@/db/schema'
@@ -54,7 +54,7 @@ export async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
   const rows = await db
     .select()
     .from(businesses)
-    .where(sql`${businesses.discordGuildId} IN ${guildIds}`)
+    .where(inArray(businesses.discordGuildId, guildIds))
 
   const out: ResolvedBusiness[] = []
   for (const b of rows) {
