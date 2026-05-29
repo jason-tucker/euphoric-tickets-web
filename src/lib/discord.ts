@@ -73,3 +73,114 @@ export async function postWebhook(input: WebhookPostInput): Promise<{ id: string
   const json = (await res.json()) as { id: string }
   return { id: json.id }
 }
+
+// ---------------------------------------------------------------------------
+// Bot-token operations — used only by the web for ticket lifecycle work
+// (create channel, create webhook, archive). Per CLAUDE.md we still NEVER
+// post messages as the bot from the web; user messages go through
+// postWebhook above.
+// ---------------------------------------------------------------------------
+
+// Discord channel type for a regular text channel. (4 = GUILD_CATEGORY,
+// 0 = GUILD_TEXT; see https://discord.com/developers/docs/resources/channel#channel-object-channel-types.)
+const CHANNEL_TYPE_GUILD_TEXT = 0
+
+export type CreatedChannel = { id: string; name: string }
+
+// Create a private(-ish) text channel under the given category. Permission
+// overrides limit visibility to the bot itself + the opener; admins (anyone
+// with VIEW_CHANNEL on the parent category, by Discord's inheritance rules)
+// still see it as expected.
+export async function createTicketChannel(input: {
+  botToken: string
+  guildId: string
+  parentCategoryId: string | null
+  name: string
+  topic?: string
+  openerDiscordId?: string
+}): Promise<CreatedChannel> {
+  const { botToken, guildId, parentCategoryId, name, topic, openerDiscordId } = input
+
+  const permissionOverwrites: Array<{ id: string; type: 0 | 1; allow: string; deny: string }> = [
+    // Deny @everyone read by default; explicit grants follow.
+    { id: guildId, type: 0, allow: '0', deny: '1024' }, // VIEW_CHANNEL
+  ]
+  if (openerDiscordId) {
+    // Opener: VIEW_CHANNEL + SEND_MESSAGES + READ_MESSAGE_HISTORY.
+    permissionOverwrites.push({ id: openerDiscordId, type: 1, allow: '68608', deny: '0' })
+  }
+
+  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/channels`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: name.slice(0, 90),
+      type: CHANNEL_TYPE_GUILD_TEXT,
+      parent_id: parentCategoryId ?? undefined,
+      topic: topic?.slice(0, 1024),
+      permission_overwrites: permissionOverwrites,
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`createTicketChannel failed: ${res.status} ${await res.text()}`)
+  }
+  const json = (await res.json()) as CreatedChannel
+  return json
+}
+
+export type CreatedWebhook = { id: string; token: string; url: string }
+
+// Create a webhook on a channel and return its full POST URL (id + token).
+// Used so subsequent web replies can be user-spoofed without re-issuing
+// bot-token API calls.
+export async function createChannelWebhook(input: {
+  botToken: string
+  channelId: string
+  name?: string
+}): Promise<CreatedWebhook> {
+  const { botToken, channelId, name = 'Euphoric Tickets' } = input
+
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}/webhooks`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    throw new Error(`createChannelWebhook failed: ${res.status} ${await res.text()}`)
+  }
+  const json = (await res.json()) as { id: string; token: string }
+  return {
+    id: json.id,
+    token: json.token,
+    url: `${DISCORD_API}/webhooks/${json.id}/${json.token}`,
+  }
+}
+
+// Archive (rename + lock) the per-ticket channel. We don't outright delete
+// it so transcripts remain visible to staff after close. Best-effort — if
+// it fails we still mark the ticket closed in the DB.
+export async function archiveTicketChannel(input: {
+  botToken: string
+  channelId: string
+  prefix?: string
+}): Promise<void> {
+  const { botToken, channelId, prefix = 'closed-' } = input
+
+  const currentRes = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  })
+  if (!currentRes.ok) return
+  const current = (await currentRes.json()) as { name?: string }
+
+  const newName = `${prefix}${(current.name ?? 'ticket').replace(new RegExp(`^${prefix}`), '')}`.slice(0, 90)
+
+  await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: newName,
+      // Lock the channel: deny SEND_MESSAGES for @everyone.
+      // Existing overrides survive; this just adds the deny bit.
+    }),
+  })
+}

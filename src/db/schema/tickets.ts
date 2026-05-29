@@ -21,10 +21,15 @@ export const tickets = pgTable(
     status: text('status', { enum: ticketStatuses }).notNull().default('open'),
     assigneeUserId: uuid('assignee_user_id').references(() => users.id),
 
-    // If the bot already has a Discord channel for this ticket, store it
-    // here. Lets the web UI deep-link "Open in Discord" and dedupe inbound
-    // sync events.
+    // Per-ticket Discord channel, created on open by whichever side opens
+    // first (web via bot token, or bot via gateway). Lets the web UI
+    // deep-link "Open in Discord" and dedupes inbound sync events.
     discordChannelId: text('discord_channel_id'),
+
+    // Webhook created on the per-ticket channel for posting user-spoofed
+    // replies from the web. Stored so we don't recreate one per reply.
+    discordWebhookId: text('discord_webhook_id'),
+    discordWebhookUrl: text('discord_webhook_url'),
 
     priority: integer('priority').notNull().default(2), // 1=urgent .. 4=low
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),

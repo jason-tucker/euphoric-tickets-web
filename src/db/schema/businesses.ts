@@ -14,9 +14,16 @@ export const businesses = pgTable('businesses', {
   // settings UI can post a single CSV form value).
   adminRoleIds: text('admin_role_ids').notNull().default(''),
 
-  // Outbound webhook for posting web replies back to Discord. Required for
-  // the per-user spoof flow to work. Format: full https://discord.com/api/webhooks/<id>/<token>
+  // Legacy single-channel webhook — used as a fallback when per-ticket
+  // channels can't be created (bot token missing or guild misconfigured).
+  // Format: full https://discord.com/api/webhooks/<id>/<token>
   webhookUrl: text('webhook_url'),
+
+  // Discord channel category (type GUILD_CATEGORY) under which to create
+  // per-ticket channels when the ticket's own category doesn't define one.
+  // If both this and the per-category mapping are null, we fall back to
+  // posting to webhookUrl in a single shared channel.
+  discordFallbackCategoryId: text('discord_fallback_category_id'),
 
   // Free-form JSON for forward-compat (color, custom labels, etc.).
   settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),

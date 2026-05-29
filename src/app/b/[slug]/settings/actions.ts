@@ -7,10 +7,12 @@ import { db } from '@/db/client'
 import { businesses, ticketCategories } from '@/db/schema'
 import { requireBusinessAccess } from '@/server/permissions'
 
+const snowflake = z.string().regex(/^\d{17,20}$/, 'Not a valid Discord snowflake')
+
 const settingsSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().max(500).optional(),
-  discordGuildId: z.string().regex(/^\d{17,20}$/, 'Not a valid Discord snowflake'),
+  discordGuildId: snowflake,
   adminRoleIds: z.string().regex(/^(\d{17,20})?(,\s*\d{17,20})*$/, 'Comma-separated snowflakes only').optional(),
   webhookUrl: z
     .string()
@@ -18,6 +20,7 @@ const settingsSchema = z.object({
     .startsWith('https://discord.com/api/webhooks/', 'Must be a Discord webhook URL')
     .optional()
     .or(z.literal('')),
+  discordFallbackCategoryId: snowflake.optional().or(z.literal('')),
 })
 
 export async function saveBusinessSettings(slug: string, formData: FormData): Promise<void> {
@@ -29,6 +32,7 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     discordGuildId: String(formData.get('discordGuildId') ?? ''),
     adminRoleIds: String(formData.get('adminRoleIds') ?? '').trim(),
     webhookUrl: String(formData.get('webhookUrl') ?? '').trim(),
+    discordFallbackCategoryId: String(formData.get('discordFallbackCategoryId') ?? '').trim(),
   }
 
   const parsed = settingsSchema.safeParse({
@@ -36,6 +40,7 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     description: raw.description || undefined,
     webhookUrl: raw.webhookUrl || undefined,
     adminRoleIds: raw.adminRoleIds || undefined,
+    discordFallbackCategoryId: raw.discordFallbackCategoryId || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -47,6 +52,7 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
       discordGuildId: parsed.data.discordGuildId,
       adminRoleIds: parsed.data.adminRoleIds ?? '',
       webhookUrl: parsed.data.webhookUrl ?? null,
+      discordFallbackCategoryId: parsed.data.discordFallbackCategoryId ?? null,
       updatedAt: sql`now()`,
     })
     .where(eq(businesses.id, business.id))
@@ -61,6 +67,7 @@ const categorySchema = z.object({
   emoji: z.string().max(8).optional(),
   description: z.string().max(200).optional(),
   sortOrder: z.string().regex(/^-?\d+$/).optional(),
+  discordParentCategoryId: snowflake.optional().or(z.literal('')),
 })
 
 export async function addCategoryAction(slug: string, formData: FormData): Promise<void> {
@@ -72,6 +79,7 @@ export async function addCategoryAction(slug: string, formData: FormData): Promi
     emoji: String(formData.get('emoji') ?? '').trim() || undefined,
     description: String(formData.get('description') ?? '').trim() || undefined,
     sortOrder: String(formData.get('sortOrder') ?? '').trim() || undefined,
+    discordParentCategoryId: String(formData.get('discordParentCategoryId') ?? '').trim() || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -82,6 +90,7 @@ export async function addCategoryAction(slug: string, formData: FormData): Promi
     emoji: parsed.data.emoji ?? null,
     description: parsed.data.description ?? null,
     sortOrder: parsed.data.sortOrder ?? '0',
+    discordParentCategoryId: parsed.data.discordParentCategoryId ?? null,
   })
 
   revalidatePath(`/b/${slug}/settings`)

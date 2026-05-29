@@ -51,12 +51,19 @@ services:
       POSTGRES_USER: tickets_web
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tickets_web_dev}
       POSTGRES_DB: tickets_web
-    # No host port — the bot uses its own postgres and we keep this isolated.
-    # Reach it from the VPS host with: docker exec -it euphoric-tickets-web-db-1 psql -U tickets_web
+    # No host port. The bot (euphoric-tickets) joins efm-public-net and
+    # reaches this container via the `tickets-db` alias for the unified
+    # shared-DB architecture. Reach it from the VPS host with:
+    #   docker exec -it euphoric-tickets-web-db-1 psql -U tickets_web
     expose:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      default: {}
+      efm-public-net:
+        aliases:
+          - tickets-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tickets_web"]
       interval: 5s

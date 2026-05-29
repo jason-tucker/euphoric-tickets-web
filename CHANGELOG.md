@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] — 2026-05-29
+
+### Added
+- Per-ticket Discord channels. When a ticket opens from the web, the bot token now creates a private text channel under the right Discord category, creates a webhook on that channel, stores `channel_id` + `webhook_url` on the ticket, and posts the opener's first message (and every subsequent web reply) via that per-channel webhook. The legacy single business-wide `webhook_url` becomes a fallback for when no Discord category is mapped.
+- Schema: `ticket_categories.discord_parent_category_id`, `businesses.discord_fallback_category_id`, `tickets.discord_webhook_id` + `tickets.discord_webhook_url`.
+- `src/lib/discord.ts`: `createTicketChannel()`, `createChannelWebhook()`, `archiveTicketChannel()` — bot-token helpers that handle the channel lifecycle. Per CLAUDE.md the web still never posts as the bot; the webhook flow keeps every message user-spoofed.
+- Settings UI: Discord channel-category ID fields per ticket-category and per-business fallback. Each category row now displays its Discord mapping (or "uses business fallback").
+- Close action archives the per-ticket channel (renames with `closed-` prefix) so transcripts stay readable but the queue stays clean.
+
+### Changed
+- `docker-compose.yml`: `db` joins `efm-public-net` with alias `tickets-db`. Sets up the shared-DB consolidation — the `euphoric-tickets` bot will switch its `DATABASE_URL` to `postgresql://tickets_web:…@tickets-db:5432/tickets_web` in the next PR and its own Postgres volume gets dropped. Decoupling rule in CLAUDE.md is being retired with that change.
+- `DISCORD_BOT_TOKEN` is now plumbed through the web container env (copied from the bot's `.env` to the web's `.env`; both repos use the same Discord application).
+
 ## [0.2.1] — 2026-05-29
 
 ### Added

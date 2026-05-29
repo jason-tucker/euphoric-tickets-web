@@ -14,6 +14,12 @@ export const ticketCategories = pgTable(
     emoji: text('emoji'),
     description: text('description'),
     sortOrder: text('sort_order').notNull().default('0'),
+
+    // Discord channel category (type GUILD_CATEGORY) under which to create
+    // per-ticket channels for tickets opened in this category. Falls through
+    // to businesses.discord_fallback_category_id when null.
+    discordParentCategoryId: text('discord_parent_category_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({ businessKey: uniqueIndex('ticket_categories_business_key_uq').on(t.businessId, t.key) }),

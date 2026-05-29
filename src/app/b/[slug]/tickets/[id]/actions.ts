@@ -4,9 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { businesses, tickets, ticketMessages, users } from '@/db/schema'
+import { tickets, ticketMessages } from '@/db/schema'
 import { requireBusinessAccess, requireSession } from '@/server/permissions'
-import { postWebhook } from '@/lib/discord'
+import { archiveTicketChannel, postWebhook } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
 
 const replySchema = z.object({
@@ -35,16 +35,19 @@ export async function replyToTicket(
   if (!isAdmin && !isOpener) return { ok: false, error: 'You cannot reply to this ticket' }
   if (t.status === 'closed') return { ok: false, error: 'Cannot reply to a closed ticket' }
 
-  // Post via the business's Discord webhook as the user (per-user spoof).
-  const business = access.business
+  // Prefer the per-ticket channel webhook; fall back to the business-wide
+  // webhook for tickets opened before the per-ticket flow was wired up.
+  const replyWebhook = t.discordWebhookUrl ?? access.business.webhookUrl ?? null
   let discordMessageId: string | null = null
-  if (business.webhookUrl) {
+  if (replyWebhook) {
     try {
       const result = await postWebhook({
-        webhookUrl: business.webhookUrl,
+        webhookUrl: replyWebhook,
         username: session.user.name ?? 'Web user',
         avatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
-        content: `**Ticket #${t.id}** — ${parsed.data.body}`,
+        // Per-ticket channels are dedicated to one ticket, so the prefix
+        // adds noise. Keep it only on the business-wide fallback channel.
+        content: t.discordWebhookUrl ? parsed.data.body : `**Ticket #${t.id}** — ${parsed.data.body}`,
       })
       discordMessageId = result?.id ?? null
     } catch (err) {
@@ -92,6 +95,19 @@ export async function closeTicket(slug: string, ticketId: number): Promise<void>
     .update(tickets)
     .set({ status: 'closed', closedAt: sql`now()`, closedByUserId: session.user.id, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
+
+  // Best-effort: rename the per-ticket channel with a "closed-" prefix so
+  // staff can still read the transcript but the channel sorts out of the
+  // open queue. Failure here doesn't undo the DB close.
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (botToken && t.discordChannelId) {
+    try {
+      await archiveTicketChannel({ botToken, channelId: t.discordChannelId })
+    } catch (err) {
+      console.error('[closeTicket] archive channel failed', err)
+    }
+  }
+
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 

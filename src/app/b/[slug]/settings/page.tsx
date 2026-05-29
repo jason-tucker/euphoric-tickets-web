@@ -79,7 +79,20 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="webhookUrl">Outbound webhook URL</Label>
+              <Label htmlFor="discordFallbackCategoryId">Fallback Discord channel category ID</Label>
+              <Input
+                id="discordFallbackCategoryId"
+                name="discordFallbackCategoryId"
+                defaultValue={business.discordFallbackCategoryId ?? ''}
+                pattern="\d{17,20}"
+                placeholder="e.g. 1234567890123456789"
+              />
+              <p className="text-xs text-muted-foreground">
+                Per-ticket channels get created under this Discord category when the ticket&apos;s own category doesn&apos;t set one. Right-click a category → Copy Category ID (Developer Mode on).
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="webhookUrl">Fallback webhook URL (optional)</Label>
               <Input
                 id="webhookUrl"
                 name="webhookUrl"
@@ -87,7 +100,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 placeholder="https://discord.com/api/webhooks/…"
               />
               <p className="text-xs text-muted-foreground">
-                Per-user spoof posts go here. Create one in any Discord channel: Edit Channel → Integrations → Webhooks.
+                Used only when per-ticket channel creation isn&apos;t configured (no bot token or no category mapped). Every reply goes to this one channel as a user-spoofed webhook post.
               </p>
             </div>
           </CardContent>
@@ -117,6 +130,15 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                       <span className="font-mono">{c.key}</span>
                       {c.description ? <> — {c.description}</> : null}
                     </div>
+                    {c.discordParentCategoryId ? (
+                      <div className="mt-0.5 text-[10px] font-mono text-muted-foreground">
+                        Discord category → {c.discordParentCategoryId}
+                      </div>
+                    ) : (
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">
+                        Uses business fallback Discord category
+                      </div>
+                    )}
                   </div>
                   <form action={deleteCategoryAction.bind(null, slug, c.id)}>
                     <Button type="submit" variant="ghost" size="icon" aria-label={`Delete ${c.label}`}>
@@ -153,6 +175,18 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 <Label htmlFor="cat-sortOrder">Sort</Label>
                 <Input id="cat-sortOrder" name="sortOrder" defaultValue="0" pattern="-?\d+" />
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cat-discordParentCategoryId">Discord channel category ID (optional)</Label>
+              <Input
+                id="cat-discordParentCategoryId"
+                name="discordParentCategoryId"
+                pattern="\d{17,20}"
+                placeholder="e.g. 1234567890123456789"
+              />
+              <p className="text-xs text-muted-foreground">
+                Per-ticket channels for this category get created under this Discord category. Leave blank to use the business&apos;s fallback.
+              </p>
             </div>
             <Button type="submit" variant="secondary">Add category</Button>
           </form>
