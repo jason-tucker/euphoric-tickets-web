@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.3] — 2026-05-29
+
+### Fixed
+- `drizzle.docker.config.cjs`: with drizzle-kit installed at `/opt/drizzle` (out of band from Next's standalone `/app/node_modules`), `require('drizzle-kit')` resolved relative to the config's own directory (`/app`) and missed it. Point at the absolute `/opt/drizzle/node_modules/drizzle-kit` path so the schema-push entrypoint completes and the Next server actually boots.
+
 ## [0.1.2] — 2026-05-29
 
 ### Fixed
