@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.8] — 2026-05-29
+
+### Fixed
+- `src/server/auth.ts`: clicking "Continue with Discord" threw `TypeError: Invalid URL`. The Discord provider override `authorization: { params: { scope } }` replaced the whole `authorization` object instead of merging — Auth.js v5 doesn't deep-merge it — which dropped the provider's default `url: 'https://discord.com/api/oauth2/authorize'`. `signIn` then fell through to `new URL(provider.issuer)` (Discord has no issuer) and threw. Spell out the url alongside the scope override so it survives.
+
 ## [0.1.7] — 2026-05-29
 
 ### Fixed

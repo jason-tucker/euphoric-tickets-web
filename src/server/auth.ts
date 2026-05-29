@@ -50,7 +50,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Discord({
       clientId: process.env.AUTH_DISCORD_ID!,
       clientSecret: process.env.AUTH_DISCORD_SECRET!,
-      authorization: { params: { scope: DISCORD_SCOPES } },
+      // The provider default is `{ url, params: { scope: 'identify email' } }`.
+      // Auth.js v5 doesn't deep-merge — passing `authorization: { params }`
+      // replaces the whole object, dropping the url. Then `signIn` falls
+      // through to `new URL(provider.issuer)` (Discord has no issuer) and
+      // throws "Invalid URL". Spell out the url so the override survives.
+      authorization: {
+        url: 'https://discord.com/api/oauth2/authorize',
+        params: { scope: DISCORD_SCOPES },
+      },
     }),
   ],
   callbacks: {
