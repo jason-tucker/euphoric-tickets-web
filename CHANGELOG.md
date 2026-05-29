@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] — 2026-05-29
+
+### Added (schema only — UI follows in subsequent patches)
+- `businesses.discord_closed_category_id` (text) — where to move closed per-ticket channels. Per-category override below.
+- `businesses.delete_closed_after_days` (integer, nullable) — bot-scheduled cleanup horizon. Null = keep forever.
+- `businesses.terminology` (`'business'|'client'`, default `'business'`) — UI noun toggle.
+- `ticket_categories.discord_closed_category_id` (text) — per-category override for closed destination.
+- `tickets.kind` (`'normal'|'project'`, default `'normal'`) — distinguishes long-term/retainer parents from regular tickets.
+- `tickets.parent_ticket_id` (integer, nullable) — sub-ticket parent reference.
+- `tickets.discord_internal_thread_id` (text, nullable) — lazily-created Discord thread for staff-only internal notes.
+- `ticket_messages.source` enum now includes `'internal'`.
+
+Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle changes for each ship over the next patches; tracked as project items euphoric-tickets-web#1–#11 + euphoric-tickets#1–#11.
+
 ## [0.3.0] — 2026-05-29
 
 ### Added

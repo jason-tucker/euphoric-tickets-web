@@ -2,7 +2,9 @@ import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-c
 import { tickets } from './tickets'
 import { users } from './users'
 
-export const messageSources = ['web', 'discord', 'system'] as const
+// 'internal' = staff-only note; lives in a Discord thread off the main
+// ticket channel (lazily created). See euphoric-tickets-web#5.
+export const messageSources = ['web', 'discord', 'system', 'internal'] as const
 export type MessageSource = (typeof messageSources)[number]
 
 export const ticketMessages = pgTable(

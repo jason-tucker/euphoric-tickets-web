@@ -6,6 +6,9 @@ import { users } from './users'
 export const ticketStatuses = ['open', 'claimed', 'waiting', 'closed'] as const
 export type TicketStatus = (typeof ticketStatuses)[number]
 
+export const ticketKinds = ['normal', 'project'] as const
+export type TicketKind = (typeof ticketKinds)[number]
+
 export const tickets = pgTable(
   'tickets',
   {
@@ -19,6 +22,10 @@ export const tickets = pgTable(
     categoryId: uuid('category_id').references(() => ticketCategories.id),
     subject: text('subject').notNull(),
     status: text('status', { enum: ticketStatuses }).notNull().default('open'),
+    kind: text('kind', { enum: ticketKinds }).notNull().default('normal'),
+    // Sub-tickets reference a `kind='project'` parent. Normal tickets are
+    // always null. See euphoric-tickets-web#6.
+    parentTicketId: integer('parent_ticket_id'),
     assigneeUserId: uuid('assignee_user_id').references(() => users.id),
 
     // Per-ticket Discord channel, created on open by whichever side opens
@@ -30,6 +37,10 @@ export const tickets = pgTable(
     // replies from the web. Stored so we don't recreate one per reply.
     discordWebhookId: text('discord_webhook_id'),
     discordWebhookUrl: text('discord_webhook_url'),
+
+    // Discord thread created lazily off the channel for internal staff notes.
+    // Null until the first internal note is posted. See euphoric-tickets-web#5.
+    discordInternalThreadId: text('discord_internal_thread_id'),
 
     priority: integer('priority').notNull().default(2), // 1=urgent .. 4=low
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),

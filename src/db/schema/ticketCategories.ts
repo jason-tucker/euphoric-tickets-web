@@ -20,6 +20,10 @@ export const ticketCategories = pgTable(
     // to businesses.discord_fallback_category_id when null.
     discordParentCategoryId: text('discord_parent_category_id'),
 
+    // Per-category override for "where closed tickets go". Falls through to
+    // businesses.discord_closed_category_id when null.
+    discordClosedCategoryId: text('discord_closed_category_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({ businessKey: uniqueIndex('ticket_categories_business_key_uq').on(t.businessId, t.key) }),

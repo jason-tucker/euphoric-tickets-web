@@ -1,4 +1,4 @@
-import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 
 // One row per tenant. A business is uniquely tied to a Discord guild.
 export const businesses = pgTable('businesses', {
@@ -24,6 +24,18 @@ export const businesses = pgTable('businesses', {
   // If both this and the per-category mapping are null, we fall back to
   // posting to webhookUrl in a single shared channel.
   discordFallbackCategoryId: text('discord_fallback_category_id'),
+
+  // Per-business "Closed tickets" Discord category. On ticket close the
+  // per-ticket channel is moved here (instead of just renamed). Per-category
+  // override lives on ticket_categories.discord_closed_category_id.
+  discordClosedCategoryId: text('discord_closed_category_id'),
+
+  // Auto-delete closed tickets older than this many days. Null = keep forever.
+  // Bot scheduled job consumes this (issue: euphoric-tickets#5).
+  deleteClosedAfterDays: integer('delete_closed_after_days'),
+
+  // 'business' or 'client' — affects UI nouns. See euphoric-tickets-web#9.
+  terminology: text('terminology', { enum: ['business', 'client'] }).notNull().default('business'),
 
   // Free-form JSON for forward-compat (color, custom labels, etc.).
   settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
