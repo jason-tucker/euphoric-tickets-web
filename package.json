@@ -1,6 +1,6 @@
 {
   "name": "euphoric-tickets-web",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Euphoric Tickets — web UI for the Discord-backed ticket bot",
   "scripts": {
@@ -29,6 +29,7 @@
     "lucide-react": "^0.469.0",
     "next": "15.1.4",
     "next-auth": "5.0.0-beta.25",
+    "nextjs-toploader": "^3.9.17",
     "postgres": "^3.4.9",
     "react": "19.0.0",
     "react-dom": "19.0.0",

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1] — 2026-05-29
+
+### Added
+- **Top progress bar** — `nextjs-toploader` mounted once at the root layout shows a thin animated bar across the top of every route navigation and server-action submit. Color uses the primary brand HSL.
+- **`<SubmitButton>` component** (`src/components/app/submit-button.tsx`) — drop-in for `<Button type="submit">`. Uses `useFormStatus()` to disable itself and show a `Loader2` spinner while the form action is pending. Optional `pendingChildren` swaps the label ("Open ticket" → "Opening…"). Applied to every submit-style button in the app: login, /admin create-business, /t/new open-ticket, /b/[slug]/settings (save settings, delete category, add category), /b/[slug]/tickets/[id] (claim, unclaim, assign, close, reopen, delete-channel, add internal note), plus the reply form.
+- **Server-side dedupe on open-ticket** — `openTicketAction` keeps a tiny in-process Map keyed by `userId + businessId + lowercased(subject)` for 5 seconds. If a second submission arrives within that window with the same key, it redirects to the first ticket's URL instead of inserting another row. Belt-and-suspenders for the client-side disable: covers multi-tab and network-retry double-submits.
+
+Closes the "I clicked New ticket too fast and got two tickets" pain.
+
 ## [0.5.0] — 2026-05-29
 
 ### Added

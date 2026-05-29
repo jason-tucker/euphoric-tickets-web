@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Send } from 'lucide-react'
+import { Loader2, Send } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { replyToTicket } from '@/app/b/[slug]/tickets/[id]/actions'
@@ -45,8 +45,8 @@ export function ReplyForm({ slug, ticketId }: { slug: string; ticketId: number }
       />
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{body.length}/2000</span>
-        <Button type="submit" size="sm" disabled={pending || !body.trim()}>
-          <Send />
+        <Button type="submit" size="sm" disabled={pending || !body.trim()} aria-busy={pending}>
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Send />}
           {pending ? 'Sending…' : 'Send reply'}
         </Button>
       </div>

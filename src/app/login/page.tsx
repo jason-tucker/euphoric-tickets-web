@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { signIn, auth } from '@/server/auth'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/app/submit-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default async function LoginPage({
@@ -35,10 +36,10 @@ export default async function LoginPage({
         </CardHeader>
         <CardContent className="space-y-3">
           <form action={loginWithDiscord}>
-            <Button className="w-full" size="lg" type="submit">
+            <SubmitButton className="w-full" size="lg" pendingChildren="Redirecting to Discord…">
               <DiscordIcon />
               Continue with Discord
-            </Button>
+            </SubmitButton>
           </form>
           <p className="text-center text-xs text-muted-foreground">
             We use Discord for sign-in and to know which communities you're a member of.

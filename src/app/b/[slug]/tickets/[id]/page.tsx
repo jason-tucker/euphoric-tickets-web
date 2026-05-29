@@ -8,6 +8,7 @@ import { ReplyForm } from '@/components/app/reply-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/app/submit-button'
 import { requireBusinessAccess } from '@/server/permissions'
 import { db } from '@/db/client'
 import { businessMembers, tickets, ticketMessages, users } from '@/db/schema'
@@ -134,10 +135,10 @@ export default async function TicketDetailPage({
             </span>
           )}
           {isAdmin && t.status !== 'closed' && (t.assigneeUserId === null) && (
-            <form action={claim}><Button size="sm" variant="secondary">Claim</Button></form>
+            <form action={claim}><SubmitButton size="sm" variant="secondary">Claim</SubmitButton></form>
           )}
           {isAdmin && t.assigneeUserId && t.status !== 'closed' && (
-            <form action={unclaim}><Button size="sm" variant="outline">Unclaim</Button></form>
+            <form action={unclaim}><SubmitButton size="sm" variant="outline">Unclaim</SubmitButton></form>
           )}
           {isAdmin && t.status !== 'closed' && (
             <form action={assign} className="flex items-center gap-1">
@@ -152,18 +153,18 @@ export default async function TicketDetailPage({
                   <option key={s.id} value={s.id}>{s.name ?? s.id.slice(0, 8)}</option>
                 ))}
               </select>
-              <Button size="sm" variant="secondary" type="submit">Assign</Button>
+              <SubmitButton size="sm" variant="secondary">Assign</SubmitButton>
             </form>
           )}
           {canClose && (
-            <form action={close}><Button size="sm" variant="outline">Close</Button></form>
+            <form action={close}><SubmitButton size="sm" variant="outline">Close</SubmitButton></form>
           )}
           {isAdmin && t.status === 'closed' && (
-            <form action={reopen}><Button size="sm" variant="secondary">Reopen</Button></form>
+            <form action={reopen}><SubmitButton size="sm" variant="secondary">Reopen</SubmitButton></form>
           )}
           {isAdmin && t.status === 'closed' && t.discordChannelId && (
             <form action={deleteChannel}>
-              <Button size="sm" variant="destructive">Delete channel</Button>
+              <SubmitButton size="sm" variant="destructive" pendingChildren="Deleting…">Delete channel</SubmitButton>
             </form>
           )}
         </div>
@@ -297,7 +298,7 @@ export default async function TicketDetailPage({
                 placeholder="Add an internal note (staff-only)…"
                 className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
               />
-              <Button type="submit" size="sm" variant="secondary">Add note</Button>
+              <SubmitButton size="sm" variant="secondary" pendingChildren="Adding…">Add note</SubmitButton>
             </form>
           </CardContent>
         </Card>

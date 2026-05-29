@@ -24,6 +24,17 @@ const schema = z.object({
   parentTicketId: z.string().regex(/^\d+$/).optional().or(z.literal('')),
 })
 
+// Tiny per-process dedupe: same opener + business + subject within 5s →
+// treat it as a re-submit of the in-flight one, not a new ticket. Belt-
+// and-suspenders for `<SubmitButton>`'s client-side disable. Resets on
+// process restart, which is the point.
+const recentSubmits = new Map<string, { ticketId: number; at: number }>()
+const SUBMIT_DEDUPE_MS = 5_000
+
+function dedupeKey(userId: string, businessId: string, subject: string): string {
+  return `${userId}:${businessId}:${subject.trim().toLowerCase()}`
+}
+
 function channelSlug(subject: string, id: number): string {
   // Discord channel names: lowercase, hyphens, no spaces. Keep it human.
   const slug = subject
@@ -49,6 +60,13 @@ export async function openTicketAction(formData: FormData): Promise<void> {
 
   const access = await resolveBusinessAccess(parsed.data.businessSlug)
   if (!access) throw new Error('You are not a member of that community.')
+
+  // Dedupe rapid resubmits before doing any DB writes / Discord calls.
+  const key = dedupeKey(session.user.id, access.business.id, parsed.data.subject)
+  const recent = recentSubmits.get(key)
+  if (recent && Date.now() - recent.at < SUBMIT_DEDUPE_MS) {
+    redirect(`/b/${access.business.slug}/tickets/${recent.ticketId}`)
+  }
 
   let category: typeof ticketCategories.$inferSelect | null = null
   if (parsed.data.categoryId) {
@@ -85,6 +103,16 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       parentTicketId,
     })
     .returning()
+
+  // Record successful insert for the dedupe window. Best-effort: also
+  // garbage-collect stale entries so the map doesn't grow forever.
+  recentSubmits.set(key, { ticketId: row.id, at: Date.now() })
+  if (recentSubmits.size > 256) {
+    const cutoff = Date.now() - SUBMIT_DEDUPE_MS
+    for (const [k, v] of recentSubmits) {
+      if (v.at < cutoff) recentSubmits.delete(k)
+    }
+  }
 
   await db.insert(ticketMessages).values({
     ticketId: row.id,

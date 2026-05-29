@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/app/submit-button'
 import { createBusinessAction } from './actions'
 
 export default async function AdminPage() {
@@ -67,7 +68,7 @@ export default async function AdminPage() {
                   placeholder="https://discord.com/api/webhooks/…"
                 />
               </div>
-              <Button type="submit">Create business</Button>
+              <SubmitButton pendingChildren="Creating…">Create business</SubmitButton>
             </form>
           </CardContent>
         </Card>

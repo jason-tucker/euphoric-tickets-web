@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/app/submit-button'
 import { listMyBusinesses, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
 import { ticketCategories } from '@/db/schema'
@@ -133,7 +134,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                 />
               </div>
 
-              <Button type="submit">Open ticket</Button>
+              <SubmitButton pendingChildren="Opening…">Open ticket</SubmitButton>
             </form>
           </CardContent>
         </Card>

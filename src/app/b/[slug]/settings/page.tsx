@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/app/submit-button'
 import { addCategoryAction, deleteCategoryAction, saveBusinessSettings } from './actions'
 
 export default async function BusinessSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -156,7 +157,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           </CardContent>
         </Card>
 
-        <Button type="submit">Save settings</Button>
+        <SubmitButton pendingChildren="Saving…">Save settings</SubmitButton>
       </form>
 
       <Card>
@@ -196,9 +197,9 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                     ) : null}
                   </div>
                   <form action={deleteCategoryAction.bind(null, slug, c.id)}>
-                    <Button type="submit" variant="ghost" size="icon" aria-label={`Delete ${c.label}`}>
+                    <SubmitButton variant="ghost" size="icon" aria-label={`Delete ${c.label}`}>
                       <Trash2 className="h-4 w-4" />
-                    </Button>
+                    </SubmitButton>
                   </form>
                 </li>
               ))}
@@ -257,7 +258,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 </p>
               </div>
             </div>
-            <Button type="submit" variant="secondary">Add category</Button>
+            <SubmitButton variant="secondary" pendingChildren="Adding…">Add category</SubmitButton>
           </form>
         </CardContent>
       </Card>
