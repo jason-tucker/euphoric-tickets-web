@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.10] — 2026-05-29
+
+### Fixed
+- `src/server/auth.ts`: after OAuth succeeded, the very next request to `/dashboard` returned Chrome's `ERR_HTTP_RESPONSE_CODE_FAILURE 431 (Request Header Fields Too Large)` for users in many Discord servers. The JWT-encrypted session cookie embedded the full raw `guilds` array from Discord (`name`, `icon`, `features`, `owner`, `permissions`) and quickly blew past the ~8KB header limit. Strip each guild to just `{id, permissions}` before stashing in the JWT — the only two fields `src/server/permissions.ts` actually reads.
+
 ## [0.1.9] — 2026-05-29
 
 ### Fixed

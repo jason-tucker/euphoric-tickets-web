@@ -20,8 +20,6 @@ const DISCORD_SCOPES = 'identify email guilds'
 
 export type DiscordGuildSnapshot = {
   id: string
-  name: string
-  icon: string | null
   permissions: string
 }
 
@@ -123,7 +121,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             cache: 'no-store',
           })
           if (res.ok) {
-            t.guilds = (await res.json()) as DiscordGuildSnapshot[]
+            // Strip to {id, permissions} — Discord's raw guild objects
+            // include `name`, `icon`, `features`, `owner`, etc., which
+            // together can blow the JWT-encrypted session cookie past
+            // Chrome's 8KB request-header limit for users in many servers.
+            // permission resolution only reads id + permissions anyway.
+            const raw = (await res.json()) as Array<{ id: string; permissions: string }>
+            t.guilds = raw.map((g) => ({ id: g.id, permissions: g.permissions }))
             t.guildsFetchedAt = Date.now()
           }
         } catch {
