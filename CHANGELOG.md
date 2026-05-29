@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5] — 2026-05-29
+
+### Fixed
+- `Dockerfile` / `scripts/docker-entrypoint.sh`: drizzle-kit's "required packages" probe for drizzle-orm doesn't honor `NODE_PATH`, so the v0.1.4 attempt to point at `/app/node_modules` from `/opt/drizzle` still failed at boot. Install `drizzle-orm@0.45.2` (the lockfile pin) alongside drizzle-kit in `/opt/drizzle` so they resolve as siblings, and drop the now-unused NODE_PATH wrapper.
+
 ## [0.1.4] — 2026-05-29
 
 ### Fixed
