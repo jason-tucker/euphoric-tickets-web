@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# euphoric-tickets-web — management CLI
+set -Eeuo pipefail
+
+SERVICE="web"
+
+detect_project_dir() {
+  if [ -n "${PROJECT_DIR:-}" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then echo "$PROJECT_DIR"; return; fi
+  for c in \
+    "$HOME/projects/euphoric-tickets-web" \
+    "/home/botuser/projects/euphoric-tickets-web" \
+    "/root/projects/euphoric-tickets-web" \
+    "$(pwd)"; do
+    if [ -f "$c/docker-compose.yml" ]; then echo "$c"; return; fi
+  done
+  echo "ERROR: project dir not found" >&2; exit 1
+}
+
+cd "$(detect_project_dir)"
+
+cmd="${1:-status}"; shift || true
+case "$cmd" in
+  start)    docker compose up -d "$@" && docker compose ps ;;
+  stop)     docker compose stop ;;
+  restart)  docker compose restart "$SERVICE" ;;
+  status|ps) docker compose ps ;;
+  logs)     docker compose logs "$SERVICE" -f --tail=50 "$@" ;;
+  tail)     docker compose logs "$SERVICE" --tail="${1:-30}" ;;
+  pull)     docker compose pull "$@" ;;
+  update)   git fetch --all && git reset --hard origin/main && docker compose pull "$SERVICE" && docker compose up -d --remove-orphans ;;
+  build)    docker compose build "$@" ;;
+  rebuild)  docker compose up -d --build --remove-orphans ;;
+  shell|exec) docker compose exec "$SERVICE" sh ;;
+  db:shell|psql) docker compose exec db psql -U tickets_web tickets_web ;;
+  env)      ${EDITOR:-nano} .env && docker compose up -d ;;
+  where)    pwd ;;
+  *)
+    cat <<EOF
+Usage: euphoric-tickets-web <command>
+  start | stop | restart | status | logs | tail [N] | pull | update
+  build | rebuild | shell | db:shell | env | where
+EOF
+    ;;
+esac

@@ -1,0 +1,17 @@
+node_modules
+.next
+.next/types
+out
+dist
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+
+# Drizzle schema is pushed directly — no SQL migration files.
+src/db/migrations/
+
+.claude/

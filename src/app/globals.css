@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Default dark theme — the CW-Manage-style dark UI is the primary look.
+       Light scheme is offered via `media (prefers-color-scheme: light)`. */
+    --background: 222 24% 6%;
+    --foreground: 210 30% 96%;
+    --card: 222 22% 9%;
+    --card-foreground: 210 30% 96%;
+    --popover: 222 22% 8%;
+    --popover-foreground: 210 30% 96%;
+    --primary: 267 84% 64%;
+    --primary-foreground: 222 24% 6%;
+    --secondary: 222 16% 14%;
+    --secondary-foreground: 210 30% 96%;
+    --muted: 222 14% 16%;
+    --muted-foreground: 215 16% 65%;
+    --accent: 222 16% 14%;
+    --accent-foreground: 210 30% 96%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 30% 96%;
+    --border: 222 14% 18%;
+    --input: 222 14% 18%;
+    --ring: 267 84% 64%;
+    --radius: 0.6rem;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { color-scheme: dark; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+}
+
+/* Mobile-first: extra-tight gutters for FiveM CEF phone screens (~360px). */
+@media (max-width: 380px) {
+  .container { padding-left: 0.75rem; padding-right: 0.75rem; }
+}

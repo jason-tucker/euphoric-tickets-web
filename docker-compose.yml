@@ -1,0 +1,96 @@
+# euphoric-tickets-web — Next.js + Postgres.
+#
+# The `web` service is bound to 127.0.0.1:6095 only. Public ingress for
+# tickets.euphoric.fm is provided by the euphoricfm-website Caddy container
+# via the shared `efm-public-net` external network (it adds a server block
+# that reverse-proxies the hostname to `web:3000`).
+#
+# Watchtower polls GHCR every 60s and auto-pulls a new :latest when CI pushes.
+
+services:
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/jason-tucker/euphoric-tickets-web:latest}
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Force the in-container DATABASE_URL onto the compose-managed db
+      # service regardless of what the .env says (.env stays usable for
+      # local-dev outside Docker).
+      DATABASE_URL: "postgresql://tickets_web:${POSTGRES_PASSWORD:-tickets_web_dev}@db:5432/tickets_web"
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    # Loopback-only on the host. The shared external network is what makes
+    # the public Caddy able to reach us.
+    ports:
+      - "127.0.0.1:6095:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      default: {}
+      efm-public-net:
+        # The efm-website Caddy reaches us at this hostname via the shared
+        # network. Keep this stable — changing it requires updating the
+        # Caddyfile in the euphoricfm-website repo.
+        aliases:
+          - tickets-web
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tickets_web
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tickets_web_dev}
+      POSTGRES_DB: tickets_web
+    # No host port — the bot uses its own postgres and we keep this isolated.
+    # Reach it from the VPS host with: docker exec -it euphoric-tickets-web-db-1 psql -U tickets_web
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets_web"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  watchtower:
+    image: nickfedor/watchtower:latest
+    restart: unless-stopped
+    command:
+      - --label-enable
+      - --cleanup
+      - --interval=60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  # Shared with the euphoricfm-website stack. Create once on the host:
+  #   docker network create efm-public-net
+  efm-public-net:
+    external: true
+
+volumes:
+  postgres_data:
