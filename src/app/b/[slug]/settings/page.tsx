@@ -1,14 +1,24 @@
+import { asc, eq } from 'drizzle-orm'
+import { Trash2 } from 'lucide-react'
 import { requireBusinessAccess } from '@/server/permissions'
+import { db } from '@/db/client'
+import { ticketCategories } from '@/db/schema'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { saveBusinessSettings } from './actions'
+import { addCategoryAction, deleteCategoryAction, saveBusinessSettings } from './actions'
 
 export default async function BusinessSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const { business } = await requireBusinessAccess(slug, 'admin')
+
+  const cats = await db
+    .select()
+    .from(ticketCategories)
+    .where(eq(ticketCategories.businessId, business.id))
+    .orderBy(asc(ticketCategories.sortOrder), asc(ticketCategories.label))
 
   return (
     <main className="container max-w-2xl space-y-6 py-6">
@@ -85,6 +95,69 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
 
         <Button type="submit">Save settings</Button>
       </form>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ticket categories</CardTitle>
+          <CardDescription>
+            Drives the &quot;Open a ticket&quot; form&apos;s category picker. End users see the label and emoji.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {cats.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No categories yet — add one below.</p>
+          ) : (
+            <ul className="divide-y">
+              {cats.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 py-2">
+                  <span className="text-xl" aria-hidden>{c.emoji ?? '·'}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{c.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      <span className="font-mono">{c.key}</span>
+                      {c.description ? <> — {c.description}</> : null}
+                    </div>
+                  </div>
+                  <form action={deleteCategoryAction.bind(null, slug, c.id)}>
+                    <Button type="submit" variant="ghost" size="icon" aria-label={`Delete ${c.label}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form action={addCategoryAction.bind(null, slug)} className="space-y-3 border-t pt-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="cat-key">Key</Label>
+                <Input id="cat-key" name="key" placeholder="billing" pattern="[a-z0-9][a-z0-9_-]*" required />
+                <p className="text-xs text-muted-foreground">Internal id, lowercase. Unique per business.</p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cat-label">Label</Label>
+                <Input id="cat-label" name="label" placeholder="Billing" required />
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[6rem_1fr_6rem]">
+              <div className="space-y-1">
+                <Label htmlFor="cat-emoji">Emoji</Label>
+                <Input id="cat-emoji" name="emoji" placeholder="💳" maxLength={8} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cat-description">Description</Label>
+                <Input id="cat-description" name="description" placeholder="Charges, refunds, subscriptions." />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cat-sortOrder">Sort</Label>
+                <Input id="cat-sortOrder" name="sortOrder" defaultValue="0" pattern="-?\d+" />
+              </div>
+            </div>
+            <Button type="submit" variant="secondary">Add category</Button>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   )
 }

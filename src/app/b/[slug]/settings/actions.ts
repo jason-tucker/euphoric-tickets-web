@@ -1,10 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { businesses } from '@/db/schema'
+import { businesses, ticketCategories } from '@/db/schema'
 import { requireBusinessAccess } from '@/server/permissions'
 
 const settingsSchema = z.object({
@@ -53,4 +53,48 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
 
   revalidatePath(`/b/${slug}`)
   revalidatePath(`/b/${slug}/settings`)
+}
+
+const categorySchema = z.object({
+  key: z.string().min(1).max(40).regex(/^[a-z0-9][a-z0-9_-]*$/, 'lowercase letters, digits, _ and -'),
+  label: z.string().min(1).max(80),
+  emoji: z.string().max(8).optional(),
+  description: z.string().max(200).optional(),
+  sortOrder: z.string().regex(/^-?\d+$/).optional(),
+})
+
+export async function addCategoryAction(slug: string, formData: FormData): Promise<void> {
+  const { business } = await requireBusinessAccess(slug, 'admin')
+
+  const parsed = categorySchema.safeParse({
+    key: String(formData.get('key') ?? '').trim().toLowerCase(),
+    label: String(formData.get('label') ?? '').trim(),
+    emoji: String(formData.get('emoji') ?? '').trim() || undefined,
+    description: String(formData.get('description') ?? '').trim() || undefined,
+    sortOrder: String(formData.get('sortOrder') ?? '').trim() || undefined,
+  })
+  if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
+
+  await db.insert(ticketCategories).values({
+    businessId: business.id,
+    key: parsed.data.key,
+    label: parsed.data.label,
+    emoji: parsed.data.emoji ?? null,
+    description: parsed.data.description ?? null,
+    sortOrder: parsed.data.sortOrder ?? '0',
+  })
+
+  revalidatePath(`/b/${slug}/settings`)
+  revalidatePath('/t/new')
+}
+
+export async function deleteCategoryAction(slug: string, categoryId: string): Promise<void> {
+  const { business } = await requireBusinessAccess(slug, 'admin')
+
+  await db
+    .delete(ticketCategories)
+    .where(and(eq(ticketCategories.id, categoryId), eq(ticketCategories.businessId, business.id)))
+
+  revalidatePath(`/b/${slug}/settings`)
+  revalidatePath('/t/new')
 }

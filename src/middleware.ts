@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PROTECTED_PREFIXES = ['/dashboard', '/b/', '/t/']
+const PROTECTED_PREFIXES = ['/dashboard', '/b/', '/t/', '/admin']
 
 // We rely on auth() inside server components for fine-grained access
 // control. This middleware is just a cheap "send unauth'd users to /login"
@@ -31,5 +31,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/b/:path*', '/t/:path*'],
+  matcher: ['/dashboard/:path*', '/b/:path*', '/t/:path*', '/admin/:path*'],
 }

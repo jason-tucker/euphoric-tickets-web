@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { TicketIcon } from 'lucide-react'
 import { auth, signOut } from '@/server/auth'
 import { listMyBusinesses } from '@/server/permissions'
+import { currentUserIsSudo } from '@/server/sudo'
 import { BusinessSwitcher } from './business-switcher'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -16,7 +17,10 @@ import {
 export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: string }) {
   const session = await auth()
   const myBusinesses = session?.user ? await listMyBusinesses() : []
-  const active = myBusinesses.find((b) => b.business.slug === activeBusinessSlug)?.business
+  const active = myBusinesses.find((b) => b.business.slug === activeBusinessSlug)
+  const activeBusiness = active?.business
+  const isActiveAdmin = active && (active.level === 'admin' || active.level === 'owner')
+  const isSudo = session?.user ? await currentUserIsSudo() : false
 
   async function logout() {
     'use server'
@@ -40,7 +44,7 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
         </Link>
         <div className="ml-1">
           <BusinessSwitcher
-            current={active ? { slug: active.slug, name: active.name } : null}
+            current={activeBusiness ? { slug: activeBusiness.slug, name: activeBusiness.name } : null}
             businesses={myBusinesses.map(({ business, level }) => ({
               slug: business.slug,
               name: business.name,
@@ -76,6 +80,28 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 <DropdownMenuItem asChild>
                   <Link href="/t/new">Open a ticket</Link>
                 </DropdownMenuItem>
+                {activeBusiness && isActiveAdmin && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                      {activeBusiness.name}
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/b/${activeBusiness.slug}/tickets`}>Ticket queue</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/b/${activeBusiness.slug}/settings`}>Business settings</Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {isSudo && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin">Admin</Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <form action={logout}>
                   <DropdownMenuItem asChild>

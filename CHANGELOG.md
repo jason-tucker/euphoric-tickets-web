@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1] — 2026-05-29
+
+### Added
+- `/admin` — sudo-only page with a **Create business** form (slug, display name, Discord guild ID, optional description + webhook URL) and a list of every business in the app. Guarded server-side by `requireSudo()`; included in the middleware's auth-cookie matcher.
+- `/b/[slug]/settings` — ticket categories CRUD. Lists every category for the business, lets admins add a new one (key + label + emoji + description + sort order), and delete existing rows. Revalidates `/t/new` so the open-ticket form picks up changes immediately.
+- TopNav user dropdown — surfaces **Ticket queue** + **Business settings** for the currently-active business when the user is admin/owner there, and an **Admin** link when the user is sudo. Brings every configurable surface into the UI so SQL pokes aren't required.
+- `src/server/sudo.ts` — `currentUserIsSudo()` (cheap nav-time check) and `requireSudo()` (hard guard).
+
 ## [0.2.0] — 2026-05-29
 
 ### Added
