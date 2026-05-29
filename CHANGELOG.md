@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1] — 2026-05-29
+
+### Fixed
+- `src/server/auth.ts`: cast `session.user` through `unknown` before `Record<string, unknown>` so the session callback compiles against `AdapterUser`'s narrower shape — the prior direct cast was rejected by TS as "neither type sufficiently overlaps" and broke the CI build, blocking the very first GHCR image.
+
 ## [0.1.0] — 2026-05-29
 
 ### Added
@@ -13,4 +18,4 @@
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.1.0`
+`v0.1.1`

@@ -126,7 +126,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // AdapterUser intersection check because our augmented Session.user
       // is a different shape. Mutation keeps the underlying type unchanged
       // while still adding our fields.
-      const u = session.user as Record<string, unknown>
+      const u = session.user as unknown as Record<string, unknown>
       u.id = (t.userId as string) ?? ''
       u.discordId = (t.discordId as string) ?? ''
       u.avatarHash = (t.avatarHash as string | null | undefined) ?? null
