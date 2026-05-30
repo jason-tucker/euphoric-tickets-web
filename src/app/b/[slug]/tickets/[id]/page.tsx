@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { asc, eq } from 'drizzle-orm'
-import { ArrowLeft, ExternalLink, Hash, Server } from 'lucide-react'
+import { asc, eq, inArray } from 'drizzle-orm'
+import { ArrowLeft, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react'
+import { DiscordPicker } from '@/components/app/discord-picker'
+import { fetchChannelMemberIds } from '@/lib/discord'
 import { StatusBadge } from '@/components/app/status-badge'
 import { ReplyForm } from '@/components/app/reply-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,11 +16,13 @@ import { businesses, businessMembers, tickets, ticketCategories, ticketMessages,
 import { relativeTime } from '@/lib/format'
 import {
   addInternalNote,
+  addTicketMember,
   assignTicket,
   changeTicketCategory,
   claimTicket,
   closeTicket,
   deleteTicketChannel,
+  removeTicketMember,
   reopenTicket,
   unclaimTicket,
 } from './actions'
@@ -122,6 +126,23 @@ export default async function TicketDetailPage({
   const messages = allMessages.filter((m) => m.source !== 'internal')
   const internalNotes = isStaff ? allMessages.filter((m) => m.source === 'internal') : []
 
+  // P6: people explicitly added to the Discord channel (member overwrites).
+  // Staff-only, best-effort, one Discord call.
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  const peopleIds =
+    ticketAccess.canManageMembers && t.discordChannelId && botToken
+      ? await fetchChannelMemberIds(botToken, t.discordChannelId).catch(() => [] as string[])
+      : []
+  const peopleRows = peopleIds.length
+    ? await db
+        .select({ discordId: users.discordId, name: users.name, image: users.image })
+        .from(users)
+        .where(inArray(users.discordId, peopleIds))
+    : []
+  const people = peopleIds.map(
+    (pid) => peopleRows.find((p) => p.discordId === pid) ?? { discordId: pid, name: null, image: null },
+  )
+
   // Deep link into the actual Discord client/web at the per-ticket channel.
   const discordChannelUrl =
     t.discordChannelId && access.business.discordGuildId
@@ -142,6 +163,7 @@ export default async function TicketDetailPage({
   async function deleteChannel() { 'use server'; await deleteTicketChannel(slug, t.id) }
   async function note(formData: FormData) { 'use server'; await addInternalNote(slug, t.id, formData) }
   async function changeCat(formData: FormData) { 'use server'; await changeTicketCategory(slug, t.id, formData) }
+  async function addPerson(formData: FormData) { 'use server'; await addTicketMember(slug, t.id, formData) }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
@@ -347,6 +369,53 @@ export default async function TicketDetailPage({
             <p className="mt-2 text-xs text-muted-foreground">
               Cmd/Ctrl+Enter to send. Your reply posts to the linked Discord channel as you (your Discord name + avatar).
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {ticketAccess.canManageMembers && t.status !== 'closed' && t.discordChannelId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">People</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {people.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Just the opener and staff roles so far. Add a specific Discord member below.
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {people.map((p) => {
+                  const isOpener = opener?.discordId === p.discordId
+                  return (
+                    <li key={p.discordId} className="flex items-center gap-2 py-1.5">
+                      <Avatar className="h-6 w-6">
+                        {p.image && <AvatarImage src={p.image} alt="" />}
+                        <AvatarFallback className="text-[9px]">{(p.name ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <span className="flex-1 truncate text-sm">{p.name ?? p.discordId}</span>
+                      {isOpener ? (
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">opener</span>
+                      ) : (
+                        <form action={async () => { 'use server'; await removeTicketMember(slug, t.id, p.discordId) }}>
+                          <SubmitButton variant="ghost" size="icon" aria-label={`Remove ${p.name ?? p.discordId}`}>
+                            <X className="h-3.5 w-3.5" />
+                          </SubmitButton>
+                        </form>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <form action={addPerson} className="flex items-end gap-2 border-t pt-3">
+              <div className="flex-1">
+                <DiscordPicker kind="user" guildId={access.business.discordGuildId} name="userId" triggerLabel="Search a member to add…" />
+              </div>
+              <SubmitButton size="sm" variant="secondary" pendingChildren="Adding…">
+                <UserPlus className="mr-1 h-3.5 w-3.5" /> Add
+              </SubmitButton>
+            </form>
           </CardContent>
         </Card>
       )}

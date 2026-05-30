@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.11] — 2026-05-30 — Lantern P6: People card (add/remove members on the web)
+
+### Added
+- **"People" card** on `/b/[slug]/tickets/[id]` (staff/admin, non-closed tickets) — lists the per-user Discord channel overwrites with avatars, and an add row using `<DiscordPicker kind="user" />`.
+  - `addTicketMember` — upserts a `users` row (name/avatar resolved via `fetchGuildMemberAsBot`), grants the channel overwrite (`addChannelMember`), and posts a `-# … was added to the ticket by @x` footer.
+  - `removeTicketMember` — revokes the overwrite (`removeChannelMember`), refuses the opener, posts the matching footer.
+- New `lib/discord.ts` helpers: `fetchChannelMemberIds`, `addChannelMember`, `removeChannelMember`.
+
+This finishes the web side of the lifecycle status footers (the add/remove footers were deferred from the earlier footer change until this card existed). Discord channel overwrites remain the single source of truth — same model as the bot's `/tickets add|remove`.
+
+Closes euphoric-tickets-web#19.
+
 ## [0.6.10] — 2026-05-30 — Lantern P5: change a ticket's category (web)
 
 ### Added
@@ -329,4 +341,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.10 · 45b12a5`
+`v0.6.11 · pending`

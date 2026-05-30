@@ -363,6 +363,41 @@ export async function postBotMessageToThread(input: {
   return (await res.json()) as { id: string }
 }
 
+// P6: list the per-user (type 1) permission overwrites on a ticket channel —
+// i.e. the people explicitly added to the ticket. Returns their user ids.
+export async function fetchChannelMemberIds(botToken: string, channelId: string): Promise<string[]> {
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) return []
+  const ch = (await res.json()) as { permission_overwrites?: Array<{ id: string; type: number }> }
+  return (ch.permission_overwrites ?? []).filter((o) => o.type === 1).map((o) => o.id)
+}
+
+// P6: grant a user access to a ticket channel (member overwrite, type 1).
+export async function addChannelMember(botToken: string, channelId: string, userId: string): Promise<void> {
+  // ViewChannel|SendMessages|ReadMessageHistory|AttachFiles|EmbedLinks
+  const ALLOW = String((1 << 10) | (1 << 11) | (1 << 16) | (1 << 15) | (1 << 14))
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}/permissions/${userId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 1, allow: ALLOW, deny: '0' }),
+  })
+  if (!res.ok) throw new Error(`addChannelMember failed: ${res.status} ${await res.text()}`)
+}
+
+// P6: revoke a user's channel overwrite.
+export async function removeChannelMember(botToken: string, channelId: string, userId: string): Promise<void> {
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}/permissions/${userId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken}` },
+  })
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`removeChannelMember failed: ${res.status} ${await res.text()}`)
+  }
+}
+
 // P5: move a ticket channel under a new Discord parent category and grant the
 // new category's staff roles channel access (additive — existing overwrites
 // stay). Best-effort; mirrors the bot's changeTicketCategory.

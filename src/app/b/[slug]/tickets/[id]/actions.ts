@@ -12,13 +12,16 @@ import {
   type TicketAccessFlags,
 } from '@/server/permissions'
 import {
+  addChannelMember,
   archiveTicketChannel,
   changeTicketChannelCategory,
   createPrivateThread,
   deleteDiscordChannel,
+  fetchGuildMemberAsBot,
   postBotMessageToThread,
   postChannelStatus,
   postWebhook,
+  removeChannelMember,
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
@@ -388,6 +391,71 @@ export async function changeTicketCategory(
   }
 
   await postStatus(ctx.ticket, `Ticket category changed to ${cat.label} by <@${ctx.session.user.discordId}>`)
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
+// P6: add a guild member to the ticket channel (staff/admin). Upserts a
+// users row so they attribute correctly, grants the channel overwrite, and
+// posts a status footer.
+export async function addTicketMember(
+  slug: string,
+  ticketId: number,
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return { ok: false, error: 'Not found' }
+  if (!ctx.flags.canManageMembers) return { ok: false, error: 'Staff only' }
+
+  const discordUserId = String(formData.get('userId') ?? '').trim()
+  if (!/^\d{17,20}$/.test(discordUserId)) return { ok: false, error: 'Pick a user' }
+  if (!ctx.ticket.discordChannelId) return { ok: false, error: 'This ticket has no Discord channel' }
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (!botToken) return { ok: false, error: 'Bot not configured' }
+
+  // Resolve name/avatar (best-effort) + upsert into users.
+  const member = await fetchGuildMemberAsBot(botToken, ctx.business.discordGuildId, discordUserId).catch(() => null)
+  const name = member?.nick ?? member?.user?.global_name ?? member?.user?.username ?? null
+  const image = member?.user?.avatar
+    ? `https://cdn.discordapp.com/avatars/${discordUserId}/${member.user.avatar}.png`
+    : null
+  await db
+    .insert(users)
+    .values({ discordId: discordUserId, name, image })
+    .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
+
+  try {
+    await addChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId)
+  } catch (err) {
+    return { ok: false, error: 'Discord rejected the add: ' + String(err) }
+  }
+
+  await postStatus(ctx.ticket, `<@${discordUserId}> was added to the ticket by <@${ctx.session.user.discordId}>`)
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+  return { ok: true }
+}
+
+// P6: remove a member's channel overwrite (staff/admin). Refuses the opener.
+export async function removeTicketMember(slug: string, ticketId: number, discordUserId: string): Promise<void> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canManageMembers) return
+  if (!/^\d{17,20}$/.test(discordUserId)) return
+  if (!ctx.ticket.discordChannelId) return
+
+  // Don't remove the opener — close the ticket instead.
+  const [opener] = await db
+    .select({ discordId: users.discordId })
+    .from(users)
+    .where(eq(users.id, ctx.ticket.openerUserId))
+    .limit(1)
+  if (opener?.discordId === discordUserId) return
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (!botToken) return
+  await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
+
+  await postStatus(ctx.ticket, `<@${discordUserId}> was removed from the ticket by <@${ctx.session.user.discordId}>`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
