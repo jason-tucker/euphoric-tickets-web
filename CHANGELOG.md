@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.14] — 2026-05-30 — Lantern P9: sortable ticket lists
+
+### Added
+- **Clickable, URL-driven sort** on both the per-team queue (`/b/[slug]/tickets`) and the all-tickets tab (`/tickets`). New `<SortHeader>` + `parseSort()` in `components/app/sort-header.tsx` toggle `?sort=&dir=` while preserving the rest of the query string.
+- Sortable columns: id, subject, status, last activity, opener (both pages) and team (all-tickets). Default remains last-activity desc.
+- The per-team status-filter pills are unchanged and compose with sort.
+
+Closes euphoric-tickets-web#22.
+
+## [0.6.13] — 2026-05-30 — Lantern P8: "All tickets" cross-business tab
+
+### Added
+- **`/tickets`** — a cross-business view: every ticket in a team you administer, plus your own tickets in any team you belong to. One query (`business_id IN <admin teams>` OR `opener = me AND business_id IN <my teams>`), ordered by last activity, capped at 300. Columns include **Team** so you can scan which team owns each row.
+- **"All tickets" link** in the top-nav user menu (shown to anyone who administers at least one team, or sudo).
+
+Sorting + filtering land in P9. Closes euphoric-tickets-web#21.
+
 ## [0.6.12] — 2026-05-30 — Lantern P7: live conversation refresh (SSE + LISTEN/NOTIFY)
 
 ### Added
@@ -353,4 +370,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.12 · cde7cc9`
+`v0.6.13 · ab71e30`

@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
+import { SortHeader, parseSort } from '@/components/app/sort-header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { listMyBusinesses, requireSession } from '@/server/permissions'
@@ -9,15 +10,36 @@ import { db } from '@/db/client'
 import { businesses, tickets, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 
+const SORT_KEYS = ['last', 'opened', 'id', 'subject', 'status', 'team', 'opener'] as const
+
 // P8 (lantern) — "All tickets I can see". Cross-business view: every ticket in
 // a team the signed-in user administers, plus their own tickets in any team
-// they belong to. One query, no fan-out.
-export default async function AllTicketsPage() {
+// they belong to. One query, no fan-out. P9 adds URL sort state.
+export default async function AllTicketsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>
+}) {
   const session = await requireSession()
   const my = await listMyBusinesses()
+  const sp = await searchParams
+  const { sort, dir } = parseSort(sp, SORT_KEYS, 'last')
 
   const allIds = my.map((b) => b.business.id)
   const adminIds = my.filter((b) => b.level === 'admin' || b.level === 'owner').map((b) => b.business.id)
+
+  const d = dir === 'asc' ? asc : desc
+  const orderBy: SQL = (() => {
+    switch (sort) {
+      case 'opened': return d(tickets.openedAt)
+      case 'id': return d(tickets.id)
+      case 'subject': return d(tickets.subject)
+      case 'status': return d(tickets.status)
+      case 'team': return d(businesses.name)
+      case 'opener': return d(users.name)
+      default: return d(tickets.lastActivityAt)
+    }
+  })()
 
   const rows =
     allIds.length === 0
@@ -43,8 +65,10 @@ export default async function AllTicketsPage() {
               and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, allIds)),
             ),
           )
-          .orderBy(desc(tickets.lastActivityAt))
+          .orderBy(orderBy)
           .limit(300)
+
+  const hp = { sort, dir }
 
   // Admins land on the team queue view of a row; non-admins on their own ticket.
   const adminSet = new Set(adminIds)
@@ -76,12 +100,24 @@ export default async function AllTicketsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead className="hidden md:table-cell">Team</TableHead>
-                    <TableHead className="hidden lg:table-cell">Opener</TableHead>
-                    <TableHead className="w-20">Status</TableHead>
-                    <TableHead className="hidden w-32 sm:table-cell">Last activity</TableHead>
+                    <TableHead className="w-12">
+                      <SortHeader label="#" sortKey="id" activeSort={sort} activeDir={dir} basePath="/tickets" params={hp} />
+                    </TableHead>
+                    <TableHead>
+                      <SortHeader label="Subject" sortKey="subject" activeSort={sort} activeDir={dir} basePath="/tickets" params={hp} />
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      <SortHeader label="Team" sortKey="team" activeSort={sort} activeDir={dir} basePath="/tickets" params={hp} />
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      <SortHeader label="Opener" sortKey="opener" activeSort={sort} activeDir={dir} basePath="/tickets" params={hp} />
+                    </TableHead>
+                    <TableHead className="w-20">
+                      <SortHeader label="Status" sortKey="status" activeSort={sort} activeDir={dir} basePath="/tickets" params={hp} />
+                    </TableHead>
+                    <TableHead className="hidden w-32 sm:table-cell">
+                      <SortHeader label="Last activity" sortKey="last" activeSort={sort} activeDir={dir} basePath="/tickets" params={hp} />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, type SQL } from 'drizzle-orm'
 import { ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/components/app/status-badge'
+import { SortHeader, parseSort } from '@/components/app/sort-header'
 import { requireBusinessAccess } from '@/server/permissions'
 import { db } from '@/db/client'
 import { businesses, tickets, ticketStatuses, users, type TicketStatus } from '@/db/schema'
@@ -11,13 +12,14 @@ import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 const ALL_STATUS = 'all' as const
+const SORT_KEYS = ['last', 'opened', 'id', 'subject', 'status', 'opener'] as const
 
 export default async function TicketQueuePage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; sort?: string; dir?: string }>
 }) {
   const { slug } = await params
   const sp = await searchParams
@@ -27,6 +29,20 @@ export default async function TicketQueuePage({
   const isAll = filter === ALL_STATUS
   const isValid = isAll || (ticketStatuses as readonly string[]).includes(filter)
   const status = isValid && !isAll ? (filter as TicketStatus) : null
+
+  const { sort, dir } = parseSort(sp, SORT_KEYS, 'last')
+  const d = dir === 'asc' ? asc : desc
+  const orderBy: SQL = (() => {
+    switch (sort) {
+      case 'opened': return d(tickets.openedAt)
+      case 'id': return d(tickets.id)
+      case 'subject': return d(tickets.subject)
+      case 'status': return d(tickets.status)
+      case 'opener': return d(users.name)
+      default: return d(tickets.lastActivityAt)
+    }
+  })()
+  const hp = { status: sp.status, sort, dir }
 
   // Client-kind business → queue is tickets where THIS business is the
   // client_business_id (across whatever host operates them). Host-kind →
@@ -57,7 +73,7 @@ export default async function TicketQueuePage({
     .leftJoin(users, eq(users.id, tickets.openerUserId))
     .leftJoin(clientBusinessAlias, eq(clientBusinessAlias.id, tickets.clientBusinessId))
     .where(status ? and(businessFilter, eq(tickets.status, status)) : businessFilter)
-    .orderBy(desc(tickets.lastActivityAt))
+    .orderBy(orderBy)
     .limit(200)
 
   return (
@@ -80,14 +96,24 @@ export default async function TicketQueuePage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead className="hidden md:table-cell">Opener</TableHead>
+                  <TableHead className="w-12">
+                    <SortHeader label="#" sortKey="id" activeSort={sort} activeDir={dir} basePath={`/b/${slug}/tickets`} params={hp} />
+                  </TableHead>
+                  <TableHead>
+                    <SortHeader label="Subject" sortKey="subject" activeSort={sort} activeDir={dir} basePath={`/b/${slug}/tickets`} params={hp} />
+                  </TableHead>
+                  <TableHead className="hidden md:table-cell">
+                    <SortHeader label="Opener" sortKey="opener" activeSort={sort} activeDir={dir} basePath={`/b/${slug}/tickets`} params={hp} />
+                  </TableHead>
                   {business.kind === 'host' && (
                     <TableHead className="hidden md:table-cell">Client</TableHead>
                   )}
-                  <TableHead className="w-20">Status</TableHead>
-                  <TableHead className="hidden w-32 sm:table-cell">Last activity</TableHead>
+                  <TableHead className="w-20">
+                    <SortHeader label="Status" sortKey="status" activeSort={sort} activeDir={dir} basePath={`/b/${slug}/tickets`} params={hp} />
+                  </TableHead>
+                  <TableHead className="hidden w-32 sm:table-cell">
+                    <SortHeader label="Last activity" sortKey="last" activeSort={sort} activeDir={dir} basePath={`/b/${slug}/tickets`} params={hp} />
+                  </TableHead>
                   <TableHead className="hidden w-10 lg:table-cell" aria-label="Discord" />
                 </TableRow>
               </TableHeader>
