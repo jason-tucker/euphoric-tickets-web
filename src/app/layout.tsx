@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
 import NextTopLoader from 'nextjs-toploader'
+import { VersionWatcher } from '@/components/app/version-watcher'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           shadow={false}
         />
         {children}
+        <VersionWatcher />
         <Toaster theme="dark" position="bottom-right" richColors />
       </body>
     </html>

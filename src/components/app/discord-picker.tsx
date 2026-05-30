@@ -43,6 +43,8 @@ export type PickerProps = {
   triggerLabel?: string
   /** When true, the picker is disabled. */
   disabled?: boolean
+  /** Snowflakes to hide from the directory (e.g. people already on a ticket). */
+  exclude?: string[]
   className?: string
 }
 
@@ -59,8 +61,10 @@ export function DiscordPicker({
   placeholder,
   triggerLabel,
   disabled,
+  exclude,
   className,
 }: PickerProps) {
+  const excludeSet = React.useMemo(() => new Set(exclude ?? []), [exclude])
   const initial = React.useMemo(
     () =>
       defaultValue
@@ -204,7 +208,9 @@ export function DiscordPicker({
 
   // Visible item list — already filtered server-side for members; for the
   // other kinds we let cmdk do the substring filter via its built-in scoring.
-  const visible = items
+  // Drop anything in `exclude` (e.g. members already on the ticket) unless
+  // it's currently selected (so the badge's ✓ stays consistent).
+  const visible = items.filter((it) => !excludeSet.has(it.id) || selected.includes(it.id))
 
   const csv = multi ? selected.join(',') : (selected[0] ?? '')
 

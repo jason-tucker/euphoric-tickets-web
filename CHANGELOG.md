@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.33] — 2026-05-30 — Reply preview toggle, make-owner, picker dedupe, update prompt
+
+### Added
+- **Make owner.** Each non-opener on the **People** card gets a crown button (staff/admin) that promotes them to the ticket's owner; the change is posted to the channel as a status footer. The current owner is labelled "owner".
+- **New-version reload prompt.** A `VersionWatcher` polls `/api/version` (Next build id) and, when a new image is serving, shows a sticky toast with a **Reload** button. Polling pauses while the tab is hidden.
+
+### Changed
+- **Reply preview is now a toggle below the input** instead of a side-by-side / tabbed pane. Defaults to hidden; "Show preview" reveals the rendered Discord output under the textarea.
+- **Add-person picker hides people already on the ticket** — pass `exclude` to `<DiscordPicker>`; already-added members no longer appear in the directory list.
+
 ## [0.6.32] — 2026-05-30 — More statuses + formatted conversation text
 
 ### Added
@@ -506,4 +516,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.32 · cd8137f`
+`v0.6.33 · ed6e086`

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { asc, eq, inArray } from 'drizzle-orm'
-import { ArrowLeft, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Crown, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react'
 import { DiscordPicker } from '@/components/app/discord-picker'
 import { LiveRefresh } from '@/components/app/live-refresh'
 import { TicketActionMenu } from '@/components/app/ticket-action-menu'
@@ -26,6 +26,7 @@ import {
   closeTicket,
   deleteTicketChannel,
   removeTicketMember,
+  setTicketOwner,
   reopenTicket,
   setTicketStatus,
   unclaimTicket,
@@ -445,13 +446,20 @@ export default async function TicketDetailPage({
                       </Avatar>
                       <span className="flex-1 truncate text-sm">{gName(p.discordId, p.name) ?? p.discordId}</span>
                       {isOpener ? (
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">opener</span>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">owner</span>
                       ) : (
-                        <form action={async () => { 'use server'; await removeTicketMember(slug, t.id, p.discordId) }}>
-                          <SubmitButton variant="ghost" size="icon" aria-label={`Remove ${p.name ?? p.discordId}`}>
-                            <X className="h-3.5 w-3.5" />
-                          </SubmitButton>
-                        </form>
+                        <div className="flex items-center gap-0.5">
+                          <form action={async () => { 'use server'; await setTicketOwner(slug, t.id, p.discordId) }}>
+                            <SubmitButton variant="ghost" size="icon" aria-label={`Make ${p.name ?? p.discordId} the owner`} title="Make owner">
+                              <Crown className="h-3.5 w-3.5" />
+                            </SubmitButton>
+                          </form>
+                          <form action={async () => { 'use server'; await removeTicketMember(slug, t.id, p.discordId) }}>
+                            <SubmitButton variant="ghost" size="icon" aria-label={`Remove ${p.name ?? p.discordId}`} title="Remove from ticket">
+                              <X className="h-3.5 w-3.5" />
+                            </SubmitButton>
+                          </form>
+                        </div>
                       )}
                     </li>
                   )
@@ -460,7 +468,7 @@ export default async function TicketDetailPage({
             )}
             <form action={addPerson} className="flex items-end gap-2 border-t pt-3">
               <div className="flex-1">
-                <DiscordPicker kind="user" guildId={access.business.discordGuildId} name="userId" triggerLabel="Search a member to add…" />
+                <DiscordPicker kind="user" guildId={access.business.discordGuildId} name="userId" triggerLabel="Search a member to add…" exclude={peopleIds} />
               </div>
               <SubmitButton size="sm" variant="secondary" pendingChildren="Adding…">
                 <UserPlus className="mr-1 h-3.5 w-3.5" /> Add

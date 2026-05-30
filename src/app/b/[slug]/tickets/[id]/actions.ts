@@ -538,6 +538,45 @@ export async function removeTicketMember(slug: string, ticketId: number, discord
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
+// Promote a ticket member to be the ticket's owner (opener). Staff/admin only.
+// The target is already on the ticket (listed under People), so they keep their
+// channel access; we just repoint `opener_user_id`.
+export async function setTicketOwner(slug: string, ticketId: number, discordUserId: string): Promise<void> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canManageMembers) return
+  if (!/^\d{17,20}$/.test(discordUserId)) return
+
+  // Resolve to a local users row, upserting display identity from the guild so
+  // someone who only ever appeared as a channel overwrite still gets a row.
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  let name: string | null = null
+  let image: string | null = null
+  if (botToken) {
+    const member = await fetchGuildMemberAsBot(botToken, ctx.business.discordGuildId, discordUserId).catch(() => null)
+    if (member) {
+      name = member.nick ?? member.user?.global_name ?? member.user?.username ?? null
+      image = member.user?.avatar
+        ? `https://cdn.discordapp.com/avatars/${discordUserId}/${member.user.avatar}.png`
+        : null
+    }
+  }
+  const [u] = await db
+    .insert(users)
+    .values({ discordId: discordUserId, name, image })
+    .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
+    .returning({ id: users.id })
+  if (!u || u.id === ctx.ticket.openerUserId) return
+
+  await db
+    .update(tickets)
+    .set({ openerUserId: u.id, lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
+
+  await postStatus(ctx.ticket, `<@${discordUserId}> is now the ticket owner (set by <@${ctx.session.user.discordId}>)`)
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
 export async function reopenTicket(slug: string, ticketId: number): Promise<void> {
   const ctx = await loadTicketAccess(slug, ticketId)
   if (!ctx) return
