@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { auth, type DiscordGuildSnapshot } from './auth'
@@ -46,7 +47,10 @@ function deriveLevel(b: Business, guilds: DiscordGuildSnapshot[]): AccessLevel |
 // the user is an admin, call `resolveBusinessAccess(slug)` per business.
 //
 // Sudo users see every business as `owner`, regardless of guild membership.
-export async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
+//
+// Wrapped in React.cache so a single request that hits both TopNav and a
+// page-level call returns the same DB result (Postgres round-trip once).
+export const listMyBusinesses = cache(async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
   const session = await auth()
   if (!session?.user?.id) return []
 
@@ -70,7 +74,7 @@ export async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
     if (level) out.push({ business: b, level })
   }
   return out
-}
+})
 
 async function isSudo(userId: string): Promise<boolean> {
   const [row] = await db
@@ -85,7 +89,10 @@ async function isSudo(userId: string): Promise<boolean> {
 // the bot's permissions, then matches against `business.adminRoleIds`.
 // Falls back to `member` if the user is in the guild but role lookup fails.
 // Sudo users are treated as `owner` of every business regardless of guild.
-export async function resolveBusinessAccess(slug: string): Promise<ResolvedBusiness | null> {
+//
+// Cached per-request so /b/[slug]/layout and the page underneath share one
+// Discord API call + one DB round-trip.
+export const resolveBusinessAccess = cache(async function resolveBusinessAccess(slug: string): Promise<ResolvedBusiness | null> {
   const session = await auth()
   if (!session?.user?.id) return null
 
@@ -131,7 +138,7 @@ export async function resolveBusinessAccess(slug: string): Promise<ResolvedBusin
 
   await touchMember(b.id, session.user.id, level, roleSnapshot)
   return { business: b, level }
-}
+})
 
 async function touchMember(
   businessId: string,

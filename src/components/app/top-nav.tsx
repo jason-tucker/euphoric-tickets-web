@@ -16,11 +16,15 @@ import {
 
 export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: string }) {
   const session = await auth()
-  const myBusinesses = session?.user ? await listMyBusinesses() : []
+  // listMyBusinesses + currentUserIsSudo are independent DB lookups — run
+  // them concurrently. TopNav renders on every page so the saved round-trip
+  // is felt site-wide.
+  const [myBusinesses, isSudo] = session?.user
+    ? await Promise.all([listMyBusinesses(), currentUserIsSudo()])
+    : [[] as Awaited<ReturnType<typeof listMyBusinesses>>, false]
   const active = myBusinesses.find((b) => b.business.slug === activeBusinessSlug)
   const activeBusiness = active?.business
   const isActiveAdmin = active && (active.level === 'admin' || active.level === 'owner')
-  const isSudo = session?.user ? await currentUserIsSudo() : false
 
   async function logout() {
     'use server'

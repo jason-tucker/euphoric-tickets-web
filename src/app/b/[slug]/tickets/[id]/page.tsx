@@ -1,8 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { asc, eq } from 'drizzle-orm'
-import { ArrowLeft, Hash } from 'lucide-react'
-import { TopNav } from '@/components/app/top-nav'
+import { ArrowLeft, ExternalLink, Hash, Server } from 'lucide-react'
 import { StatusBadge } from '@/components/app/status-badge'
 import { ReplyForm } from '@/components/app/reply-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,24 +38,22 @@ export default async function TicketDetailPage({
   if (!t || t.businessId !== access.business.id) notFound()
   if (!isAdmin && t.openerUserId !== access.session.user.id) notFound()
 
-  const [opener] = await db.select().from(users).where(eq(users.id, t.openerUserId)).limit(1)
-  const [clientBusiness] = t.clientBusinessId
-    ? await db.select().from(businesses).where(eq(businesses.id, t.clientBusinessId)).limit(1)
-    : [null as null]
-  const [assignee] = t.assigneeUserId
-    ? await db.select().from(users).where(eq(users.id, t.assigneeUserId)).limit(1)
-    : [null as null]
-
-  // Staff list for the Assign dropdown — only the business's known members.
-  const staff = isAdmin
-    ? await db
+  // All independent queries fire in parallel — was 5-7 sequential round-trips.
+  const openerQ = db.select().from(users).where(eq(users.id, t.openerUserId)).limit(1)
+  const clientBusinessQ = t.clientBusinessId
+    ? db.select().from(businesses).where(eq(businesses.id, t.clientBusinessId)).limit(1)
+    : Promise.resolve([])
+  const assigneeQ = t.assigneeUserId
+    ? db.select().from(users).where(eq(users.id, t.assigneeUserId)).limit(1)
+    : Promise.resolve([])
+  const staffQ = isAdmin
+    ? db
         .select({ id: users.id, name: users.name })
         .from(businessMembers)
         .innerJoin(users, eq(users.id, businessMembers.userId))
         .where(eq(businessMembers.businessId, access.business.id))
-    : []
-
-  const allMessages = await db
+    : Promise.resolve([])
+  const messagesQ = db
     .select({
       id: ticketMessages.id,
       body: ticketMessages.body,
@@ -70,23 +67,41 @@ export default async function TicketDetailPage({
     .leftJoin(users, eq(users.id, ticketMessages.authorUserId))
     .where(eq(ticketMessages.ticketId, t.id))
     .orderBy(asc(ticketMessages.createdAt))
+  const subTicketsQ = t.kind === 'project'
+    ? db
+        .select({ id: tickets.id, subject: tickets.subject, status: tickets.status, lastActivityAt: tickets.lastActivityAt })
+        .from(tickets)
+        .where(eq(tickets.parentTicketId, t.id))
+        .orderBy(asc(tickets.id))
+    : Promise.resolve([])
+  const parentQ = t.parentTicketId
+    ? db.select({ id: tickets.id, subject: tickets.subject }).from(tickets).where(eq(tickets.id, t.parentTicketId)).limit(1)
+    : Promise.resolve([])
+
+  const [
+    openerRow,
+    clientBusinessRow,
+    assigneeRow,
+    staff,
+    allMessages,
+    subTickets,
+    parentRow,
+  ] = await Promise.all([openerQ, clientBusinessQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ])
+  const opener = openerRow[0]
+  const clientBusiness = clientBusinessRow[0] ?? null
+  const assignee = assigneeRow[0] ?? null
+  const parentTicket = parentRow[0] ?? null
 
   // Internal notes are NEVER shown to the opener — even if they reload
   // the page. Admins see them in a separate panel below the conversation.
   const messages = allMessages.filter((m) => m.source !== 'internal')
   const internalNotes = isAdmin ? allMessages.filter((m) => m.source === 'internal') : []
 
-  // Project tickets: list child sub-tickets. Sub-tickets: link to parent.
-  const subTickets = t.kind === 'project'
-    ? await db
-        .select({ id: tickets.id, subject: tickets.subject, status: tickets.status, lastActivityAt: tickets.lastActivityAt })
-        .from(tickets)
-        .where(eq(tickets.parentTicketId, t.id))
-        .orderBy(asc(tickets.id))
-    : []
-  const [parentTicket] = t.parentTicketId
-    ? await db.select({ id: tickets.id, subject: tickets.subject }).from(tickets).where(eq(tickets.id, t.parentTicketId)).limit(1)
-    : [null as null]
+  // Deep link into the actual Discord client/web at the per-ticket channel.
+  const discordChannelUrl =
+    t.discordChannelId && access.business.discordGuildId
+      ? `https://discord.com/channels/${access.business.discordGuildId}/${t.discordChannelId}`
+      : null
 
   const canClose = t.status !== 'closed' && (isAdmin || t.openerUserId === access.session.user.id)
 
@@ -137,6 +152,25 @@ export default async function TicketDetailPage({
               </Link>
             </p>
           )}
+          <p className="mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Server className="h-3 w-3" />
+              In Discord server <span className="font-medium text-foreground">{access.business.name}</span>
+            </span>
+            {discordChannelUrl && (
+              <>
+                <span>·</span>
+                <a
+                  href={discordChannelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  Open in Discord <ExternalLink className="h-3 w-3" />
+                </a>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={t.status} />

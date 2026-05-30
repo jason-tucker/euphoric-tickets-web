@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
+import { ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/components/app/status-badge'
@@ -50,6 +51,7 @@ export default async function TicketQueuePage({
       assigneeId: tickets.assigneeUserId,
       clientBusinessId: tickets.clientBusinessId,
       clientBusinessName: clientBusinessAlias.name,
+      discordChannelId: tickets.discordChannelId,
     })
     .from(tickets)
     .leftJoin(users, eq(users.id, tickets.openerUserId))
@@ -86,31 +88,52 @@ export default async function TicketQueuePage({
                   )}
                   <TableHead className="w-20">Status</TableHead>
                   <TableHead className="hidden w-32 sm:table-cell">Last activity</TableHead>
+                  <TableHead className="hidden w-10 lg:table-cell" aria-label="Discord" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{t.id}</TableCell>
-                    <TableCell className="max-w-[40ch] truncate">
-                      <Link href={`/b/${slug}/tickets/${t.id}`} className="font-medium hover:underline">
-                        {t.subject}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="hidden text-sm md:table-cell">
-                      <span className="text-muted-foreground">{t.openerName ?? '?'}</span>
-                    </TableCell>
-                    {business.kind === 'host' && (
-                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-                        {t.clientBusinessName ?? '—'}
+                {rows.map((t) => {
+                  const discordUrl =
+                    t.discordChannelId && business.discordGuildId
+                      ? `https://discord.com/channels/${business.discordGuildId}/${t.discordChannelId}`
+                      : null
+                  return (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{t.id}</TableCell>
+                      <TableCell className="max-w-[40ch] truncate">
+                        <Link href={`/b/${slug}/tickets/${t.id}`} className="font-medium hover:underline">
+                          {t.subject}
+                        </Link>
                       </TableCell>
-                    )}
-                    <TableCell><StatusBadge status={t.status} /></TableCell>
-                    <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
-                      {relativeTime(t.lastActivityAt)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      <TableCell className="hidden text-sm md:table-cell">
+                        <span className="text-muted-foreground">{t.openerName ?? '?'}</span>
+                      </TableCell>
+                      {business.kind === 'host' && (
+                        <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+                          {t.clientBusinessName ?? '—'}
+                        </TableCell>
+                      )}
+                      <TableCell><StatusBadge status={t.status} /></TableCell>
+                      <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
+                        {relativeTime(t.lastActivityAt)}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {discordUrl && (
+                          <a
+                            href={discordUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open in Discord"
+                            aria-label="Open in Discord"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}

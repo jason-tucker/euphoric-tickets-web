@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { db } from '@/db/client'
@@ -7,7 +8,8 @@ import { auth } from './auth'
 // Lightweight "is the current user sudo?" check used by the TopNav to
 // decide whether to surface the Admin link. Returns false for anonymous
 // visitors so it's safe to call without an auth guard above it.
-export async function currentUserIsSudo(): Promise<boolean> {
+// Per-request cached so TopNav + downstream pages share the lookup.
+export const currentUserIsSudo = cache(async function currentUserIsSudo(): Promise<boolean> {
   const session = await auth()
   if (!session?.user?.id) return false
   const [row] = await db
@@ -16,7 +18,7 @@ export async function currentUserIsSudo(): Promise<boolean> {
     .where(eq(users.id, session.user.id))
     .limit(1)
   return !!row?.isSudo
-}
+})
 
 // Hard guard for /admin routes. Redirects to /login if not signed in,
 // /dashboard if signed in but not sudo.

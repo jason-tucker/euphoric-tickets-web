@@ -10,9 +10,11 @@ export default async function BusinessLayout({
   children: React.ReactNode
   params: Promise<{ slug: string }>
 }) {
-  await requireSession()
   const { slug } = await params
-  const resolved = await resolveBusinessAccess(slug)
+  // requireSession() throws/redirects on missing auth; resolveBusinessAccess
+  // checks DB membership. Both touch the session — but each one re-uses the
+  // cached request-scoped auth() result, so running concurrently is cheap.
+  const [, resolved] = await Promise.all([requireSession(), resolveBusinessAccess(slug)])
   if (!resolved) redirect('/dashboard')
   const isAdmin = resolved.level === 'admin' || resolved.level === 'owner'
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.2] — 2026-05-29 — Discord deep links + SSR parallelization
+
+### Added
+- **"In Discord server <name>" + "Open in Discord" deep link on `/b/[slug]/tickets/[id]`** — uses `https://discord.com/channels/<guildId>/<channelId>` so staff/opener can jump straight into the actual ticket channel. The server name comes from `business.name`. Closes euphoric-tickets-web#13.
+- **Per-row "Open in Discord" icon on `/b/[slug]/tickets`** — small external-link icon in a new rightmost column (lg+ screens) on the queue.
+
+### Changed
+- **`/b/[slug]/tickets/[id]` is now one `Promise.all`** instead of 5–7 sequential awaits. Opener, client business, assignee, staff list, message thread, sub-tickets, and parent ticket all run concurrently. Visible TTFB drop on the most-trafficked admin route.
+- **`/b/[slug]/layout`** runs `requireSession` + `resolveBusinessAccess` concurrently.
+- **`TopNav`** runs `listMyBusinesses` + `currentUserIsSudo` concurrently when signed in.
+- **`listMyBusinesses` / `resolveBusinessAccess` / `currentUserIsSudo` wrapped in `React.cache`** — dedupes shared lookups between TopNav, the per-business layout, and the page below them within a single request. No correctness change; just one Postgres round-trip per request instead of two or three. Closes euphoric-tickets-web#14.
+
 ## [0.6.1] — 2026-05-29
 
 ### Added
@@ -192,4 +204,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.0 · 65b5bd1`
+`v0.6.2 · pending`
