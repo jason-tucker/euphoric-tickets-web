@@ -81,6 +81,11 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 <DropdownMenuItem asChild>
                   <Link href="/dashboard">My tickets</Link>
                 </DropdownMenuItem>
+                {(isSudo || myBusinesses.some((b) => b.level === 'admin' || b.level === 'owner')) && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/tickets">All tickets</Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem asChild>
                   <Link href="/t/new">Open a ticket</Link>
                 </DropdownMenuItem>
