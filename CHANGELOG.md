@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.24] — 2026-05-30 — Help as a top-level tab
+
+### Changed
+- **Help** is now a visible tab in the header bar (always shown, signed-in or not) instead of being tucked inside the user dropdown.
+
 ## [0.6.23] — 2026-05-30 — Web help / documentation page
 
 ### Added

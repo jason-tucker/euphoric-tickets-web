@@ -56,7 +56,13 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
             }))}
           />
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2">
+          <Link
+            href="/help"
+            className="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            Help
+          </Link>
           {session?.user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -91,9 +97,6 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings/notifications">Notifications</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/help">Help</Link>
                 </DropdownMenuItem>
                 {activeBusiness && isActiveAdmin && (
                   <>
