@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.12] — 2026-05-30 — Lantern P7: live conversation refresh (SSE + LISTEN/NOTIFY)
+
+### Added
+- **Postgres NOTIFY triggers** (`ensureNotifyTriggers()` in `db/client.ts`, idempotent `CREATE OR REPLACE`, run once per process): `ticket_messages` INSERT and `tickets` UPDATE both `pg_notify('ticket_activity', <ticket id>)`.
+- **SSE endpoint** `GET /api/tickets/[id]/messages/stream` — permission-checked, `LISTEN`s on `ticket_activity` via a dedicated postgres-js connection, forwards a `refresh` event when the ticket changes, 25s heartbeat to keep proxies from closing the idle stream.
+- **`<LiveRefresh>`** client component on the ticket page — opens the stream and calls `router.refresh()` on each `refresh` event (re-runs the SSR, so message rendering / attachments / permission filtering stay server-side). Falls back to 5s polling when the stream errors and refreshes on tab focus.
+
+### Result
+- A reply typed in Discord (or by another staff member on the web) appears in an open conversation typically **<1s** later, with no manual reload. The `tickets.euphoric.gg` Caddy block already has `flush_interval -1`; the cloudflared tunnel passes SSE; the response sets `X-Accel-Buffering: no`.
+
+Closes euphoric-tickets-web#20.
+
 ## [0.6.11] — 2026-05-30 — Lantern P6: People card (add/remove members on the web)
 
 ### Added
@@ -341,4 +353,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.11 · aaf224f`
+`v0.6.12 · pending`

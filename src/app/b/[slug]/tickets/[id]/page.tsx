@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { asc, eq, inArray } from 'drizzle-orm'
 import { ArrowLeft, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react'
 import { DiscordPicker } from '@/components/app/discord-picker'
+import { LiveRefresh } from '@/components/app/live-refresh'
 import { fetchChannelMemberIds } from '@/lib/discord'
 import { StatusBadge } from '@/components/app/status-badge'
 import { ReplyForm } from '@/components/app/reply-form'
@@ -167,6 +168,7 @@ export default async function TicketDetailPage({
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
+      <LiveRefresh ticketId={t.id} />
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href={isAdmin ? `/b/${slug}/tickets` : '/dashboard'} className="inline-flex items-center gap-1 hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" />
