@@ -363,6 +363,27 @@ export async function postBotMessageToThread(input: {
   return (await res.json()) as { id: string }
 }
 
+// Fetch a FRESH signed CDN URL for one attachment. Discord's attachment URLs
+// expire (~24h), so the web never serves the stored URL directly for audio —
+// it re-fetches the message via the bot token and returns the attachment's
+// current `.url`. The browser then streams from Discord's CDN; nothing is
+// stored on the VPS. Returns null if the channel/message/attachment is gone.
+export async function fetchFreshAttachmentUrl(
+  botToken: string,
+  channelId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<string | null> {
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) return null
+  const msg = (await res.json()) as { attachments?: Array<{ id: string; url: string }> }
+  const att = msg.attachments?.find((a) => a.id === attachmentId)
+  return att?.url ?? null
+}
+
 // Post a small, silent subtext status line into a ticket channel for
 // lifecycle events (claim/assign/close/reopen/add/remove). Mirrors the
 // bot's postTicketStatus.

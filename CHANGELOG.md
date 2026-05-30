@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.9] — 2026-05-30 — Audio + file attachments in the conversation
+
+### Added
+- **Attachment rendering** in the ticket conversation (and internal notes). Audio attachments get an inline `<audio controls>` player; other files get a download chip. Driven by the `ticket_messages.attachments` column the bot now populates (relay + `/tickets convert`).
+- **`GET /api/tickets/[id]/attachment?m=<discordMessageId>&a=<attachmentId>`** — permission-checked (`resolveTicketAccess.canSee`) endpoint that uses the bot token to fetch a **fresh** signed Discord CDN URL and 302-redirects to it. Because Discord attachment URLs expire (~24h), audio/files always refresh through this endpoint rather than the stored URL.
+- **`fetchFreshAttachmentUrl()`** helper in `src/lib/discord.ts`.
+
+### Notes
+- **Nothing is stored on the VPS.** The browser follows the 302 and streams the media directly from Discord's CDN; the web server only issues the redirect. Range requests (audio seeking) are served by the CDN.
+- Web-origin rows without a `discord_message_id` fall back to the stored URL (web replies are text-only, so this is rarely hit).
+
+Closes euphoric-tickets-web#52.
+
 ## [0.6.8] — 2026-05-30 — Rename "business" → "Team" across the UI
 
 ### Changed
@@ -308,4 +321,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.8 · 802fc8b`
+`v0.6.9 · pending`

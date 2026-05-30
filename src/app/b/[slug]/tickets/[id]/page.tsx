@@ -72,6 +72,8 @@ export default async function TicketDetailPage({
       body: ticketMessages.body,
       source: ticketMessages.source,
       createdAt: ticketMessages.createdAt,
+      discordMessageId: ticketMessages.discordMessageId,
+      attachments: ticketMessages.attachments,
       authorName: users.name,
       authorImage: users.image,
       authorId: users.id,
@@ -302,6 +304,7 @@ export default async function TicketDetailPage({
                   <div className="mt-1 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-sm">
                     {m.body}
                   </div>
+                  <Attachments ticketId={t.id} messageId={m.discordMessageId} items={m.attachments} />
                 </div>
               </div>
             ))
@@ -347,6 +350,7 @@ export default async function TicketDetailPage({
                     <div className="mt-1 whitespace-pre-wrap break-words rounded-md bg-background/60 p-2 text-sm">
                       {m.body}
                     </div>
+                    <Attachments ticketId={t.id} messageId={m.discordMessageId} items={m.attachments} />
                   </div>
                 </div>
               ))
@@ -366,5 +370,65 @@ export default async function TicketDetailPage({
         </Card>
       )}
     </main>
+  )
+}
+
+const AUDIO_EXT = /\.(mp3|ogg|oga|wav|m4a|flac|webm|opus|aac)$/i
+
+function isAudio(a: { name: string; contentType: string | null }): boolean {
+  return (a.contentType?.startsWith('audio/') ?? false) || AUDIO_EXT.test(a.name)
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+// Renders a message's captured Discord attachments. Audio → an inline player;
+// everything else → a download link. Both point at the refresh endpoint
+// (/api/tickets/<id>/attachment) which 302s to a fresh Discord CDN URL, so
+// playback/downloads stream straight from Discord — never stored on the VPS.
+// Falls back to the (possibly-stale) stored URL when there's no Discord
+// message id to refresh against (e.g. web-origin rows).
+function Attachments({
+  ticketId,
+  messageId,
+  items,
+}: {
+  ticketId: number
+  messageId: string | null
+  items: { id: string; name: string; url: string; contentType: string | null; size: number }[] | null
+}) {
+  if (!items || items.length === 0) return null
+  return (
+    <div className="mt-2 space-y-2">
+      {items.map((a) => {
+        const fresh = messageId
+          ? `/api/tickets/${ticketId}/attachment?m=${encodeURIComponent(messageId)}&a=${encodeURIComponent(a.id)}`
+          : a.url
+        if (isAudio(a)) {
+          return (
+            <div key={a.id} className="space-y-1">
+              <div className="text-xs text-muted-foreground">🎵 {a.name} · {fmtBytes(a.size)}</div>
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <audio controls preload="none" src={fresh} className="w-full max-w-md" />
+            </div>
+          )
+        }
+        return (
+          <a
+            key={a.id}
+            href={fresh}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:bg-accent"
+          >
+            📎 <span className="max-w-[28ch] truncate">{a.name}</span>
+            <span className="text-muted-foreground">· {fmtBytes(a.size)}</span>
+          </a>
+        )
+      })}
+    </div>
   )
 }
