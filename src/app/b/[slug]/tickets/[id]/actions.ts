@@ -464,8 +464,9 @@ export async function addTicketMember(
     .values({ ticketId: ctx.ticket.id, userId: u.id, addedByUserId: ctx.session.user.id })
     .onConflictDoNothing()
 
-  // Best-effort DM with the web link via the bot internal endpoint.
-  const internalToken = process.env.INTERNAL_TOKEN
+  // Best-effort DM with the web link via the bot internal endpoint. Auth with
+  // INTERNAL_TOKEN if set, else the shared bot token.
+  const internalToken = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
   const botBase = process.env.BOT_INTERNAL_URL
   const webBase = process.env.PUBLIC_BASE_URL ?? 'https://tickets.euphoric.fm'
   if (internalToken && botBase) {

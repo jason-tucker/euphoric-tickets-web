@@ -6,7 +6,8 @@ import { NextResponse } from 'next/server'
 import { notify, type NotifyContext } from '@/server/notify'
 
 export async function POST(req: Request) {
-  const token = process.env.INTERNAL_TOKEN
+  // INTERNAL_TOKEN if set, else the shared bot token (no extra config needed).
+  const token = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
   if (!token || req.headers.get('x-internal-token') !== token) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }

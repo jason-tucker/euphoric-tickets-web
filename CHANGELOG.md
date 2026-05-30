@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.28] — 2026-05-30 — Internal endpoints fall back to the bot token
+
+### Changed
+- The notification dispatcher's DM call, the `/api/internal/notify` route, and the external-member invite DM now authenticate with `INTERNAL_TOKEN` **if set, else the shared bot token**. So Discord-DM notifications need no separate secret — only `BOT_INTERNAL_URL` (where the bot's internal server lives) is required config. ntfy push needs nothing.
+
 ## [0.6.27] — 2026-05-30 — Fix: build was broken (lucide `title` prop)
 
 ### Fixed

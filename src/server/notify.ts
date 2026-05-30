@@ -35,7 +35,9 @@ async function postNtfy(topic: string, title: string, body: string, clickUrl: st
 
 // Best-effort DM via the bot's internal endpoint.
 async function postBotDm(discordUserId: string, content: string): Promise<void> {
-  const token = process.env.INTERNAL_TOKEN
+  // Auth with INTERNAL_TOKEN if set, else the shared bot token (both services
+  // already have it). Only the bot's URL is genuinely required config.
+  const token = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
   const base = process.env.BOT_INTERNAL_URL // e.g. http://euphoric-tickets:8787
   if (!token || !base) return
   try {
