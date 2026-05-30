@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.23] — 2026-05-30 — Web help / documentation page
+
+### Added
+- **`/help`** — a public, comprehensive how-to page: what the system is, opening tickets (Discord + web), the live conversation, audio/file attachments, notifications, staff actions, admin actions, a who-can-do-what table, a full command reference, and a FAQ. On-page jump nav + linked from the top-nav user menu. Pairs with the bot's context-aware `/help` command, which links here.
+
 ## [0.6.22] — 2026-05-30 — Perf pass: drop Discord round-trips off the hot path
 
 ### Changed

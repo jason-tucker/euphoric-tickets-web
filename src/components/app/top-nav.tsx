@@ -92,6 +92,9 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 <DropdownMenuItem asChild>
                   <Link href="/settings/notifications">Notifications</Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/help">Help</Link>
+                </DropdownMenuItem>
                 {activeBusiness && isActiveAdmin && (
                   <>
                     <DropdownMenuSeparator />

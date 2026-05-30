@@ -1,6 +1,6 @@
 {
   "name": "euphoric-tickets-web",
-  "version": "0.6.22",
+  "version": "0.6.23",
   "private": true,
   "description": "Euphoric Tickets — web UI for the Discord-backed ticket bot",
   "scripts": {
