@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.27] — 2026-05-30 — Fix: build was broken (lucide `title` prop)
+
+### Fixed
+- `<Info title=...>` on the `/admin` webhook tooltip — lucide icons don't accept a `title` prop, which failed `next build` type-checking, so **every CI build since v0.6.7 failed** and nothing deployed. Wrapped the icon in a `<span title=…>` instead. `tsc --noEmit` is clean; this unblocks the whole backlog of web releases (P3–P19, the perf pass, Help, board filters).
+
 ## [0.6.26] — 2026-05-30 — Identical filter bar on both ticket boards
 
 ### Changed
