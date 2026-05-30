@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.3] — 2026-05-29 — Lantern P1: edit categories + per-category role tiers
+
+### Added — Phase P1 of the lantern plan (see `/home/botuser/.claude/plans/valiant-tinkering-lantern.md`)
+- **`ticket_categories` schema columns** (mirrored on the bot side):
+  - `allow_role_ids text NOT NULL DEFAULT ''` — comma-separated Discord role snowflakes that may click the open-this-category panel button. Empty = anyone in the guild. Enforced in P2.
+  - `staff_role_ids text NOT NULL DEFAULT ''` — comma-separated Discord role snowflakes that get manage-channel perms on tickets of this category. Empty = inherit `businesses.admin_role_ids` (current behavior). Bot uses this in P2; web tier check uses it in P2.
+  - `first_message_template text NULL` — optional template the bot will render as the ticket's first message in P4. Supports `{{user}}`, `{{ticketId}}`, `{{subject}}`, `{{category}}` substitutions. Null = default welcome card.
+- **`/b/[slug]/settings` ticket-categories card** rewritten:
+  - Each existing category is now a `<details>` row — click to expand into a full edit form with every field (including the three new columns).
+  - New `updateCategoryAction(slug, categoryId, formData)` server action mirrors `addCategoryAction`'s zod schema with one shared `CategoryFormFields` component driving both add and edit.
+  - Delete moves into the expanded view as its own sibling form (no nested `<form>` elements).
+- The add-new form now also exposes the three new columns so categories get the full shape from creation.
+
+Closes euphoric-tickets-web#15.
+
+### Notes
+- Schema migration applies on the next deploy via the entrypoint's `drizzle-kit push --force` — non-nullable columns ship with safe defaults so existing rows fill in automatically.
+- The role-ID inputs remain plain `<Input>`s until P3 lands the searchable Discord picker — at which point they'll swap to `<DiscordPicker kind="role" multi />`.
+- No functional gating yet: P2 will make the bot reject button clicks for users outside `allow_role_ids` and use `staff_role_ids` for per-channel overwrites.
+
 ## [0.6.2] — 2026-05-29 — Discord deep links + SSR parallelization
 
 ### Added
@@ -204,4 +224,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.2 · 56c380a`
+`v0.6.3 · pending`

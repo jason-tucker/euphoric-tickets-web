@@ -9,7 +9,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
-import { addCategoryAction, deleteCategoryAction, saveBusinessSettings } from './actions'
+import {
+  addCategoryAction,
+  deleteCategoryAction,
+  saveBusinessSettings,
+  updateCategoryAction,
+} from './actions'
 
 export default async function BusinessSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
@@ -165,6 +170,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           <CardTitle className="text-base">Ticket categories</CardTitle>
           <CardDescription>
             Drives the &quot;Open a ticket&quot; form&apos;s category picker. End users see the label and emoji.
+            Per-category role gates and the first-ticket message template live here too.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -173,95 +179,191 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           ) : (
             <ul className="divide-y">
               {cats.map((c) => (
-                <li key={c.id} className="flex items-center gap-3 py-2">
-                  <span className="text-xl" aria-hidden>{c.emoji ?? '·'}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium">{c.label}</div>
-                    <div className="text-xs text-muted-foreground">
-                      <span className="font-mono">{c.key}</span>
-                      {c.description ? <> — {c.description}</> : null}
+                <li key={c.id} className="py-2">
+                  <details>
+                    <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md px-1 py-1 hover:bg-accent/50">
+                      <span className="text-xl" aria-hidden>{c.emoji ?? '·'}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{c.label}</div>
+                        <div className="text-xs text-muted-foreground">
+                          <span className="font-mono">{c.key}</span>
+                          {c.description ? <> — {c.description}</> : null}
+                        </div>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">edit</span>
+                    </summary>
+                    <div className="mt-3 space-y-3 rounded-md border bg-background/40 p-3">
+                      <form action={updateCategoryAction.bind(null, slug, c.id)} className="space-y-3">
+                        <CategoryFormFields idPrefix={`edit-${c.id}-`} defaults={c} />
+                        <SubmitButton size="sm" variant="secondary" pendingChildren="Saving…">Save</SubmitButton>
+                      </form>
+                      <form
+                        action={deleteCategoryAction.bind(null, slug, c.id)}
+                        className="border-t pt-3"
+                      >
+                        <SubmitButton
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Delete ${c.label}`}
+                          pendingChildren="Deleting…"
+                        >
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete category
+                        </SubmitButton>
+                      </form>
                     </div>
-                    {c.discordParentCategoryId ? (
-                      <div className="mt-0.5 text-[10px] font-mono text-muted-foreground">
-                        Open → {c.discordParentCategoryId}
-                      </div>
-                    ) : (
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">
-                        Open uses business fallback
-                      </div>
-                    )}
-                    {c.discordClosedCategoryId ? (
-                      <div className="text-[10px] font-mono text-muted-foreground">
-                        Closed → {c.discordClosedCategoryId}
-                      </div>
-                    ) : null}
-                  </div>
-                  <form action={deleteCategoryAction.bind(null, slug, c.id)}>
-                    <SubmitButton variant="ghost" size="icon" aria-label={`Delete ${c.label}`}>
-                      <Trash2 className="h-4 w-4" />
-                    </SubmitButton>
-                  </form>
+                  </details>
                 </li>
               ))}
             </ul>
           )}
 
           <form action={addCategoryAction.bind(null, slug)} className="space-y-3 border-t pt-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="cat-key">Key</Label>
-                <Input id="cat-key" name="key" placeholder="billing" pattern="[a-z0-9][a-z0-9_-]*" required />
-                <p className="text-xs text-muted-foreground">Internal id, lowercase. Unique per business.</p>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cat-label">Label</Label>
-                <Input id="cat-label" name="label" placeholder="Billing" required />
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[6rem_1fr_6rem]">
-              <div className="space-y-1">
-                <Label htmlFor="cat-emoji">Emoji</Label>
-                <Input id="cat-emoji" name="emoji" placeholder="💳" maxLength={8} />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cat-description">Description</Label>
-                <Input id="cat-description" name="description" placeholder="Charges, refunds, subscriptions." />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cat-sortOrder">Sort</Label>
-                <Input id="cat-sortOrder" name="sortOrder" defaultValue="0" pattern="-?\d+" />
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="cat-discordParentCategoryId">Open Discord category ID</Label>
-                <Input
-                  id="cat-discordParentCategoryId"
-                  name="discordParentCategoryId"
-                  pattern="\d{17,20}"
-                  placeholder="1234567890123456789"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Per-ticket channels open here. Blank → business fallback.
-                </p>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cat-discordClosedCategoryId">Closed Discord category ID</Label>
-                <Input
-                  id="cat-discordClosedCategoryId"
-                  name="discordClosedCategoryId"
-                  pattern="\d{17,20}"
-                  placeholder="1234567890123456789"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Closed channels move here. Blank → business fallback.
-                </p>
-              </div>
-            </div>
+            <p className="text-sm font-medium">Add a new category</p>
+            <CategoryFormFields idPrefix="new-" />
             <SubmitButton variant="secondary" pendingChildren="Adding…">Add category</SubmitButton>
           </form>
         </CardContent>
       </Card>
     </main>
+  )
+}
+
+// Shared fields for both the add-new form and each per-row edit form.
+// `defaults` is omitted on the add-new form (all empty); when supplied the
+// inputs render with `defaultValue` so React doesn't fight the user mid-type.
+function CategoryFormFields({
+  idPrefix,
+  defaults,
+}: {
+  idPrefix: string
+  defaults?: {
+    key: string
+    label: string
+    emoji: string | null
+    description: string | null
+    sortOrder: string
+    discordParentCategoryId: string | null
+    discordClosedCategoryId: string | null
+    allowRoleIds: string
+    staffRoleIds: string
+    firstMessageTemplate: string | null
+  }
+}) {
+  const v = defaults
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}key`}>Key</Label>
+          <Input
+            id={`${idPrefix}key`}
+            name="key"
+            placeholder="billing"
+            pattern="[a-z0-9][a-z0-9_-]*"
+            defaultValue={v?.key}
+            required
+          />
+          <p className="text-xs text-muted-foreground">Internal id, lowercase. Unique per business.</p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}label`}>Label</Label>
+          <Input id={`${idPrefix}label`} name="label" placeholder="Billing" defaultValue={v?.label} required />
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[6rem_1fr_6rem]">
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}emoji`}>Emoji</Label>
+          <Input id={`${idPrefix}emoji`} name="emoji" placeholder="💳" maxLength={8} defaultValue={v?.emoji ?? ''} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}description`}>Description</Label>
+          <Input
+            id={`${idPrefix}description`}
+            name="description"
+            placeholder="Charges, refunds, subscriptions."
+            defaultValue={v?.description ?? ''}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}sortOrder`}>Sort</Label>
+          <Input
+            id={`${idPrefix}sortOrder`}
+            name="sortOrder"
+            defaultValue={v?.sortOrder ?? '0'}
+            pattern="-?\d+"
+          />
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}discordParentCategoryId`}>Open Discord category ID</Label>
+          <Input
+            id={`${idPrefix}discordParentCategoryId`}
+            name="discordParentCategoryId"
+            pattern="\d{17,20}"
+            placeholder="1234567890123456789"
+            defaultValue={v?.discordParentCategoryId ?? ''}
+          />
+          <p className="text-xs text-muted-foreground">Per-ticket channels open here. Blank → business fallback.</p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}discordClosedCategoryId`}>Closed Discord category ID</Label>
+          <Input
+            id={`${idPrefix}discordClosedCategoryId`}
+            name="discordClosedCategoryId"
+            pattern="\d{17,20}"
+            placeholder="1234567890123456789"
+            defaultValue={v?.discordClosedCategoryId ?? ''}
+          />
+          <p className="text-xs text-muted-foreground">Closed channels move here. Blank → business fallback.</p>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}allowRoleIds`}>
+            Allow-to-open role IDs <span className="text-muted-foreground">(comma-separated)</span>
+          </Label>
+          <Input
+            id={`${idPrefix}allowRoleIds`}
+            name="allowRoleIds"
+            placeholder="leave blank — anyone may open"
+            defaultValue={v?.allowRoleIds ?? ''}
+          />
+          <p className="text-xs text-muted-foreground">
+            If set, only members holding any of these roles can click the panel button for this category.
+            (P3 will replace this with a searchable picker.)
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}staffRoleIds`}>
+            Category staff role IDs <span className="text-muted-foreground">(comma-separated)</span>
+          </Label>
+          <Input
+            id={`${idPrefix}staffRoleIds`}
+            name="staffRoleIds"
+            placeholder="leave blank — falls back to business admins"
+            defaultValue={v?.staffRoleIds ?? ''}
+          />
+          <p className="text-xs text-muted-foreground">
+            Staff can claim/close/reply on tickets in this category. They cannot delete channels — that stays admin-only.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${idPrefix}firstMessageTemplate`}>First-ticket message template (optional)</Label>
+        <Textarea
+          id={`${idPrefix}firstMessageTemplate`}
+          name="firstMessageTemplate"
+          rows={4}
+          maxLength={2000}
+          placeholder="e.g. Thanks {{user}} — staff will be with you shortly. Ticket #{{ticketId}} ({{category}})."
+          defaultValue={v?.firstMessageTemplate ?? ''}
+        />
+        <p className="text-xs text-muted-foreground">
+          Substitutes <code>{'{{user}}'}</code>, <code>{'{{ticketId}}'}</code>, <code>{'{{subject}}'}</code>,
+          <code> {'{{category}}'}</code>. Blank = default welcome card. Used by the bot once P4 ships.
+        </p>
+      </div>
+    </>
   )
 }
