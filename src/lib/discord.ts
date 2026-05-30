@@ -383,14 +383,26 @@ export async function fetchDiscordUser(
 
 // P6: list the per-user (type 1) permission overwrites on a ticket channel —
 // i.e. the people explicitly added to the ticket. Returns their user ids.
+//
+// Perf: the ticket page re-renders on every new message (SSE → router.refresh),
+// so this would otherwise GET /channels/{id} per message. A short in-process
+// TTL cache collapses bursts; channel membership changes rarely.
+const channelMembersCache = new Map<string, { at: number; ids: string[] }>()
+const CHANNEL_MEMBERS_TTL_MS = 20_000
+
 export async function fetchChannelMemberIds(botToken: string, channelId: string): Promise<string[]> {
+  const cached = channelMembersCache.get(channelId)
+  if (cached && Date.now() - cached.at < CHANNEL_MEMBERS_TTL_MS) return cached.ids
+
   const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
-  if (!res.ok) return []
+  if (!res.ok) return cached?.ids ?? []
   const ch = (await res.json()) as { permission_overwrites?: Array<{ id: string; type: number }> }
-  return (ch.permission_overwrites ?? []).filter((o) => o.type === 1).map((o) => o.id)
+  const ids = (ch.permission_overwrites ?? []).filter((o) => o.type === 1).map((o) => o.id)
+  channelMembersCache.set(channelId, { at: Date.now(), ids })
+  return ids
 }
 
 // P6: grant a user access to a ticket channel (member overwrite, type 1).

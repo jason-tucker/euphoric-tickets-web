@@ -108,37 +108,49 @@ export async function notify(ctx: NotifyContext): Promise<void> {
     .where(inArray(users.id, recipientIds))
   const discordById = new Map(recips.map((r) => [r.id, r.discordId]))
 
-  for (const uid of recipientIds) {
-    const prefRows = await db
-      .select({
-        businessId: userNotificationPrefs.businessId,
-        categoryId: userNotificationPrefs.categoryId,
-        channel: userNotificationPrefs.channel,
-        enabled: userNotificationPrefs.enabled,
-        ntfyTopic: userNotificationPrefs.ntfyTopic,
-      })
-      .from(userNotificationPrefs)
-      .where(
-        and(
-          eq(userNotificationPrefs.userId, uid),
-          eq(userNotificationPrefs.event, event),
-          eq(userNotificationPrefs.enabled, true),
-          or(isNull(userNotificationPrefs.businessId), eq(userNotificationPrefs.businessId, businessId)),
-          or(
-            isNull(userNotificationPrefs.categoryId),
-            categoryId ? eq(userNotificationPrefs.categoryId, categoryId) : isNull(userNotificationPrefs.categoryId),
-          ),
+  // Perf: one prefs query for ALL recipients (was a query per recipient),
+  // grouped in memory.
+  const allPrefs = await db
+    .select({
+      userId: userNotificationPrefs.userId,
+      businessId: userNotificationPrefs.businessId,
+      categoryId: userNotificationPrefs.categoryId,
+      channel: userNotificationPrefs.channel,
+      enabled: userNotificationPrefs.enabled,
+      ntfyTopic: userNotificationPrefs.ntfyTopic,
+    })
+    .from(userNotificationPrefs)
+    .where(
+      and(
+        inArray(userNotificationPrefs.userId, recipientIds),
+        eq(userNotificationPrefs.event, event),
+        eq(userNotificationPrefs.enabled, true),
+        or(isNull(userNotificationPrefs.businessId), eq(userNotificationPrefs.businessId, businessId)),
+        or(
+          isNull(userNotificationPrefs.categoryId),
+          categoryId ? eq(userNotificationPrefs.categoryId, categoryId) : isNull(userNotificationPrefs.categoryId),
         ),
-      )
-    if (prefRows.length === 0) continue
-    const best = pickPrefs(prefRows)
+      ),
+    )
 
-    if (best.ntfy?.ntfyTopic) {
-      await postNtfy(best.ntfy.ntfyTopic, title, body, clickUrl)
-    }
-    if (best.dm) {
-      const did = discordById.get(uid)
-      if (did) await postBotDm(did, `**${title}** — ${body}\n${clickUrl}`)
-    }
+  const byUser = new Map<string, typeof allPrefs>()
+  for (const p of allPrefs) {
+    const arr = byUser.get(p.userId) ?? []
+    arr.push(p)
+    byUser.set(p.userId, arr)
   }
+
+  // Fan out concurrently — these are independent network calls.
+  await Promise.all(
+    [...byUser.entries()].map(async ([uid, prefRows]) => {
+      const best = pickPrefs(prefRows)
+      const jobs: Promise<void>[] = []
+      if (best.ntfy?.ntfyTopic) jobs.push(postNtfy(best.ntfy.ntfyTopic, title, body, clickUrl))
+      if (best.dm) {
+        const did = discordById.get(uid)
+        if (did) jobs.push(postBotDm(did, `**${title}** — ${body}\n${clickUrl}`))
+      }
+      await Promise.all(jobs)
+    }),
+  )
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.22] — 2026-05-30 — Perf pass: drop Discord round-trips off the hot path
+
+### Changed
+- **`resolveTicketAccess`** no longer makes a live Discord API call on every ticket render. The category-staff check now reads the cached `business_members.discord_roles_snapshot` (written whenever the user hits a team page), falling back to Discord only when no snapshot exists yet. This matters a lot under live refresh — every SSE-driven `router.refresh()` previously did a Discord member fetch.
+- **`fetchChannelMemberIds`** (People card) gained a 20s in-process TTL cache, so the burst of `router.refresh()` re-renders on a chatty ticket reuses one `GET /channels/{id}` instead of one per message.
+- **`notify` dispatcher** — was a prefs `SELECT` per recipient (N+1); now one batched query grouped in memory, and the per-recipient ntfy/DM fan-out runs concurrently.
+
+Net effect: an open ticket receiving Discord replies now re-renders with **DB-only** queries (no Discord calls on the access path) and notifications fan out in parallel.
+
 ## [0.6.21] — 2026-05-30 — Lantern P17–P19: single-stack deploy, LB health, backups
 
 ### Added — P17 single deployable stack

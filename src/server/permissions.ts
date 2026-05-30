@@ -250,18 +250,47 @@ export const resolveTicketAccess = cache(async function resolveTicketAccess(opts
       .limit(1)
     const staffIds = parseCsvLocal(cat?.staffRoleIds)
     if (staffIds.length > 0) {
-      const botToken = process.env.DISCORD_BOT_TOKEN
-      if (botToken) {
+      // Perf: prefer the cached role snapshot from business_members (written by
+      // resolveBusinessAccess→touchMember each time the user hits a team page),
+      // so the hot path (every ticket render, including SSE-driven re-renders)
+      // avoids a live Discord round-trip. Only fall back to Discord when we
+      // have no snapshot for this user/business yet.
+      const [bm] = await db
+        .select({ snapshot: businessMembers.discordRolesSnapshot })
+        .from(businessMembers)
+        .where(
+          and(
+            eq(businessMembers.businessId, opts.business.id),
+            eq(businessMembers.userId, opts.session.user.id),
+          ),
+        )
+        .limit(1)
+
+      let roles: string[] | null = null
+      if (bm) {
         try {
-          const { fetchGuildMemberAsBot } = await import('@/lib/discord')
-          const member = await fetchGuildMemberAsBot(
-            botToken,
-            opts.business.discordGuildId,
-            opts.session.user.discordId,
-          )
-          if (member && member.roles.some((r) => staffIds.includes(r))) isStaff = true
+          roles = JSON.parse(bm.snapshot) as string[]
         } catch {
-          // Network error or member not in guild — fall through as non-staff.
+          roles = []
+        }
+      }
+
+      if (roles) {
+        if (roles.some((r) => staffIds.includes(r))) isStaff = true
+      } else {
+        const botToken = process.env.DISCORD_BOT_TOKEN
+        if (botToken) {
+          try {
+            const { fetchGuildMemberAsBot } = await import('@/lib/discord')
+            const member = await fetchGuildMemberAsBot(
+              botToken,
+              opts.business.discordGuildId,
+              opts.session.user.discordId,
+            )
+            if (member && member.roles.some((r) => staffIds.includes(r))) isStaff = true
+          } catch {
+            // Network error or member not in guild — fall through as non-staff.
+          }
         }
       }
     }
