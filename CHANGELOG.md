@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.25] — 2026-05-30 — All-tickets board hides closed by default
+
+### Changed
+- The **All tickets** board (`/tickets`) now defaults to **Active** (everything except closed) instead of showing every ticket. Added a filter bar — **Active / Open / Claimed / Waiting / Closed / All** — so closed tickets are one click away but don't clutter the default view. Filter composes with sorting. (The per-team queue already defaulted to hiding closed via its status pills.)
+
 ## [0.6.24] — 2026-05-30 — Help as a top-level tab
 
 ### Changed

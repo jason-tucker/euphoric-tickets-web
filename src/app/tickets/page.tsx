@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
 import { SortHeader, parseSort } from '@/components/app/sort-header'
@@ -7,23 +7,37 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { listMyBusinesses, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
-import { businesses, tickets, users } from '@/db/schema'
+import { businesses, tickets, ticketStatuses, users, type TicketStatus } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 const SORT_KEYS = ['last', 'opened', 'id', 'subject', 'status', 'team', 'opener'] as const
 
 // P8 (lantern) — "All tickets I can see". Cross-business view: every ticket in
 // a team the signed-in user administers, plus their own tickets in any team
-// they belong to. One query, no fan-out. P9 adds URL sort state.
+// they belong to. One query, no fan-out. P9 adds URL sort state. Defaults to
+// ACTIVE (closed hidden) so the board stays clean; Closed is a filter button.
 export default async function AllTicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string }>
+  searchParams: Promise<{ sort?: string; dir?: string; status?: string }>
 }) {
   const session = await requireSession()
   const my = await listMyBusinesses()
   const sp = await searchParams
   const { sort, dir } = parseSort(sp, SORT_KEYS, 'last')
+
+  // status: default 'active' (everything except closed). 'all' = no filter.
+  // A specific status = exactly that.
+  const filter = sp.status ?? 'active'
+  const statusWhere: SQL | undefined =
+    filter === 'all'
+      ? undefined
+      : filter === 'active'
+        ? ne(tickets.status, 'closed')
+        : (ticketStatuses as readonly string[]).includes(filter)
+          ? eq(tickets.status, filter as TicketStatus)
+          : ne(tickets.status, 'closed')
 
   const allIds = my.map((b) => b.business.id)
   const adminIds = my.filter((b) => b.level === 'admin' || b.level === 'owner').map((b) => b.business.id)
@@ -60,15 +74,18 @@ export default async function AllTicketsPage({
           .innerJoin(businesses, eq(businesses.id, tickets.businessId))
           .leftJoin(users, eq(users.id, tickets.openerUserId))
           .where(
-            or(
-              adminIds.length ? inArray(tickets.businessId, adminIds) : sql`false`,
-              and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, allIds)),
+            and(
+              or(
+                adminIds.length ? inArray(tickets.businessId, adminIds) : sql`false`,
+                and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, allIds)),
+              ),
+              statusWhere,
             ),
           )
           .orderBy(orderBy)
           .limit(300)
 
-  const hp = { sort, dir }
+  const hp = { sort, dir, status: sp.status }
 
   // Admins land on the team queue view of a row; non-admins on their own ticket.
   const adminSet = new Set(adminIds)
@@ -81,9 +98,14 @@ export default async function AllTicketsPage({
           <h1 className="text-2xl font-semibold">All tickets</h1>
           <p className="text-sm text-muted-foreground">
             {rows.length} {rows.length === 1 ? 'ticket' : 'tickets'} across {allIds.length}{' '}
-            {allIds.length === 1 ? 'team' : 'teams'} you can see.
+            {allIds.length === 1 ? 'team' : 'teams'} ·{' '}
+            <span className="font-medium text-foreground">
+              {filter === 'all' ? 'all statuses' : filter === 'active' ? 'active' : filter}
+            </span>
           </p>
         </div>
+
+        <FilterBar active={filter} sort={sort} dir={dir} />
 
         {rows.length === 0 ? (
           <Card>
@@ -155,5 +177,38 @@ export default async function AllTicketsPage({
         )}
       </main>
     </>
+  )
+}
+
+function FilterBar({ active, sort, dir }: { active: string; sort: string; dir: string }) {
+  const tabs = [
+    { key: 'active', label: 'Active' },
+    { key: 'open', label: 'Open' },
+    { key: 'claimed', label: 'Claimed' },
+    { key: 'waiting', label: 'Waiting' },
+    { key: 'closed', label: 'Closed' },
+    { key: 'all', label: 'All' },
+  ]
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tabs.map((t) => {
+        const sp = new URLSearchParams()
+        sp.set('status', t.key)
+        if (sort !== 'last') sp.set('sort', sort)
+        if (dir !== 'desc') sp.set('dir', dir)
+        return (
+          <Link
+            key={t.key}
+            href={`/tickets?${sp.toString()}`}
+            className={cn(
+              'rounded-md border px-3 py-1.5 text-sm transition-colors',
+              active === t.key ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent',
+            )}
+          >
+            {t.label}
+          </Link>
+        )
+      })}
+    </div>
   )
 }
