@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.17] — 2026-05-30 — Lantern P12: sudo error-log viewer
+
+### Added
+- **`bot_errors` schema** (web owns; bot mirrors) — `id bigserial, level, source, message, stack, context jsonb, created_at` + `created_at` index.
+- **`/admin/errors`** sudo-only page — most recent 200 rows, level filter pills (error/warn/info), JSON context preview. "Bot errors" link added to the top-nav sudo section.
+
+The bot writes rows via `persistError()` and sweeps anything older than 5 days hourly (bot v0.5.12).
+
 ## [0.6.16] — 2026-05-30 — Lantern P11 mirror: needs_attention banner
 
 ### Added
