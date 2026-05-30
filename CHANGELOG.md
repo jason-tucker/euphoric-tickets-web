@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.7] — 2026-05-30 — Multiple businesses per Discord guild + webhook tooltip
+
+### Changed
+- **Dropped the unique constraint on `businesses.discord_guild_id`.** A Discord guild can now host multiple businesses. The web is slug-scoped (`/b/<slug>`) and `listMyBusinesses` already iterates every business whose guild the signed-in user belongs to, so this "just works" on the web. Fixes the `businesses_discord_guild_id_unique` 500 when creating a second business in a guild from `/admin`.
+  - Known follow-up: the bot still resolves one business per guild for ticket-opening (`getBusinessByGuildId`). Multiple bot-driven panels in one guild would need a panel→business mapping; not needed yet.
+- **`/admin` "Outbound webhook URL (optional)"** now has an info-icon tooltip + helper line clarifying it's a fallback-only field (per-ticket channels don't need it) and how to obtain the URL.
+
+### Added (groundwork)
+- **`ticket_messages.attachments`** — `jsonb` column (default `[]`) storing captured Discord attachments `{ id, name, url, contentType, size }`. Unused until the upcoming audio-playback feature; ships now so the schema migration lands once.
+
 ## [0.6.6] — 2026-05-29 — Silent lifecycle status footers
 
 ### Added
@@ -290,4 +300,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.6 · 2d170b2`
+`v0.6.7 · pending`

@@ -1,14 +1,20 @@
 import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 
-// One row per tenant. A business is uniquely tied to a Discord guild.
+// One row per tenant. Multiple businesses MAY share a Discord guild — the
+// web is slug-scoped (/b/<slug>) and `listMyBusinesses` already iterates
+// every business whose guild the user is in, so several tenants can live in
+// one server. The slug stays globally unique; the guild id does not.
 export const businesses = pgTable('businesses', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   description: text('description'),
 
-  // The Discord guild this business lives in. One business per guild.
-  discordGuildId: text('discord_guild_id').notNull().unique(),
+  // The Discord guild this business lives in. NOT unique — a guild can host
+  // multiple businesses. (Bot ticket-opening still resolves one business per
+  // guild via getBusinessByGuildId; that's a known follow-up if a guild needs
+  // multiple bot-driven panels.)
+  discordGuildId: text('discord_guild_id').notNull(),
 
   // Comma-separated snowflakes (we keep it as text + parse on read so the
   // settings UI can post a single CSV form value).

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { desc, eq } from 'drizzle-orm'
-import { Briefcase, Building2 } from 'lucide-react'
+import { Briefcase, Building2, Info } from 'lucide-react'
 import { TopNav } from '@/components/app/top-nav'
 import { db } from '@/db/client'
 import { businesses } from '@/db/schema'
@@ -96,12 +96,27 @@ export default async function AdminPage() {
                 <Textarea id="description" name="description" rows={2} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="webhookUrl">Outbound webhook URL (optional)</Label>
+                <Label htmlFor="webhookUrl" className="flex items-center gap-1.5">
+                  Outbound webhook URL (optional)
+                  <Info
+                    className="h-3.5 w-3.5 cursor-help text-muted-foreground"
+                    aria-label="What is this?"
+                    title={
+                      'Fallback only. When per-ticket channel creation is configured (bot token + a Discord category), every ticket gets its own channel and its own webhook — you do NOT need this. ' +
+                      'Set this only if you want all web replies to land in one shared Discord channel instead. Web replies post here as a user-spoofed webhook (the staff member’s name + avatar). ' +
+                      'Format: https://discord.com/api/webhooks/<id>/<token> — Channel settings → Integrations → Webhooks → Copy URL.'
+                    }
+                  />
+                </Label>
                 <Input
                   id="webhookUrl"
                   name="webhookUrl"
                   placeholder="https://discord.com/api/webhooks/…"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Fallback only — leave blank when per-ticket channels are configured. Hover the
+                  <Info className="mx-0.5 inline h-3 w-3" aria-hidden /> for details.
+                </p>
               </div>
               <SubmitButton pendingChildren="Creating…">Create business</SubmitButton>
             </form>

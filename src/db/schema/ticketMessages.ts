@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { tickets } from './tickets'
 import { users } from './users'
 
@@ -6,6 +6,18 @@ import { users } from './users'
 // ticket channel (lazily created). See euphoric-tickets-web#5.
 export const messageSources = ['web', 'discord', 'system', 'internal'] as const
 export type MessageSource = (typeof messageSources)[number]
+
+// One captured Discord attachment. `url` is Discord's signed CDN URL, which
+// expires (~24h) — the web never relies on it directly; it refreshes a fresh
+// URL on demand via the bot token (audio playback streams from Discord's CDN,
+// nothing is stored on the VPS). We keep `url` only as a last-resort fallback.
+export type MessageAttachment = {
+  id: string
+  name: string
+  url: string
+  contentType: string | null
+  size: number
+}
 
 export const ticketMessages = pgTable(
   'ticket_messages',
@@ -21,6 +33,11 @@ export const ticketMessages = pgTable(
     // Discord webhook returns the message ID we created; store it so we can
     // dedupe inbound bot-relay events that re-broadcast the same message.
     discordMessageId: text('discord_message_id'),
+
+    // Captured Discord attachments (audio, images, files). Empty array when
+    // the message had none. URLs here are signed + expiring; the web
+    // refreshes them on demand via the bot token.
+    attachments: jsonb('attachments').$type<MessageAttachment[]>().notNull().default([]),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
