@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { ticketCategories, tickets, ticketMessages } from '@/db/schema'
+import { ticketCategories, tickets, ticketMessages, users } from '@/db/schema'
 import {
   requireBusinessAccess,
   requireSession,
@@ -16,12 +16,29 @@ import {
   createPrivateThread,
   deleteDiscordChannel,
   postBotMessageToThread,
+  postChannelStatus,
   postWebhook,
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
 import type { Ticket } from '@/db/schema'
 import type { Session } from 'next-auth'
+
+// Posts a silent `-# ` status footer into the ticket's Discord channel for a
+// lifecycle event. Best-effort + no-op when the channel or bot token is
+// missing. NEVER used for internal notes.
+async function postStatus(ticket: Pick<Ticket, 'discordChannelId'>, text: string): Promise<void> {
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (!botToken || !ticket.discordChannelId) return
+  await postChannelStatus({ botToken, channelId: ticket.discordChannelId, text })
+}
+
+// Resolves a users.id (uuid) to a `<@discordId>` mention, or null if the user
+// has no Discord id on file.
+async function mentionForUserId(userId: string): Promise<string | null> {
+  const [u] = await db.select({ discordId: users.discordId }).from(users).where(eq(users.id, userId)).limit(1)
+  return u?.discordId ? `<@${u.discordId}>` : null
+}
 
 // P2: shared loader for every ticket-detail server action. Looks up the
 // ticket, gates by business membership, and resolves the per-ticket access
@@ -134,6 +151,7 @@ export async function claimTicket(slug: string, ticketId: number): Promise<void>
     .update(tickets)
     .set({ status: 'claimed', assigneeUserId: ctx.session.user.id, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
+  await postStatus(ctx.ticket, `Ticket claimed by <@${ctx.session.user.discordId}>`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -148,6 +166,7 @@ export async function unclaimTicket(slug: string, ticketId: number): Promise<voi
     .update(tickets)
     .set({ status: 'open', assigneeUserId: null, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
+  await postStatus(ctx.ticket, `Ticket unclaimed by <@${ctx.session.user.discordId}>`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -162,17 +181,21 @@ export async function assignTicket(
   if (!ctx) return
   if (!ctx.flags.canClaim) return
   const raw = String(formData.get('assigneeId') ?? '').trim()
+  const actor = `<@${ctx.session.user.discordId}>`
   if (!raw) {
     await db
       .update(tickets)
       .set({ status: 'open', assigneeUserId: null, lastActivityAt: sql`now()` })
       .where(eq(tickets.id, ticketId))
+    await postStatus(ctx.ticket, `Ticket unassigned by ${actor}`)
   } else {
     if (!/^[0-9a-f-]{36}$/i.test(raw)) throw new Error('Bad assignee id')
     await db
       .update(tickets)
       .set({ status: 'claimed', assigneeUserId: raw, lastActivityAt: sql`now()` })
       .where(eq(tickets.id, ticketId))
+    const target = (await mentionForUserId(raw)) ?? 'a staff member'
+    await postStatus(ctx.ticket, `Ticket assigned to ${target} by ${actor}`)
   }
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
@@ -187,6 +210,9 @@ export async function closeTicket(slug: string, ticketId: number): Promise<void>
     .update(tickets)
     .set({ status: 'closed', closedAt: sql`now()`, closedByUserId: session.user.id, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
+
+  // Status footer before the archive move (the channel survives the move).
+  await postStatus(t, `Ticket closed by <@${session.user.discordId}>`)
 
   // Best-effort: rename + move the per-ticket channel into the configured
   // closed-tickets Discord category (per-category override → business
@@ -322,5 +348,6 @@ export async function reopenTicket(slug: string, ticketId: number): Promise<void
     .update(tickets)
     .set({ status: 'open', closedAt: null, closedByUserId: null, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
+  await postStatus(ctx.ticket, `Ticket reopened by <@${ctx.session.user.discordId}>`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }

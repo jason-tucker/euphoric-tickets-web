@@ -363,6 +363,44 @@ export async function postBotMessageToThread(input: {
   return (await res.json()) as { id: string }
 }
 
+// Post a small, silent subtext status line into a ticket channel for
+// lifecycle events (claim/assign/close/reopen/add/remove). Mirrors the
+// bot's postTicketStatus.
+//
+//   `-# `  → grey subtext (footer-sized).
+//   flags 1<<12 (SUPPRESS_NOTIFICATIONS) → "@silent", no ping/badge.
+//   allowed_mentions parse:[] → <@id> renders as a name, never pings.
+//
+// Posted as the bot (system content, not user content) — this is the one
+// place the web posts a bot-authored line, and it's deliberately NOT a
+// reply (replies still go via the per-user webhook spoof). NEVER call this
+// for internal-note activity.
+//
+// Best-effort: returns silently on failure so it can't break the action.
+export async function postChannelStatus(input: {
+  botToken: string
+  channelId: string
+  text: string
+}): Promise<void> {
+  const { botToken, channelId, text } = input
+  try {
+    const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: `-# ${text}`,
+        flags: 1 << 12, // SUPPRESS_NOTIFICATIONS
+        allowed_mentions: { parse: [] },
+      }),
+    })
+    if (!res.ok && res.status !== 404) {
+      console.error('[postChannelStatus] failed', res.status, await res.text())
+    }
+  } catch (err) {
+    console.error('[postChannelStatus] threw', err)
+  }
+}
+
 // Hard-delete a Discord channel (used by the manual delete button on a
 // closed ticket). The DB row + ticket_messages stay so transcripts survive.
 export async function deleteDiscordChannel(input: {

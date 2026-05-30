@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.6] — 2026-05-29 — Silent lifecycle status footers
+
+### Added
+- **`postChannelStatus()`** in `src/lib/discord.ts` — posts a small grey `-# ` subtext line into a ticket channel as the bot, with the `SUPPRESS_NOTIFICATIONS` flag (1<<12 — a "@silent" message) and `allowed_mentions: { parse: [] }` so mentions render as names without pinging. This is the one place the web posts a bot-authored line; replies still go via the per-user webhook spoof.
+- Two helpers in the ticket detail actions: `postStatus(ticket, text)` (no-ops when channel/bot-token missing) and `mentionForUserId(uuid)` (resolves a `users.id` to a `<@discordId>` mention).
+- Wired into web lifecycle actions:
+  - **claim** → `Ticket claimed by <@x>`
+  - **unclaim** → `Ticket unclaimed by <@x>`
+  - **assign** → `Ticket assigned to <@target> by <@actor>` (or `Ticket unassigned by <@actor>`)
+  - **close** → `Ticket closed by <@actor>` (posted before the archive move; the channel survives close on the web)
+  - **reopen** → `Ticket reopened by <@actor>`
+
+### Not changed by design
+- **Internal notes post nothing** to the ticket channel — hard rule. They stay private to the staff thread.
+
+Closes euphoric-tickets-web#51.
+
 ## [0.6.5] — 2026-05-29 — Lantern P3: Discord directory picker
 
 ### Added — Phase P3 of the lantern plan
@@ -273,4 +290,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.5 · ddba4de`
+`v0.6.6 · pending`
