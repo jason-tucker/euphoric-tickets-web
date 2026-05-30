@@ -25,6 +25,7 @@ import {
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
+import { notify } from '@/server/notify'
 import type { Ticket } from '@/db/schema'
 import type { Session } from 'next-auth'
 
@@ -142,6 +143,17 @@ export async function replyToTicket(
     .update(tickets)
     .set({ lastActivityAt: sql`now()` })
     .where(eq(tickets.id, t.id))
+
+  // P13: notify the opener/assignee of a web-origin reply (best-effort).
+  void notify({
+    event: 'reply',
+    businessId: t.businessId,
+    categoryId: t.categoryId,
+    ticketId: t.id,
+    subject: t.subject,
+    slug,
+    actorUserId: session.user.id,
+  }).catch(() => {})
 
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
   return { ok: true }

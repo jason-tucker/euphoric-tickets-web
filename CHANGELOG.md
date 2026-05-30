@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.18] — 2026-05-30 — Lantern P13: notification prefs (ntfy + DM)
+
+### Added
+- **`user_notification_prefs` schema** — per-user rows scoped optionally by team/category, for (channel × event): `ntfy` / `dm` × `new_ticket` / `reply`.
+- **`src/server/notify.ts`** dispatcher — resolves recipients (opt-in users for new tickets; opener/assignee for replies, minus the actor), picks the most-specific enabled pref per channel, and fans out to **ntfy** (`POST https://ntfy.sh/<topic>`) and/or **Discord DM** (via the bot's `/api/internal/dm`).
+- **`/api/internal/notify`** (bot → web bridge, `INTERNAL_TOKEN`-authed) so Discord-origin events dispatch through the same path.
+- **`/settings/notifications`** page — ntfy topic + a toggle grid for new-ticket / reply × ntfy / DM. "Notifications" link in the top-nav.
+- Web-origin replies (`replyToTicket`) now call `notify` directly.
+
+### Env
+- `INTERNAL_TOKEN` (shared with the bot), `BOT_INTERNAL_URL` (e.g. `http://euphoric-tickets:8787`), optional `NTFY_BASE_URL`.
+
 ## [0.6.17] — 2026-05-30 — Lantern P12: sudo error-log viewer
 
 ### Added
