@@ -1,0 +1,106 @@
+# P17 (lantern) — single deployable stack for a fresh VPS.
+#
+# Brings up the WHOLE Euphoric Tickets system with one command:
+#   docker compose -f docker-compose.combined.yml up -d
+#
+# That's Postgres + the web UI + the Discord bot + watchtower auto-deploy, all
+# wired together, on one box. (A literal single-container-two-process image was
+# considered but the bot + web live in separate repos; a combined image would
+# need a monorepo or submodule. Running both GHCR images in one compose stack
+# is the practical "one thing to deploy" and keeps process isolation.)
+#
+# Required env (put in a .env next to this file):
+#   POSTGRES_PASSWORD, AUTH_SECRET, AUTH_DISCORD_ID, AUTH_DISCORD_SECRET,
+#   DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, GUILD_ID, INTERNAL_TOKEN
+#
+# Ingress (Caddy / cloudflared) is configured separately — this stack only
+# binds the web to 127.0.0.1:6095 like the split deploy.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tickets_web
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: tickets_web
+    volumes:
+      - tickets_pg:/var/lib/postgresql/data
+    networks:
+      tickets-net:
+        aliases: [tickets-db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets_web"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    image: ghcr.io/jason-tucker/euphoric-tickets-web:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tickets_web:${POSTGRES_PASSWORD}@tickets-db:5432/tickets_web
+      AUTH_SECRET: ${AUTH_SECRET:?}
+      AUTH_DISCORD_ID: ${AUTH_DISCORD_ID:?}
+      AUTH_DISCORD_SECRET: ${AUTH_DISCORD_SECRET:?}
+      AUTH_TRUST_HOST: "true"
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
+      BOT_INTERNAL_URL: http://bot:8787
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://tickets.euphoric.fm}
+    ports:
+      - "127.0.0.1:6095:3000"
+    networks:
+      tickets-net: {}
+      efm-public-net: {}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  bot:
+    image: ghcr.io/jason-tucker/euphoric-tickets:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tickets_web:${POSTGRES_PASSWORD}@tickets-db:5432/tickets_web
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?}
+      GUILD_ID: ${GUILD_ID:?}
+      WEB_BASE_URL: ${PUBLIC_BASE_URL:-https://tickets.euphoric.fm}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
+      INTERNAL_PORT: "8787"
+      SUDO_USER_IDS: ${SUDO_USER_IDS:-}
+      BOT_OWNER_ID: ${BOT_OWNER_ID:-}
+      # LEADER_ELECTION=off on a single VPS skips the advisory-lock wait.
+      LEADER_ELECTION: ${LEADER_ELECTION:-off}
+    networks:
+      tickets-net: {}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  watchtower:
+    image: nickfedor/watchtower:latest
+    restart: unless-stopped
+    command: ["--label-enable", "--cleanup", "--interval=60"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      tickets-net: {}
+
+networks:
+  tickets-net: {}
+  efm-public-net:
+    external: true
+
+volumes:
+  tickets_pg:

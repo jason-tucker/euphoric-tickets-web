@@ -1,0 +1,16 @@
+# P19 (lantern) — fires the backup every 45 minutes plus a daily 02:00 anchor.
+# The GFS retention in the script collapses these into one-per-timeslot.
+[Unit]
+Description=Euphoric Tickets DB backup schedule
+
+[Timer]
+# Every 45 minutes from boot.
+OnBootSec=10min
+OnUnitActiveSec=45min
+# Daily anchor at 02:00 local.
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

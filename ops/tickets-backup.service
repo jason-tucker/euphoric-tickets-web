@@ -1,0 +1,16 @@
+# P19 (lantern) — oneshot backup unit. Paired with tickets-backup.timer.
+# Install: copy both to /etc/systemd/system/, create /etc/tickets-backup.env,
+# then: systemctl daemon-reload && systemctl enable --now tickets-backup.timer
+[Unit]
+Description=Euphoric Tickets DB backup (restic, GFS retention)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/tickets-backup.env
+ExecStart=/usr/local/bin/tickets-backup.sh
+# On failure, ping Uptime Kuma (URL in the env file) so a missed backup pages.
+ExecStopPost=/bin/sh -c 'test "$EXIT_STATUS" = "0" || { [ -n "$UPTIME_KUMA_BACKUP_URL" ] && wget -q -O /dev/null "$UPTIME_KUMA_BACKUP_URL?status=down&msg=backup-failed" || true; }'
+Nice=10
+IOSchedulingClass=idle

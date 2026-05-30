@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.21] — 2026-05-30 — Lantern P17–P19: single-stack deploy, LB health, backups
+
+### Added — P17 single deployable stack
+- **`docker-compose.combined.yml`** — Postgres + web + bot + watchtower in one `docker compose up`. (The two repos are separate, so a literal one-container-two-process image would need a monorepo; running both GHCR images in one compose stack is the practical "one thing to deploy" and keeps process isolation.)
+
+### Added — P18 multi-VPS load balancing
+- **`GET /api/health`** — 200 when Postgres is reachable, 503 otherwise; what Caddy's `health_uri` polls.
+- `ops/README.md` documents the Caddy `reverse_proxy` LB block (`least_conn`, `health_uri /api/health`, `flush_interval -1` for SSE). The bot's single-leader election ships in bot v0.5.16.
+
+### Added — P19 GFS database backups
+- **`ops/tickets-backup.sh`** — `pg_dump --format=custom` piped into **restic** with Grandfather-Father-Son retention (`--keep-within-hourly 5h --keep-daily 3 --keep-weekly 4 --keep-monthly 4`). Dedup keeps ~17 snapshots at ~1.2–1.5× live DB size.
+- **`ops/tickets-backup.{service,timer}`** — systemd oneshot + timer (every 45min + 02:00 daily anchor), with an Uptime-Kuma ping on failure.
+- **`ops/README.md`** — install, retention, off-site B2 mirror, restore drill, settings-only rollback.
+
+Closes the lantern plan (P1–P19). L1/L2 remain as board placeholders.
+
 ## [0.6.20] — 2026-05-30 — Lantern P16: external Discord users (add by ID, no guild)
 
 ### Added
