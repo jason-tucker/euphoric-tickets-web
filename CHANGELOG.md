@@ -486,4 +486,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.28 · eac79c2`
+`v0.6.29 · dd29e86`
