@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
-import { requireBusinessAccess } from '@/server/permissions'
+import { requireBusinessAccess, resolveTicketAccess } from '@/server/permissions'
 import { db } from '@/db/client'
 import { businesses, businessMembers, tickets, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
@@ -32,11 +32,22 @@ export default async function TicketDetailPage({
   if (!Number.isInteger(ticketId)) notFound()
 
   const access = await requireBusinessAccess(slug, 'member')
-  const isAdmin = access.level === 'admin' || access.level === 'owner'
 
   const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
   if (!t || t.businessId !== access.business.id) notFound()
-  if (!isAdmin && t.openerUserId !== access.session.user.id) notFound()
+
+  // P2: per-ticket access flags. Replaces the old `isAdmin && opener` short-
+  // circuit so a staff member on this category sees + acts on the ticket
+  // without needing to be a business admin.
+  const ticketAccess = await resolveTicketAccess({
+    business: access.business,
+    level: access.level,
+    ticket: { openerUserId: t.openerUserId, categoryId: t.categoryId },
+    session: { user: { id: access.session.user.id, discordId: access.session.user.discordId } },
+  })
+  if (!ticketAccess.canSee) notFound()
+  const isAdmin = ticketAccess.isAdmin
+  const isStaff = ticketAccess.isStaff
 
   // All independent queries fire in parallel — was 5-7 sequential round-trips.
   const openerQ = db.select().from(users).where(eq(users.id, t.openerUserId)).limit(1)
@@ -46,7 +57,9 @@ export default async function TicketDetailPage({
   const assigneeQ = t.assigneeUserId
     ? db.select().from(users).where(eq(users.id, t.assigneeUserId)).limit(1)
     : Promise.resolve([])
-  const staffQ = isAdmin
+  // Staff list drives the Assign dropdown — both admins and category-staff
+  // need it under P2.
+  const staffQ = isStaff
     ? db
         .select({ id: users.id, name: users.name })
         .from(businessMembers)
@@ -92,10 +105,10 @@ export default async function TicketDetailPage({
   const assignee = assigneeRow[0] ?? null
   const parentTicket = parentRow[0] ?? null
 
-  // Internal notes are NEVER shown to the opener — even if they reload
-  // the page. Admins see them in a separate panel below the conversation.
+  // Internal notes are NEVER shown to the opener — even if they reload.
+  // Staff and admins see them in a separate panel below the conversation.
   const messages = allMessages.filter((m) => m.source !== 'internal')
-  const internalNotes = isAdmin ? allMessages.filter((m) => m.source === 'internal') : []
+  const internalNotes = isStaff ? allMessages.filter((m) => m.source === 'internal') : []
 
   // Deep link into the actual Discord client/web at the per-ticket channel.
   const discordChannelUrl =
@@ -103,7 +116,11 @@ export default async function TicketDetailPage({
       ? `https://discord.com/channels/${access.business.discordGuildId}/${t.discordChannelId}`
       : null
 
-  const canClose = t.status !== 'closed' && (isAdmin || t.openerUserId === access.session.user.id)
+  const canClose = t.status !== 'closed' && ticketAccess.canClose
+  const canClaim = t.status !== 'closed' && ticketAccess.canClaim
+  const canAssign = canClaim
+  const canReopen = t.status === 'closed' && ticketAccess.canClaim
+  const canDelete = t.status === 'closed' && ticketAccess.canDeleteChannel && Boolean(t.discordChannelId)
 
   async function claim() { 'use server'; await claimTicket(slug, t.id) }
   async function unclaim() { 'use server'; await unclaimTicket(slug, t.id) }
@@ -179,13 +196,13 @@ export default async function TicketDetailPage({
               {t.status === 'claimed' ? 'claimed by' : 'assigned to'} {assignee.name ?? '?'}
             </span>
           )}
-          {isAdmin && t.status !== 'closed' && (t.assigneeUserId === null) && (
+          {canClaim && t.assigneeUserId === null && (
             <form action={claim}><SubmitButton size="sm" variant="secondary">Claim</SubmitButton></form>
           )}
-          {isAdmin && t.assigneeUserId && t.status !== 'closed' && (
+          {canClaim && t.assigneeUserId && (
             <form action={unclaim}><SubmitButton size="sm" variant="outline">Unclaim</SubmitButton></form>
           )}
-          {isAdmin && t.status !== 'closed' && (
+          {canAssign && (
             <form action={assign} className="flex items-center gap-1">
               <select
                 name="assigneeId"
@@ -204,10 +221,10 @@ export default async function TicketDetailPage({
           {canClose && (
             <form action={close}><SubmitButton size="sm" variant="outline">Close</SubmitButton></form>
           )}
-          {isAdmin && t.status === 'closed' && (
+          {canReopen && (
             <form action={reopen}><SubmitButton size="sm" variant="secondary">Reopen</SubmitButton></form>
           )}
-          {isAdmin && t.status === 'closed' && t.discordChannelId && (
+          {canDelete && (
             <form action={deleteChannel}>
               <SubmitButton size="sm" variant="destructive" pendingChildren="Deleting…">Delete channel</SubmitButton>
             </form>
@@ -304,7 +321,7 @@ export default async function TicketDetailPage({
         </Card>
       )}
 
-      {isAdmin && (
+      {isStaff && (
         <Card className="border-amber-500/40 bg-amber-500/5">
           <CardHeader>
             <CardTitle className="text-base">Internal notes — staff only</CardTitle>

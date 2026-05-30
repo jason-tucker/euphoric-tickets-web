@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.6.4] — 2026-05-29 — Lantern P2: three-tier permissions enforced
+
+### Added — Phase P2 of the lantern plan
+- **`resolveTicketAccess` helper** in `src/server/permissions.ts` returns per-ticket flags `{ isAdmin, isStaff, isOpener, canSee, canReply, canClaim, canClose, canChangeCategory, canManageMembers, canDeleteChannel }`. React.cache'd so the page and any server actions called from it share one DB round-trip per request. The staff check fetches the user's roles via `fetchGuildMemberAsBot` only when the ticket's category has non-empty `staff_role_ids` — admin and opener paths skip the Discord call.
+- **`/b/[slug]/tickets/[id]` page** now resolves the flags after loading the ticket and uses them to drive button visibility. The staff-list dropdown that powers Assign is now visible to staff (not just admin), and the internal-notes panel is staff-or-admin.
+- **Every server action** in the page's `actions.ts` was refactored to load through a shared `loadTicketAccess(slug, ticketId)` helper that returns the same flags. Mapping:
+
+| Action | Required flag |
+| --- | --- |
+| `replyToTicket` | `canReply` |
+| `claimTicket` / `unclaimTicket` / `assignTicket` | `canClaim` |
+| `closeTicket` | `canClose` |
+| `reopenTicket` | `canClaim` |
+| `addInternalNote` | `canManageMembers` |
+| `deleteTicketChannel` | `canDeleteChannel` (admin-only — throws on staff attempts) |
+
+### Behavior change
+- A user holding a role in a `ticket_categories.staff_role_ids` row can now see every ticket of that category, claim / close / reply / add internal notes on it, even without being on `businesses.admin_role_ids`. Channel deletion stays admin-only — staff hitting the action gets a server-side throw, and the Delete button is hidden in their UI.
+
+Closes euphoric-tickets-web#16.
+
+### Notes
+- Pickers (P3) still pending — role-ID fields on the settings page remain plain text inputs for one more release.
+
 ## [0.6.3] — 2026-05-29 — Lantern P1: edit categories + per-category role tiers
 
 ### Added — Phase P1 of the lantern plan (see `/home/botuser/.claude/plans/valiant-tinkering-lantern.md`)
@@ -224,4 +248,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.3 · 2101e46`
+`v0.6.4 · pending`

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { auth, type DiscordGuildSnapshot } from './auth'
 import { db } from '@/db/client'
-import { businesses, businessMembers, users, type Business } from '@/db/schema'
+import { businesses, businessMembers, ticketCategories, users, type Business } from '@/db/schema'
 
 export type AccessLevel = 'member' | 'admin' | 'owner'
 
@@ -177,3 +177,83 @@ export async function requireBusinessAccess(slug: string, level: AccessLevel = '
   if (!hasAtLeast(resolved.level, level)) redirect(`/b/${slug}`)
   return { session, ...resolved }
 }
+
+// Lantern P2 — per-ticket access flags, used to drive both UI visibility and
+// server-action gates on `/b/[slug]/tickets/[id]`. See the lantern plan's M1
+// section for the mapping table.
+//
+// Tiers:
+//   admin     — `level === 'admin' | 'owner'`. Only tier allowed to delete
+//               the underlying Discord channel, change a ticket's category,
+//               or edit settings.
+//   staff     — admin OR holds any role in `ticket_categories.staff_role_ids`
+//               of the ticket's category. Falls back to admin if the column
+//               is empty.
+//   opener    — `tickets.opener_user_id === session.user.id`.
+//   member    — none of the above; can't see the ticket.
+export type TicketAccessFlags = {
+  isAdmin: boolean
+  isStaff: boolean
+  isOpener: boolean
+  canSee: boolean
+  canReply: boolean
+  canClaim: boolean
+  canClose: boolean
+  canChangeCategory: boolean
+  canManageMembers: boolean
+  canDeleteChannel: boolean
+}
+
+function parseCsvLocal(input: string | null | undefined): string[] {
+  if (!input) return []
+  return input.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
+export const resolveTicketAccess = cache(async function resolveTicketAccess(opts: {
+  business: Business
+  level: AccessLevel
+  ticket: { openerUserId: string; categoryId: string | null }
+  session: { user: { id: string; discordId: string } }
+}): Promise<TicketAccessFlags> {
+  const isAdmin = opts.level === 'admin' || opts.level === 'owner'
+  const isOpener = opts.ticket.openerUserId === opts.session.user.id
+
+  let isStaff = isAdmin
+  if (!isStaff && opts.ticket.categoryId) {
+    const [cat] = await db
+      .select({ staffRoleIds: ticketCategories.staffRoleIds })
+      .from(ticketCategories)
+      .where(eq(ticketCategories.id, opts.ticket.categoryId))
+      .limit(1)
+    const staffIds = parseCsvLocal(cat?.staffRoleIds)
+    if (staffIds.length > 0) {
+      const botToken = process.env.DISCORD_BOT_TOKEN
+      if (botToken) {
+        try {
+          const { fetchGuildMemberAsBot } = await import('@/lib/discord')
+          const member = await fetchGuildMemberAsBot(
+            botToken,
+            opts.business.discordGuildId,
+            opts.session.user.discordId,
+          )
+          if (member && member.roles.some((r) => staffIds.includes(r))) isStaff = true
+        } catch {
+          // Network error or member not in guild — fall through as non-staff.
+        }
+      }
+    }
+  }
+
+  return {
+    isAdmin,
+    isStaff,
+    isOpener,
+    canSee: isAdmin || isStaff || isOpener,
+    canReply: isAdmin || isStaff || isOpener,
+    canClaim: isAdmin || isStaff,
+    canClose: isAdmin || isStaff || isOpener,
+    canChangeCategory: isAdmin,
+    canManageMembers: isAdmin || isStaff,
+    canDeleteChannel: isAdmin,
+  }
+})

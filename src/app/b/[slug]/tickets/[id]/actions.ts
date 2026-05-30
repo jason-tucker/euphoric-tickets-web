@@ -1,11 +1,16 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
 import { ticketCategories, tickets, ticketMessages } from '@/db/schema'
-import { requireBusinessAccess, requireSession } from '@/server/permissions'
+import {
+  requireBusinessAccess,
+  requireSession,
+  resolveTicketAccess,
+  type TicketAccessFlags,
+} from '@/server/permissions'
 import {
   archiveTicketChannel,
   createPrivateThread,
@@ -15,6 +20,45 @@ import {
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
+import type { Ticket } from '@/db/schema'
+import type { Session } from 'next-auth'
+
+// P2: shared loader for every ticket-detail server action. Looks up the
+// ticket, gates by business membership, and resolves the per-ticket access
+// flags (admin / staff / opener tiers — see TicketAccessFlags). Returns
+// null if the ticket isn't in this business; callers should treat null as
+// a denial and return without mutating.
+async function loadTicketAccess(
+  slug: string,
+  ticketId: number,
+): Promise<
+  | {
+      session: Session & { user: { id: string; discordId: string; name?: string | null; avatarHash?: string | null } }
+      business: Awaited<ReturnType<typeof requireBusinessAccess>>['business']
+      level: Awaited<ReturnType<typeof requireBusinessAccess>>['level']
+      ticket: Ticket
+      flags: TicketAccessFlags
+    }
+  | null
+> {
+  const session = await requireSession()
+  const access = await requireBusinessAccess(slug, 'member')
+  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
+  if (!t || t.businessId !== access.business.id) return null
+  const flags = await resolveTicketAccess({
+    business: access.business,
+    level: access.level,
+    ticket: { openerUserId: t.openerUserId, categoryId: t.categoryId },
+    session: { user: { id: session.user.id, discordId: session.user.discordId } },
+  })
+  return {
+    session: session as never,
+    business: access.business,
+    level: access.level,
+    ticket: t,
+    flags,
+  }
+}
 
 const replySchema = z.object({
   body: z.string().min(1, 'Reply cannot be empty').max(2000, 'Discord limits messages to 2000 chars'),
@@ -25,21 +69,16 @@ export async function replyToTicket(
   ticketId: number,
   formData: FormData,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await requireSession()
-  const access = await requireBusinessAccess(slug, 'member')
-
   const parsed = replySchema.safeParse({ body: String(formData.get('body') ?? '') })
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' }
   }
 
-  // Pull the ticket and verify business + opener-vs-admin access.
-  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) return { ok: false, error: 'Ticket not found' }
-
-  const isAdmin = access.level === 'admin' || access.level === 'owner'
-  const isOpener = t.openerUserId === session.user.id
-  if (!isAdmin && !isOpener) return { ok: false, error: 'You cannot reply to this ticket' }
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return { ok: false, error: 'Ticket not found' }
+  const { session, business: businessRow, ticket: t, flags } = ctx
+  const access = { business: businessRow }
+  if (!flags.canReply) return { ok: false, error: 'You cannot reply to this ticket' }
   if (t.status === 'closed') return { ok: false, error: 'Cannot reply to a closed ticket' }
 
   // Prefer the per-ticket channel webhook; fall back to the business-wide
@@ -88,25 +127,23 @@ export async function replyToTicket(
 }
 
 export async function claimTicket(slug: string, ticketId: number): Promise<void> {
-  const session = await requireSession()
-  const access = await requireBusinessAccess(slug, 'admin')
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canClaim) return
   await db
     .update(tickets)
-    .set({ status: 'claimed', assigneeUserId: session.user.id, lastActivityAt: sql`now()` })
-    .where(and(eq(tickets.id, ticketId), eq(tickets.businessId, access.business.id)))
+    .set({ status: 'claimed', assigneeUserId: ctx.session.user.id, lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
 // Release a claimed ticket back to the unassigned open pool. Allowed for
-// the current assignee (so they can hand it off) and any admin.
+// staff/admin, and for the current assignee (so they can hand it off).
 export async function unclaimTicket(slug: string, ticketId: number): Promise<void> {
-  const session = await requireSession()
-  const access = await requireBusinessAccess(slug, 'member')
-  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) return
-  const isAdmin = access.level === 'admin' || access.level === 'owner'
-  const isAssignee = t.assigneeUserId === session.user.id
-  if (!isAdmin && !isAssignee) return
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  const isAssignee = ctx.ticket.assigneeUserId === ctx.session.user.id
+  if (!ctx.flags.canClaim && !isAssignee) return
   await db
     .update(tickets)
     .set({ status: 'open', assigneeUserId: null, lastActivityAt: sql`now()` })
@@ -114,39 +151,38 @@ export async function unclaimTicket(slug: string, ticketId: number): Promise<voi
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
-// Assign a ticket to a specific staff member (admin-only). Bumps to claimed
-// status. Passing assigneeId === '' is equivalent to unclaim.
+// Assign a ticket to a specific staff member (staff-or-admin under P2).
+// Passing assigneeId === '' is equivalent to unclaim.
 export async function assignTicket(
   slug: string,
   ticketId: number,
   formData: FormData,
 ): Promise<void> {
-  await requireSession()
-  const access = await requireBusinessAccess(slug, 'admin')
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canClaim) return
   const raw = String(formData.get('assigneeId') ?? '').trim()
   if (!raw) {
     await db
       .update(tickets)
       .set({ status: 'open', assigneeUserId: null, lastActivityAt: sql`now()` })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.businessId, access.business.id)))
+      .where(eq(tickets.id, ticketId))
   } else {
     if (!/^[0-9a-f-]{36}$/i.test(raw)) throw new Error('Bad assignee id')
     await db
       .update(tickets)
       .set({ status: 'claimed', assigneeUserId: raw, lastActivityAt: sql`now()` })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.businessId, access.business.id)))
+      .where(eq(tickets.id, ticketId))
   }
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
 export async function closeTicket(slug: string, ticketId: number): Promise<void> {
-  const session = await requireSession()
-  const access = await requireBusinessAccess(slug, 'member')
-  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) return
-  const isAdmin = access.level === 'admin' || access.level === 'owner'
-  const isOpener = t.openerUserId === session.user.id
-  if (!isAdmin && !isOpener) return
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canClose) return
+  const { session, business: businessRow, ticket: t } = ctx
+  const access = { business: businessRow }
   await db
     .update(tickets)
     .set({ status: 'closed', closedAt: sql`now()`, closedByUserId: session.user.id, lastActivityAt: sql`now()` })
@@ -190,14 +226,14 @@ export async function addInternalNote(
   ticketId: number,
   formData: FormData,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await requireSession()
-  const access = await requireBusinessAccess(slug, 'admin')
   const body = String(formData.get('body') ?? '').trim()
   if (!body) return { ok: false, error: 'Empty note' }
   if (body.length > 2000) return { ok: false, error: 'Note exceeds 2000 chars' }
 
-  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) return { ok: false, error: 'Not found' }
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return { ok: false, error: 'Not found' }
+  if (!ctx.flags.canManageMembers) return { ok: false, error: 'Staff only' }
+  const { session, ticket: t } = ctx
 
   let threadId = t.discordInternalThreadId
   const botToken = process.env.DISCORD_BOT_TOKEN
@@ -251,12 +287,13 @@ export async function addInternalNote(
 
 // Hard-delete the Discord channel attached to a closed ticket. Keeps the
 // DB row + ticket_messages so the transcript is still viewable from the web.
-// Admin-only and only allowed when the ticket is already closed.
+// Admin-only (P2 hard rule — staff cannot delete) and only allowed when the
+// ticket is already closed.
 export async function deleteTicketChannel(slug: string, ticketId: number): Promise<void> {
-  await requireSession()
-  const access = await requireBusinessAccess(slug, 'admin')
-  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) return
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canDeleteChannel) throw new Error('Only admins can delete a ticket channel')
+  const { ticket: t } = ctx
   if (t.status !== 'closed') throw new Error('Ticket must be closed before its channel is deleted')
 
   const botToken = process.env.DISCORD_BOT_TOKEN
@@ -278,7 +315,9 @@ export async function deleteTicketChannel(slug: string, ticketId: number): Promi
 }
 
 export async function reopenTicket(slug: string, ticketId: number): Promise<void> {
-  await requireBusinessAccess(slug, 'admin')
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canClaim) return
   await db
     .update(tickets)
     .set({ status: 'open', closedAt: null, closedByUserId: null, lastActivityAt: sql`now()` })
