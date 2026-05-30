@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.29] — 2026-05-30 — Admin tab + dynamic per-team/category notifications + custom ntfy server
+
+### Added
+- **Admin tab** in the header bar (next to Help) — visible only to sudo.
+- **Dynamic notification settings.** `/settings/notifications` is rebuilt: a **Global default** plus collapsible **per-team** sections, each with a **whole-team** row and a row **per category**. Each scope toggles new-ticket / reply × ntfy / DM independently. The dispatcher already does most-specific-wins, so you can (e.g.) enable globally but mute one noisy category.
+- **Custom ntfy server** (optional) — a per-user `ntfy_server` field; leave blank for ntfy.sh, or point at a self-hosted server. Wired through the dispatcher (`postNtfy` uses the per-user server, falling back to `NTFY_BASE_URL`/ntfy.sh).
+
+### Changed
+- `saveNotificationPrefs` now persists the full matrix: it reads a rendered `scopes` list + `pref:<bid>:<cid>:<event>:<channel>` checkboxes, wipes the user's prefs, and re-inserts the checked ones (ntfy topic/server applied to ntfy rows).
+
 ## [0.6.28] — 2026-05-30 — Internal endpoints fall back to the bot token
 
 ### Changed

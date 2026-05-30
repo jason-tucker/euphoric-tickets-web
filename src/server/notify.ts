@@ -20,10 +20,18 @@ export type NotifyContext = {
 
 const NTFY_BASE = process.env.NTFY_BASE_URL ?? 'https://ntfy.sh'
 
-// Best-effort ntfy publish.
-async function postNtfy(topic: string, title: string, body: string, clickUrl: string): Promise<void> {
+// Best-effort ntfy publish. `server` is the user's optional custom ntfy server;
+// falls back to the configured/default base.
+async function postNtfy(
+  topic: string,
+  title: string,
+  body: string,
+  clickUrl: string,
+  server?: string | null,
+): Promise<void> {
+  const base = (server && /^https?:\/\//i.test(server) ? server : NTFY_BASE).replace(/\/+$/, '')
   try {
-    await fetch(`${NTFY_BASE}/${encodeURIComponent(topic)}`, {
+    await fetch(`${base}/${encodeURIComponent(topic)}`, {
       method: 'POST',
       headers: { Title: title, Click: clickUrl },
       body,
@@ -53,7 +61,14 @@ async function postBotDm(discordUserId: string, content: string): Promise<void> 
 
 // Returns the most-specific enabled pref per channel for a user + event.
 function pickPrefs(
-  rows: Array<{ businessId: string | null; categoryId: string | null; channel: string; enabled: boolean; ntfyTopic: string | null }>,
+  rows: Array<{
+    businessId: string | null
+    categoryId: string | null
+    channel: string
+    enabled: boolean
+    ntfyTopic: string | null
+    ntfyServer: string | null
+  }>,
 ) {
   // Specificity: category-scoped > business-scoped > global.
   const score = (r: { businessId: string | null; categoryId: string | null }) =>
@@ -120,6 +135,7 @@ export async function notify(ctx: NotifyContext): Promise<void> {
       channel: userNotificationPrefs.channel,
       enabled: userNotificationPrefs.enabled,
       ntfyTopic: userNotificationPrefs.ntfyTopic,
+      ntfyServer: userNotificationPrefs.ntfyServer,
     })
     .from(userNotificationPrefs)
     .where(
@@ -147,7 +163,7 @@ export async function notify(ctx: NotifyContext): Promise<void> {
     [...byUser.entries()].map(async ([uid, prefRows]) => {
       const best = pickPrefs(prefRows)
       const jobs: Promise<void>[] = []
-      if (best.ntfy?.ntfyTopic) jobs.push(postNtfy(best.ntfy.ntfyTopic, title, body, clickUrl))
+      if (best.ntfy?.ntfyTopic) jobs.push(postNtfy(best.ntfy.ntfyTopic, title, body, clickUrl, best.ntfy.ntfyServer))
       if (best.dm) {
         const did = discordById.get(uid)
         if (did) jobs.push(postBotDm(did, `**${title}** — ${body}\n${clickUrl}`))

@@ -1,58 +1,59 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, eq, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { userNotificationPrefs } from '@/db/schema'
+import { userNotificationPrefs, notifyEvents, notifyChannels } from '@/db/schema'
 import { requireSession } from '@/server/permissions'
 
-const COMBOS = [
-  { event: 'new_ticket', channel: 'ntfy' },
-  { event: 'new_ticket', channel: 'dm' },
-  { event: 'reply', channel: 'ntfy' },
-  { event: 'reply', channel: 'dm' },
-] as const
+const UUID = /^[0-9a-f-]{36}$/i
 
-// P13 — save global (all-teams, all-categories) notification toggles + ntfy
-// topic. Each checked combo becomes a row; unchecked removes it.
+// P13+ — save the full per-user notification matrix: a global default plus
+// per-team and per-category overrides. The page submits a `scopes` list of
+// every (businessId, categoryId) pair it rendered, and one checkbox per
+// scope × event × channel named `pref:<bid>:<cid>:<event>:<channel>`. We wipe
+// the user's prefs and re-insert the checked ones (idempotent). ntfy topic +
+// optional custom server are user-level, applied to every ntfy row.
 export async function saveNotificationPrefs(formData: FormData): Promise<void> {
   const session = await requireSession()
   const userId = session.user.id
+
   const ntfyTopic = String(formData.get('ntfyTopic') ?? '').trim() || null
+  let ntfyServer = String(formData.get('ntfyServer') ?? '').trim() || null
+  // Only accept a sane http(s) URL for a custom server; ignore otherwise.
+  if (ntfyServer && !/^https?:\/\/[^\s]+$/i.test(ntfyServer)) ntfyServer = null
 
-  for (const c of COMBOS) {
-    const key = `${c.event}:${c.channel}`
-    const on = formData.get(key) === 'on'
-    const where = and(
-      eq(userNotificationPrefs.userId, userId),
-      isNull(userNotificationPrefs.businessId),
-      isNull(userNotificationPrefs.categoryId),
-      eq(userNotificationPrefs.event, c.event),
-      eq(userNotificationPrefs.channel, c.channel),
-    )
-    const [existing] = await db.select({ id: userNotificationPrefs.id }).from(userNotificationPrefs).where(where).limit(1)
+  let scopes: { bid: string; cid: string }[] = []
+  try {
+    scopes = JSON.parse(String(formData.get('scopes') ?? '[]'))
+  } catch {
+    scopes = []
+  }
 
-    if (!on) {
-      if (existing) await db.delete(userNotificationPrefs).where(eq(userNotificationPrefs.id, existing.id))
-      continue
-    }
-    if (existing) {
-      await db
-        .update(userNotificationPrefs)
-        .set({ enabled: true, ntfyTopic: c.channel === 'ntfy' ? ntfyTopic : null })
-        .where(eq(userNotificationPrefs.id, existing.id))
-    } else {
-      await db.insert(userNotificationPrefs).values({
-        userId,
-        businessId: null,
-        categoryId: null,
-        event: c.event,
-        channel: c.channel,
-        enabled: true,
-        ntfyTopic: c.channel === 'ntfy' ? ntfyTopic : null,
-      })
+  const rows: (typeof userNotificationPrefs.$inferInsert)[] = []
+  for (const s of scopes) {
+    const bid = s.bid && UUID.test(s.bid) ? s.bid : null
+    const cid = s.cid && UUID.test(s.cid) ? s.cid : null
+    for (const event of notifyEvents) {
+      for (const channel of notifyChannels) {
+        const key = `pref:${s.bid ?? ''}:${s.cid ?? ''}:${event}:${channel}`
+        if (formData.get(key) !== 'on') continue
+        rows.push({
+          userId,
+          businessId: bid,
+          categoryId: cid,
+          event,
+          channel,
+          enabled: true,
+          ntfyTopic: channel === 'ntfy' ? ntfyTopic : null,
+          ntfyServer: channel === 'ntfy' ? ntfyServer : null,
+        })
+      }
     }
   }
+
+  await db.delete(userNotificationPrefs).where(eq(userNotificationPrefs.userId, userId))
+  if (rows.length > 0) await db.insert(userNotificationPrefs).values(rows)
 
   revalidatePath('/settings/notifications')
 }

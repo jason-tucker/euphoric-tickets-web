@@ -57,6 +57,14 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
           />
         </div>
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
+          {isSudo && (
+            <Link
+              href="/admin"
+              className="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              Admin
+            </Link>
+          )}
           <Link
             href="/help"
             className="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
