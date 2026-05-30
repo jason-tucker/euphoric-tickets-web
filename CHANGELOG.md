@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.34] — 2026-05-30 — Rename compose service `web` → `tickets-web` to clear shared-network alias collision
+
+### Changed
+- **Compose service renamed `web` → `tickets-web`.** Matches the explicit `tickets-web` alias already declared on the shared `efm-public-net`, so all current resolvers (the `euphoricfm-website` Caddy uses `reverse_proxy tickets-web:3000`) keep working unchanged. The reason for the rename: both this stack and `euphoricfm-website` previously auto-claimed the unqualified `web` alias on `efm-public-net` (docker-compose adds the service name as a network alias automatically). No consumer resolved plain `web` today, but anything new joining the network and resolving `web` would round-robin between two backends — same failure shape as the `db` collision that broke otterbot's `/oc` earlier today. After this commit the auto-alias on `efm-public-net` is `tickets-web` for this service and `efm-web` for the other — unique. Container name changes from `euphoric-tickets-web-web-1` → `euphoric-tickets-web-tickets-web-1`; brief downtime on `tickets.euphoric.fm` while `docker compose up -d` recreates it; the postgres data volume is unaffected. The explicit `aliases: [tickets-web]` block on the network is now redundant (the auto-alias provides the same name) but kept as load-bearing documentation.
+
 ## [0.6.33] — 2026-05-30 — Reply preview toggle, make-owner, picker dedupe, update prompt
 
 ### Added

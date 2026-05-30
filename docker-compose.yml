@@ -1,14 +1,19 @@
 # euphoric-tickets-web — Next.js + Postgres.
 #
-# The `web` service is bound to 127.0.0.1:6095 only. Public ingress for
-# tickets.euphoric.fm is provided by the euphoricfm-website Caddy container
-# via the shared `efm-public-net` external network (it adds a server block
-# that reverse-proxies the hostname to `web:3000`).
+# The `tickets-web` service is bound to 127.0.0.1:6095 only. Public ingress
+# for tickets.euphoric.fm is provided by the euphoricfm-website Caddy
+# container via the shared `efm-public-net` external network (it adds a
+# server block that reverse-proxies the hostname to `tickets-web:3000`).
+#
+# Service renamed `web` → `tickets-web` so this stack and `euphoricfm-website`
+# don't both auto-claim the unqualified `web` alias on shared efm-public-net.
+# Latent footgun otherwise — any future container on this net resolving plain
+# `web` would round-robin between two backends.
 #
 # Watchtower polls GHCR every 60s and auto-pulls a new :latest when CI pushes.
 
 services:
-  web:
+  tickets-web:
     image: ${WEB_IMAGE:-ghcr.io/jason-tucker/euphoric-tickets-web:latest}
     build: .
     restart: unless-stopped
