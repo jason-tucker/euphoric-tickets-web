@@ -40,7 +40,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const flags = await resolveTicketAccess({
     business: resolved.business,
     level: resolved.level,
-    ticket: { openerUserId: t.openerUserId, categoryId: t.categoryId },
+    ticket: { id: t.id, openerUserId: t.openerUserId, categoryId: t.categoryId },
     session: { user: { id: session.user.id, discordId: session.user.discordId } },
   })
   if (!flags.canSee) return NextResponse.json({ error: 'forbidden' }, { status: 403 })

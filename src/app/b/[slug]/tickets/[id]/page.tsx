@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
-import { requireBusinessAccess, resolveTicketAccess } from '@/server/permissions'
+import { requireSession, resolveBusinessAccess, resolveTicketAccess } from '@/server/permissions'
 import { db } from '@/db/client'
 import { businesses, businessMembers, tickets, ticketCategories, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
@@ -37,10 +37,17 @@ export default async function TicketDetailPage({
   const ticketId = Number(id)
   if (!Number.isInteger(ticketId)) notFound()
 
-  const access = await requireBusinessAccess(slug, 'member')
+  // P16: soft auth — don't require guild membership here. External members
+  // (not in the guild) reach this page via a DM link; the per-ticket
+  // resolveTicketAccess.canSee check below is the real gate.
+  const session = await requireSession()
+  const [biz] = await db.select().from(businesses).where(eq(businesses.slug, slug)).limit(1)
+  if (!biz) notFound()
+  const resolved = await resolveBusinessAccess(slug)
+  const access = { business: biz, level: resolved?.level ?? ('member' as const), session }
 
   const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) notFound()
+  if (!t || t.businessId !== biz.id) notFound()
 
   // P2: per-ticket access flags. Replaces the old `isAdmin && opener` short-
   // circuit so a staff member on this category sees + acts on the ticket
@@ -48,7 +55,7 @@ export default async function TicketDetailPage({
   const ticketAccess = await resolveTicketAccess({
     business: access.business,
     level: access.level,
-    ticket: { openerUserId: t.openerUserId, categoryId: t.categoryId },
+    ticket: { id: t.id, openerUserId: t.openerUserId, categoryId: t.categoryId },
     session: { user: { id: access.session.user.id, discordId: access.session.user.discordId } },
   })
   if (!ticketAccess.canSee) notFound()

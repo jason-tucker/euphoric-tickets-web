@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.20] — 2026-05-30 — Lantern P16: external Discord users (add by ID, no guild)
+
+### Added
+- **`ticket_external_members`** table — web-only access grant for Discord users not in the team's guild.
+- **`addTicketMember` now branches**: in-guild users get a channel overwrite (P6 path); users NOT in the guild are looked up via `fetchDiscordUser` (works for any Discord id), upserted into `users`, granted a `ticket_external_members` row, and best-effort DM'd a link to the ticket.
+- **`resolveTicketAccess`** honors external membership — an external member gets `canSee` + `canReply` on that one ticket. Call sites now pass `ticket.id`.
+- **Soft auth on `/b/[slug]` for external members**: the layout no longer hard-redirects non-members, and the ticket-detail page uses `requireSession` + `resolveBusinessAccess` (nullable) so an external member reaching the DM link can view + reply. Member-only pages (overview/queue/settings) keep their own guards.
+
+External users never join the guild and never see the bot; their replies post into the Discord channel via the webhook spoof (labelled external). Closes euphoric-tickets-web#27.
+
 ## [0.6.19] — 2026-05-30 — Lantern P15: sudo bot dashboard
 
 ### Added

@@ -3,7 +3,14 @@ import { redirect } from 'next/navigation'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { auth, type DiscordGuildSnapshot } from './auth'
 import { db } from '@/db/client'
-import { businesses, businessMembers, ticketCategories, users, type Business } from '@/db/schema'
+import {
+  businesses,
+  businessMembers,
+  ticketCategories,
+  ticketExternalMembers,
+  users,
+  type Business,
+} from '@/db/schema'
 
 export type AccessLevel = 'member' | 'admin' | 'owner'
 
@@ -212,11 +219,27 @@ function parseCsvLocal(input: string | null | undefined): string[] {
 export const resolveTicketAccess = cache(async function resolveTicketAccess(opts: {
   business: Business
   level: AccessLevel
-  ticket: { openerUserId: string; categoryId: string | null }
+  ticket: { id?: number; openerUserId: string; categoryId: string | null }
   session: { user: { id: string; discordId: string } }
 }): Promise<TicketAccessFlags> {
   const isAdmin = opts.level === 'admin' || opts.level === 'owner'
   const isOpener = opts.ticket.openerUserId === opts.session.user.id
+
+  // P16: external members (not in the guild) can see + reply via the web.
+  let isExternal = false
+  if (!isAdmin && !isOpener && opts.ticket.id) {
+    const [ext] = await db
+      .select({ userId: ticketExternalMembers.userId })
+      .from(ticketExternalMembers)
+      .where(
+        and(
+          eq(ticketExternalMembers.ticketId, opts.ticket.id),
+          eq(ticketExternalMembers.userId, opts.session.user.id),
+        ),
+      )
+      .limit(1)
+    isExternal = !!ext
+  }
 
   let isStaff = isAdmin
   if (!isStaff && opts.ticket.categoryId) {
@@ -248,8 +271,8 @@ export const resolveTicketAccess = cache(async function resolveTicketAccess(opts
     isAdmin,
     isStaff,
     isOpener,
-    canSee: isAdmin || isStaff || isOpener,
-    canReply: isAdmin || isStaff || isOpener,
+    canSee: isAdmin || isStaff || isOpener || isExternal,
+    canReply: isAdmin || isStaff || isOpener || isExternal,
     canClaim: isAdmin || isStaff,
     canClose: isAdmin || isStaff || isOpener,
     canChangeCategory: isAdmin,

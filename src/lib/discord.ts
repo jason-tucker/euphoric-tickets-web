@@ -363,6 +363,24 @@ export async function postBotMessageToThread(input: {
   return (await res.json()) as { id: string }
 }
 
+// P16: fetch any Discord user by id (works for users NOT in a shared guild).
+export async function fetchDiscordUser(
+  botToken: string,
+  userId: string,
+): Promise<{ id: string; name: string; image: string | null } | null> {
+  const res = await fetch(`${DISCORD_API}/users/${userId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) return null
+  const u = (await res.json()) as { id: string; username: string; global_name: string | null; avatar: string | null }
+  return {
+    id: u.id,
+    name: u.global_name ?? u.username,
+    image: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null,
+  }
+}
+
 // P6: list the per-user (type 1) permission overwrites on a ticket channel —
 // i.e. the people explicitly added to the ticket. Returns their user ids.
 export async function fetchChannelMemberIds(botToken: string, channelId: string): Promise<string[]> {

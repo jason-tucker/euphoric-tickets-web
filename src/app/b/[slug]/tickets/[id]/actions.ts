@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { ticketCategories, tickets, ticketMessages, users } from '@/db/schema'
+import { ticketCategories, tickets, ticketMessages, ticketExternalMembers, users } from '@/db/schema'
 import {
   requireBusinessAccess,
   requireSession,
@@ -17,6 +17,7 @@ import {
   changeTicketChannelCategory,
   createPrivateThread,
   deleteDiscordChannel,
+  fetchDiscordUser,
   fetchGuildMemberAsBot,
   postBotMessageToThread,
   postChannelStatus,
@@ -70,7 +71,7 @@ async function loadTicketAccess(
   const flags = await resolveTicketAccess({
     business: access.business,
     level: access.level,
-    ticket: { openerUserId: t.openerUserId, categoryId: t.categoryId },
+    ticket: { id: t.id, openerUserId: t.openerUserId, categoryId: t.categoryId },
     session: { user: { id: session.user.id, discordId: session.user.discordId } },
   })
   return {
@@ -420,29 +421,70 @@ export async function addTicketMember(
 
   const discordUserId = String(formData.get('userId') ?? '').trim()
   if (!/^\d{17,20}$/.test(discordUserId)) return { ok: false, error: 'Pick a user' }
-  if (!ctx.ticket.discordChannelId) return { ok: false, error: 'This ticket has no Discord channel' }
 
   const botToken = process.env.DISCORD_BOT_TOKEN
   if (!botToken) return { ok: false, error: 'Bot not configured' }
 
-  // Resolve name/avatar (best-effort) + upsert into users.
+  // Is this user in the team's guild?
   const member = await fetchGuildMemberAsBot(botToken, ctx.business.discordGuildId, discordUserId).catch(() => null)
-  const name = member?.nick ?? member?.user?.global_name ?? member?.user?.username ?? null
-  const image = member?.user?.avatar
-    ? `https://cdn.discordapp.com/avatars/${discordUserId}/${member.user.avatar}.png`
-    : null
-  await db
-    .insert(users)
-    .values({ discordId: discordUserId, name, image })
-    .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
 
-  try {
-    await addChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId)
-  } catch (err) {
-    return { ok: false, error: 'Discord rejected the add: ' + String(err) }
+  if (member && ctx.ticket.discordChannelId) {
+    // In-guild: grant a channel overwrite (P6 path).
+    const name = member.nick ?? member.user?.global_name ?? member.user?.username ?? null
+    const image = member.user?.avatar
+      ? `https://cdn.discordapp.com/avatars/${discordUserId}/${member.user.avatar}.png`
+      : null
+    const [u] = await db
+      .insert(users)
+      .values({ discordId: discordUserId, name, image })
+      .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
+      .returning({ id: users.id })
+    void u
+    try {
+      await addChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId)
+    } catch (err) {
+      return { ok: false, error: 'Discord rejected the add: ' + String(err) }
+    }
+    await postStatus(ctx.ticket, `<@${discordUserId}> was added to the ticket by <@${ctx.session.user.discordId}>`)
+    revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+    return { ok: true }
   }
 
-  await postStatus(ctx.ticket, `<@${discordUserId}> was added to the ticket by <@${ctx.session.user.discordId}>`)
+  // P16: external user — not in the guild. Grant web-only access + DM the link.
+  const du = await fetchDiscordUser(botToken, discordUserId)
+  if (!du) return { ok: false, error: 'No such Discord user' }
+  const [u] = await db
+    .insert(users)
+    .values({ discordId: du.id, name: du.name, image: du.image })
+    .onConflictDoUpdate({ target: users.discordId, set: { name: du.name, image: du.image, updatedAt: sql`now()` } })
+    .returning({ id: users.id })
+
+  await db
+    .insert(ticketExternalMembers)
+    .values({ ticketId: ctx.ticket.id, userId: u.id, addedByUserId: ctx.session.user.id })
+    .onConflictDoNothing()
+
+  // Best-effort DM with the web link via the bot internal endpoint.
+  const internalToken = process.env.INTERNAL_TOKEN
+  const botBase = process.env.BOT_INTERNAL_URL
+  const webBase = process.env.PUBLIC_BASE_URL ?? 'https://tickets.euphoric.fm'
+  if (internalToken && botBase) {
+    void fetch(`${botBase}/api/internal/dm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-token': internalToken },
+      body: JSON.stringify({
+        discordUserId: du.id,
+        content:
+          `You've been added to ticket #${ctx.ticket.id} in **${ctx.business.name}**. ` +
+          `View it here (sign in with Discord): ${webBase}/b/${slug}/tickets/${ctx.ticket.id}`,
+      }),
+    }).catch(() => {})
+  }
+
+  await postStatus(
+    ctx.ticket,
+    `${du.name} (external) was added to the ticket by <@${ctx.session.user.discordId}>`,
+  )
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
   return { ok: true }
 }
