@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react
 import { DiscordPicker } from '@/components/app/discord-picker'
 import { LiveRefresh } from '@/components/app/live-refresh'
 import { TicketActionMenu } from '@/components/app/ticket-action-menu'
+import { DiscordMarkdown } from '@/components/app/discord-markdown'
 import { fetchChannelMemberIds } from '@/lib/discord'
 import { StatusBadge } from '@/components/app/status-badge'
 import { ReplyForm } from '@/components/app/reply-form'
@@ -26,6 +27,7 @@ import {
   deleteTicketChannel,
   removeTicketMember,
   reopenTicket,
+  setTicketStatus,
   unclaimTicket,
 } from './actions'
 
@@ -193,6 +195,7 @@ export default async function TicketDetailPage({
   async function note(formData: FormData) { 'use server'; await addInternalNote(slug, t.id, formData) }
   async function changeCat(formData: FormData) { 'use server'; await changeTicketCategory(slug, t.id, formData) }
   async function addPerson(formData: FormData) { 'use server'; await addTicketMember(slug, t.id, formData) }
+  async function setStatus(formData: FormData) { 'use server'; await setTicketStatus(slug, t.id, formData) }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
@@ -258,8 +261,24 @@ export default async function TicketDetailPage({
           <StatusBadge status={t.status} />
           {assignee && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              {t.status === 'claimed' ? 'claimed by' : 'assigned to'} {gName(assignee.discordId, assignee.name) ?? '?'}
+              assigned to {gName(assignee.discordId, assignee.name) ?? '?'}
             </span>
+          )}
+          {ticketAccess.canClaim && t.status !== 'closed' && (
+            <TicketActionMenu
+              triggerLabel="Status"
+              variant="outline"
+              name="status"
+              currentValue={t.status}
+              action={setStatus}
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'in_progress', label: 'In Progress' },
+                { value: 'waiting', label: 'Waiting' },
+                { value: 'on_hold', label: 'On Hold' },
+                { value: 'completed', label: 'Completed' },
+              ]}
+            />
           )}
           {canClaim && t.assigneeUserId === null && (
             <form action={claim}><SubmitButton size="sm" variant="secondary">Claim</SubmitButton></form>
@@ -381,8 +400,8 @@ export default async function TicketDetailPage({
                     </span>
                     <span className="text-xs text-muted-foreground">{relativeTime(m.createdAt)}</span>
                   </div>
-                  <div className="mt-1 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-sm">
-                    {m.body}
+                  <div className="mt-1 break-words rounded-md bg-muted/40 p-2.5 text-sm">
+                    <DiscordMarkdown content={m.body} />
                   </div>
                   <Attachments ticketId={t.id} messageId={m.discordMessageId} items={m.attachments} />
                 </div>
@@ -474,8 +493,8 @@ export default async function TicketDetailPage({
                       <span className="text-sm font-medium">{gName(m.authorDiscordId, m.authorName) ?? 'Staff'}</span>
                       <span className="text-xs text-muted-foreground">{relativeTime(m.createdAt)}</span>
                     </div>
-                    <div className="mt-1 whitespace-pre-wrap break-words rounded-md bg-background/60 p-2 text-sm">
-                      {m.body}
+                    <div className="mt-1 break-words rounded-md bg-background/60 p-2 text-sm">
+                      <DiscordMarkdown content={m.body} />
                     </div>
                     <Attachments ticketId={t.id} messageId={m.discordMessageId} items={m.attachments} />
                   </div>

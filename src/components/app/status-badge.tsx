@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { statusBadgeClass } from '@/lib/format'
+import { statusBadgeClass, statusLabel } from '@/lib/format'
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
   return (
@@ -10,7 +10,7 @@ export function StatusBadge({ status, className }: { status: string; className?:
         className,
       )}
     >
-      {status}
+      {statusLabel(status)}
     </span>
   )
 }

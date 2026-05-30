@@ -25,10 +25,14 @@ import {
   removeChannelMember,
   resolveWebhookIdentity,
 } from '@/lib/discord'
-import { avatarUrl } from '@/lib/format'
+import { avatarUrl, statusLabel } from '@/lib/format'
 import { notify } from '@/server/notify'
-import type { Ticket } from '@/db/schema'
+import type { Ticket, TicketStatus } from '@/db/schema'
 import type { Session } from 'next-auth'
+
+// Workflow statuses a staffer can set directly (closed is the Close button,
+// which has side effects; claimed is legacy).
+const SETTABLE_STATUSES = ['open', 'in_progress', 'waiting', 'on_hold', 'completed'] as const
 
 // Posts a silent `-# ` status footer into the ticket's Discord channel for a
 // lifecycle event. Best-effort + no-op when the channel or bot token is
@@ -160,13 +164,33 @@ export async function replyToTicket(
   return { ok: true }
 }
 
+// Staff sets the workflow status directly (Open / In Progress / Waiting /
+// On Hold / Completed). Closing is the Close button.
+export async function setTicketStatus(
+  slug: string,
+  ticketId: number,
+  formData: FormData,
+): Promise<void> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canClaim) return
+  const status = String(formData.get('status') ?? '')
+  if (!(SETTABLE_STATUSES as readonly string[]).includes(status)) return
+  await db
+    .update(tickets)
+    .set({ status: status as TicketStatus, lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
+  await postStatus(ctx.ticket, `Ticket status set to ${statusLabel(status)} by <@${ctx.session.user.discordId}>`)
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
 export async function claimTicket(slug: string, ticketId: number): Promise<void> {
   const ctx = await loadTicketAccess(slug, ticketId)
   if (!ctx) return
   if (!ctx.flags.canClaim) return
   await db
     .update(tickets)
-    .set({ status: 'claimed', assigneeUserId: ctx.session.user.id, lastActivityAt: sql`now()` })
+    .set({ status: 'in_progress', assigneeUserId: ctx.session.user.id, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
   await postStatus(ctx.ticket, `Ticket claimed by <@${ctx.session.user.discordId}>`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
@@ -209,7 +233,7 @@ export async function assignTicket(
     if (!/^[0-9a-f-]{36}$/i.test(raw)) throw new Error('Bad assignee id')
     await db
       .update(tickets)
-      .set({ status: 'claimed', assigneeUserId: raw, lastActivityAt: sql`now()` })
+      .set({ status: 'in_progress', assigneeUserId: raw, lastActivityAt: sql`now()` })
       .where(eq(tickets.id, ticketId))
     const target = (await mentionForUserId(raw)) ?? 'a staff member'
     await postStatus(ctx.ticket, `Ticket assigned to ${target} by ${actor}`)

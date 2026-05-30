@@ -21,12 +21,30 @@ export function statusBadgeClass(status: string): string {
     case 'open':
       return 'bg-status-open/15 text-status-open border border-status-open/30'
     case 'claimed':
-      return 'bg-status-claimed/15 text-status-claimed border border-status-claimed/30'
+    case 'in_progress':
+      return 'bg-blue-500/15 text-blue-500 border border-blue-500/30'
     case 'waiting':
       return 'bg-status-waiting/15 text-status-waiting border border-status-waiting/30'
+    case 'on_hold':
+      return 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+    case 'completed':
+      return 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
     case 'closed':
       return 'bg-status-closed/15 text-status-closed border border-status-closed/30'
     default:
       return 'bg-muted text-muted-foreground'
+  }
+}
+
+// Human label for a status. 'claimed' (legacy) reads as "In Progress".
+export function statusLabel(status: string): string {
+  switch (status) {
+    case 'claimed':
+    case 'in_progress':
+      return 'In Progress'
+    case 'on_hold':
+      return 'On Hold'
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')
   }
 }

@@ -3,7 +3,16 @@ import { businesses } from './businesses'
 import { ticketCategories } from './ticketCategories'
 import { users } from './users'
 
-export const ticketStatuses = ['open', 'claimed', 'waiting', 'closed'] as const
+// 'claimed' is legacy (kept for old rows) — new claims set 'in_progress'.
+export const ticketStatuses = [
+  'open',
+  'claimed',
+  'in_progress',
+  'waiting',
+  'on_hold',
+  'completed',
+  'closed',
+] as const
 export type TicketStatus = (typeof ticketStatuses)[number]
 
 export const ticketKinds = ['normal', 'project'] as const

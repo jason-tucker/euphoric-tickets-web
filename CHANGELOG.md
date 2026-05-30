@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.32] — 2026-05-30 — More statuses + formatted conversation text
+
+### Added
+- **More ticket statuses:** Open, In Progress, Waiting, On Hold, Completed, Closed. New `statusLabel()` + badge colors. A **Status** dropdown on the ticket detail (staff/admin) sets any non-closed status; the status footer is posted to the channel. Both ticket boards' filter bars gain In Progress / On Hold / Completed.
+- Claiming/assigning now sets **In Progress** (the legacy 'claimed' still renders as "In Progress").
+
+### Changed
+- **Conversation text now renders Discord formatting** — message bodies (and internal notes) go through `<DiscordMarkdown>` so `**bold**`, `*italics*`, code, mentions, etc. render properly instead of showing raw markdown characters.
+
 ## [0.6.31] — 2026-05-30 — Per-guild identity (nickname + server avatar) in tickets
 
 ### Changed

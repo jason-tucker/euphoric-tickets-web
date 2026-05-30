@@ -182,8 +182,10 @@ function FilterBar({ slug, active, sort, dir }: { slug: string; active: string; 
   const tabs = [
     { key: 'active', label: 'Active' },
     { key: 'open', label: 'Open' },
-    { key: 'claimed', label: 'Claimed' },
+    { key: 'in_progress', label: 'In Progress' },
     { key: 'waiting', label: 'Waiting' },
+    { key: 'on_hold', label: 'On Hold' },
+    { key: 'completed', label: 'Completed' },
     { key: 'closed', label: 'Closed' },
     { key: 'all', label: 'All' },
   ]
