@@ -37,6 +37,100 @@ export async function fetchGuildMemberAsBot(
   return (await res.json()) as DiscordGuildMember & { avatar?: string | null }
 }
 
+// ===== P3 (lantern) — guild directory bulk lookups ==========================
+// Used by the searchable Discord picker on the settings + members surfaces.
+// All three use the bot token; the bot must be in the guild and have the
+// GUILD_MEMBERS intent (already enabled in bot/client.ts).
+
+export type DiscordGuildChannel = {
+  id: string
+  name: string
+  // 0 = GUILD_TEXT, 4 = GUILD_CATEGORY, 5 = GUILD_ANNOUNCEMENT, 11 = PUBLIC_THREAD, 12 = PRIVATE_THREAD.
+  type: number
+  parent_id: string | null
+  position: number
+}
+
+export type DiscordGuildRole = {
+  id: string
+  name: string
+  color: number
+  position: number
+  managed: boolean
+}
+
+export type DiscordGuildMemberLite = {
+  id: string
+  name: string
+  image: string | null
+}
+
+export async function fetchGuildChannels(
+  botToken: string,
+  guildId: string,
+): Promise<DiscordGuildChannel[]> {
+  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/channels`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`fetchGuildChannels failed: ${res.status} ${await res.text()}`)
+  const raw = (await res.json()) as Array<{ id: string; name: string; type: number; parent_id: string | null; position: number }>
+  return raw.map((c) => ({ id: c.id, name: c.name, type: c.type, parent_id: c.parent_id ?? null, position: c.position ?? 0 }))
+}
+
+export async function fetchGuildRoles(
+  botToken: string,
+  guildId: string,
+): Promise<DiscordGuildRole[]> {
+  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/roles`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`fetchGuildRoles failed: ${res.status} ${await res.text()}`)
+  const raw = (await res.json()) as Array<{ id: string; name: string; color: number; position: number; managed: boolean }>
+  return raw.map((r) => ({ id: r.id, name: r.name, color: r.color, position: r.position, managed: r.managed }))
+}
+
+// `query` empty → first 100 members (Discord's default ordering, not very
+// useful but fine for tiny guilds). `query` non-empty → up to 25 members
+// matching a username prefix. The picker debounces per-keystroke calls.
+export async function fetchGuildMembers(
+  botToken: string,
+  guildId: string,
+  query?: string,
+): Promise<DiscordGuildMemberLite[]> {
+  const path = query
+    ? `/guilds/${guildId}/members/search?query=${encodeURIComponent(query)}&limit=25`
+    : `/guilds/${guildId}/members?limit=100`
+  const res = await fetch(`${DISCORD_API}${path}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`fetchGuildMembers failed: ${res.status} ${await res.text()}`)
+  type Raw = {
+    user?: { id: string; username: string; global_name: string | null; avatar: string | null }
+    nick: string | null
+    avatar?: string | null
+  }
+  const raw = (await res.json()) as Raw[]
+  return raw
+    .filter((m) => !!m.user?.id)
+    .map((m) => {
+      const u = m.user!
+      const name = m.nick ?? u.global_name ?? u.username
+      // Prefer the per-guild member avatar when present (Discord stores it
+      // under /guilds/{gid}/users/{uid}/avatars/{hash} — different CDN
+      // path from the user-level avatar).
+      const guildAvatar = m.avatar
+      const image = guildAvatar
+        ? `https://cdn.discordapp.com/guilds/${guildId}/users/${u.id}/avatars/${guildAvatar}.png`
+        : u.avatar
+          ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`
+          : null
+      return { id: u.id, name, image }
+    })
+}
+
 // Resolve the best display identity for a user inside a specific guild.
 // Falls back gracefully when the bot can't see the guild or the user isn't
 // a member: returns the caller's globalName + globalAvatarUrl untouched.

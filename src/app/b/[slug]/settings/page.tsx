@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
+import { DiscordPicker } from '@/components/app/discord-picker'
 import {
   addCategoryAction,
   deleteCategoryAction,
@@ -73,38 +74,40 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
               <p className="text-xs text-muted-foreground">Enable Developer Mode in Discord, right-click your server, &quot;Copy Server ID&quot;.</p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="adminRoleIds">Admin role IDs (comma-separated)</Label>
-              <Input
-                id="adminRoleIds"
+              <Label htmlFor="adminRoleIds">Admin / manager roles</Label>
+              <DiscordPicker
+                kind="role"
+                multi
+                guildId={business.discordGuildId}
                 name="adminRoleIds"
                 defaultValue={business.adminRoleIds}
-                placeholder="e.g. 1234567890,9876543210"
+                triggerLabel="Choose admin roles…"
               />
               <p className="text-xs text-muted-foreground">
-                Members with any of these roles get admin access to this business.
+                Members with any of these roles get full admin access to this business — including channel deletion and settings edits. Type to filter, click to add, or paste a raw Discord role ID.
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="discordFallbackCategoryId">Fallback Discord channel category ID</Label>
-              <Input
-                id="discordFallbackCategoryId"
+              <Label htmlFor="discordFallbackCategoryId">Fallback Discord channel category</Label>
+              <DiscordPicker
+                kind="category"
+                guildId={business.discordGuildId}
                 name="discordFallbackCategoryId"
                 defaultValue={business.discordFallbackCategoryId ?? ''}
-                pattern="\d{17,20}"
-                placeholder="e.g. 1234567890123456789"
+                triggerLabel="Choose a category…"
               />
               <p className="text-xs text-muted-foreground">
-                Per-ticket channels get created under this Discord category when the ticket&apos;s own category doesn&apos;t set one. Right-click a category → Copy Category ID (Developer Mode on).
+                Per-ticket channels open under this Discord category when the ticket&apos;s own category doesn&apos;t set one.
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="discordClosedCategoryId">Closed-tickets Discord category ID (optional)</Label>
-              <Input
-                id="discordClosedCategoryId"
+              <Label htmlFor="discordClosedCategoryId">Closed-tickets Discord category (optional)</Label>
+              <DiscordPicker
+                kind="category"
+                guildId={business.discordGuildId}
                 name="discordClosedCategoryId"
                 defaultValue={business.discordClosedCategoryId ?? ''}
-                pattern="\d{17,20}"
-                placeholder="e.g. 1234567890123456789"
+                triggerLabel="Choose a category…"
               />
               <p className="text-xs text-muted-foreground">
                 On close the per-ticket channel is moved here (instead of just renamed). Per-category overrides win when set.
@@ -194,7 +197,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                     </summary>
                     <div className="mt-3 space-y-3 rounded-md border bg-background/40 p-3">
                       <form action={updateCategoryAction.bind(null, slug, c.id)} className="space-y-3">
-                        <CategoryFormFields idPrefix={`edit-${c.id}-`} defaults={c} />
+                        <CategoryFormFields idPrefix={`edit-${c.id}-`} defaults={c} guildId={business.discordGuildId} />
                         <SubmitButton size="sm" variant="secondary" pendingChildren="Saving…">Save</SubmitButton>
                       </form>
                       <form
@@ -219,7 +222,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
 
           <form action={addCategoryAction.bind(null, slug)} className="space-y-3 border-t pt-4">
             <p className="text-sm font-medium">Add a new category</p>
-            <CategoryFormFields idPrefix="new-" />
+            <CategoryFormFields idPrefix="new-" guildId={business.discordGuildId} />
             <SubmitButton variant="secondary" pendingChildren="Adding…">Add category</SubmitButton>
           </form>
         </CardContent>
@@ -234,6 +237,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
 function CategoryFormFields({
   idPrefix,
   defaults,
+  guildId,
 }: {
   idPrefix: string
   defaults?: {
@@ -248,6 +252,7 @@ function CategoryFormFields({
     staffRoleIds: string
     firstMessageTemplate: string | null
   }
+  guildId: string
 }) {
   const v = defaults
   return (
@@ -296,53 +301,52 @@ function CategoryFormFields({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}discordParentCategoryId`}>Open Discord category ID</Label>
-          <Input
-            id={`${idPrefix}discordParentCategoryId`}
+          <Label htmlFor={`${idPrefix}discordParentCategoryId`}>Open Discord category</Label>
+          <DiscordPicker
+            kind="category"
+            guildId={guildId}
             name="discordParentCategoryId"
-            pattern="\d{17,20}"
-            placeholder="1234567890123456789"
             defaultValue={v?.discordParentCategoryId ?? ''}
+            triggerLabel="Choose a category…"
           />
-          <p className="text-xs text-muted-foreground">Per-ticket channels open here. Blank → business fallback.</p>
+          <p className="text-xs text-muted-foreground">Per-ticket channels open here. Leave empty → business fallback.</p>
         </div>
         <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}discordClosedCategoryId`}>Closed Discord category ID</Label>
-          <Input
-            id={`${idPrefix}discordClosedCategoryId`}
+          <Label htmlFor={`${idPrefix}discordClosedCategoryId`}>Closed Discord category</Label>
+          <DiscordPicker
+            kind="category"
+            guildId={guildId}
             name="discordClosedCategoryId"
-            pattern="\d{17,20}"
-            placeholder="1234567890123456789"
             defaultValue={v?.discordClosedCategoryId ?? ''}
+            triggerLabel="Choose a category…"
           />
-          <p className="text-xs text-muted-foreground">Closed channels move here. Blank → business fallback.</p>
+          <p className="text-xs text-muted-foreground">Closed channels move here. Leave empty → business fallback.</p>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}allowRoleIds`}>
-            Allow-to-open role IDs <span className="text-muted-foreground">(comma-separated)</span>
-          </Label>
-          <Input
-            id={`${idPrefix}allowRoleIds`}
+          <Label htmlFor={`${idPrefix}allowRoleIds`}>Allow-to-open roles</Label>
+          <DiscordPicker
+            kind="role"
+            multi
+            guildId={guildId}
             name="allowRoleIds"
-            placeholder="leave blank — anyone may open"
             defaultValue={v?.allowRoleIds ?? ''}
+            triggerLabel="Leave empty — anyone may open"
           />
           <p className="text-xs text-muted-foreground">
             If set, only members holding any of these roles can click the panel button for this category.
-            (P3 will replace this with a searchable picker.)
           </p>
         </div>
         <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}staffRoleIds`}>
-            Category staff role IDs <span className="text-muted-foreground">(comma-separated)</span>
-          </Label>
-          <Input
-            id={`${idPrefix}staffRoleIds`}
+          <Label htmlFor={`${idPrefix}staffRoleIds`}>Category staff roles</Label>
+          <DiscordPicker
+            kind="role"
+            multi
+            guildId={guildId}
             name="staffRoleIds"
-            placeholder="leave blank — falls back to business admins"
             defaultValue={v?.staffRoleIds ?? ''}
+            triggerLabel="Leave empty — fall back to business admins"
           />
           <p className="text-xs text-muted-foreground">
             Staff can claim/close/reply on tickets in this category. They cannot delete channels — that stays admin-only.

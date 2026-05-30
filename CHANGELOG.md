@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.5] — 2026-05-29 — Lantern P3: Discord directory picker
+
+### Added — Phase P3 of the lantern plan
+- **`<DiscordPicker>`** at `src/components/app/discord-picker.tsx` — one reusable client component for any Discord directory shape:
+  - `kind: 'channel' | 'category' | 'role' | 'user'`
+  - `multi` for CSV multi-select, single-select otherwise
+  - Input doubles as filter and as raw-snowflake paste. Pressing Enter on a value matching `/^\d{17,20}$/` adds it immediately without waiting on resolution.
+  - Channels/roles: fetched once on first open and filtered client-side per character (instant feel on small lists).
+  - Users: hit the search API with an 80ms debounce — feels per-keystroke but coalesces bursts.
+  - Selected items render as badges with × to remove.
+  - Hidden CSV input named via `name` so existing server-action FormData flows need no change.
+- **3 Discord REST helpers** in `src/lib/discord.ts`: `fetchGuildChannels`, `fetchGuildRoles`, `fetchGuildMembers(query?)`. The members helper uses Discord's `/guilds/{id}/members/search?query=…` when a query is set and the `/members?limit=100` listing otherwise.
+- **3 API routes** under `src/app/api/discord/[guildId]/{channels,roles,members}/route.ts` — admin-gated via `requireBusinessAccess`, in-process 60s cache for channels + roles, no cache for member search (queries vary per keystroke).
+- **`src/components/ui/popover.tsx`** and **`src/components/ui/command.tsx`** — small shadcn-style wrappers around `@radix-ui/react-popover` and `cmdk` so the picker has a consistent visual home and other components can reuse them.
+- **Settings page (`/b/[slug]/settings`)** swapped every snowflake `<Input>` to `<DiscordPicker>` — admin roles, fallback category, closed-tickets category, and per-category open category / closed category / allow-to-open roles / staff roles. Same form-data shape; categories CSV still posts to the same `updateCategoryAction` / `saveBusinessSettings`.
+
+### Dependencies
+- Added `cmdk@^1.0.4` and `@radix-ui/react-popover@^1.1.4` to `package.json`.
+
+Closes euphoric-tickets-web#17.
+
+### Notes
+- The picker requires `DISCORD_BOT_TOKEN` to be set on the web container (already configured; same one used by `fetchGuildMemberAsBot`).
+- Member-by-id resolution still falls back to showing the raw snowflake as the badge label — a small follow-up could hit `GET /users/{id}` for a name on paste.
+
 ## [0.6.4] — 2026-05-29 — Lantern P2: three-tier permissions enforced
 
 ### Added — Phase P2 of the lantern plan
@@ -248,4 +273,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.4 · 2037d95`
+`v0.6.5 · pending`
