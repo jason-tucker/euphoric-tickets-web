@@ -118,6 +118,9 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                       <Link href="/admin">Admin</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
+                      <Link href="/admin/bot">Bot dashboard</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
                       <Link href="/admin/errors">Bot errors</Link>
                     </DropdownMenuItem>
                   </>

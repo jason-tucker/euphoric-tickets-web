@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.19] — 2026-05-30 — Lantern P15: sudo bot dashboard
+
+### Added
+- **`/admin/bot`** (sudo-only) — health-at-a-glance: team count, open tickets, needs-attention count, errors-in-24h, the 10 most recent error rows (link to the full `/admin/errors`), and health notes. "Bot dashboard" link added to the top-nav sudo section.
+
 ## [0.6.18] — 2026-05-30 — Lantern P13: notification prefs (ntfy + DM)
 
 ### Added
