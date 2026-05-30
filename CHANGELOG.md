@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.35] — 2026-05-30 — Fix: deleting a category with tickets threw a server error
+
+### Fixed
+- **Deleting a category no longer 500s.** `tickets.category_id` is a RESTRICT foreign key, so deleting a category that still had tickets attached threw a server-side exception ("Application error"). `deleteCategoryAction` now **orphans those tickets first** (sets `category_id = null`, which the column already allows) before deleting the category. Notification prefs cascade-delete on their own as before.
+
 ## [0.6.34] — 2026-05-30 — Rename compose service `web` → `tickets-web` to clear shared-network alias collision
 
 ### Changed

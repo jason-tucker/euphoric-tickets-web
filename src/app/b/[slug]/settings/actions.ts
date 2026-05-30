@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { businesses, ticketCategories } from '@/db/schema'
+import { businesses, ticketCategories, tickets } from '@/db/schema'
 import { requireBusinessAccess } from '@/server/permissions'
 
 const snowflake = z.string().regex(/^\d{17,20}$/, 'Not a valid Discord snowflake')
@@ -173,6 +173,14 @@ export async function updateCategoryAction(
 
 export async function deleteCategoryAction(slug: string, categoryId: string): Promise<void> {
   const { business } = await requireBusinessAccess(slug, 'admin')
+
+  // Tickets reference the category via a RESTRICT FK, so deleting a category
+  // that still has tickets throws. Orphan those tickets first (categoryId is
+  // nullable). Notification prefs cascade-delete on their own.
+  await db
+    .update(tickets)
+    .set({ categoryId: null })
+    .where(and(eq(tickets.categoryId, categoryId), eq(tickets.businessId, business.id)))
 
   await db
     .delete(ticketCategories)
