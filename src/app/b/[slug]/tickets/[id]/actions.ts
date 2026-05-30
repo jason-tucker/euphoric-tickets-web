@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
 import { ticketCategories, tickets, ticketMessages, users } from '@/db/schema'
@@ -13,6 +13,7 @@ import {
 } from '@/server/permissions'
 import {
   archiveTicketChannel,
+  changeTicketChannelCategory,
   createPrivateThread,
   deleteDiscordChannel,
   postBotMessageToThread,
@@ -337,6 +338,56 @@ export async function deleteTicketChannel(slug: string, ticketId: number): Promi
     })
     .where(eq(tickets.id, ticketId))
 
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
+// P5: move a ticket to a different category (admin-only). Validates the
+// target belongs to the same team, updates the DB, best-effort moves the
+// Discord channel + grants the new category's staff roles, posts a footer.
+export async function changeTicketCategory(
+  slug: string,
+  ticketId: number,
+  formData: FormData,
+): Promise<void> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return
+  if (!ctx.flags.canChangeCategory) return
+
+  const newCategoryId = String(formData.get('categoryId') ?? '').trim()
+  if (!/^[0-9a-f-]{36}$/i.test(newCategoryId)) return
+
+  const [cat] = await db
+    .select()
+    .from(ticketCategories)
+    .where(and(eq(ticketCategories.id, newCategoryId), eq(ticketCategories.businessId, ctx.business.id)))
+    .limit(1)
+  if (!cat) return
+  if (cat.id === ctx.ticket.categoryId) return
+
+  await db
+    .update(tickets)
+    .set({ categoryId: cat.id, lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (botToken && ctx.ticket.discordChannelId) {
+    const parentId = cat.discordParentCategoryId ?? ctx.business.discordFallbackCategoryId ?? null
+    const staffRoles = (cat.staffRoleIds && cat.staffRoleIds.trim().length > 0
+      ? cat.staffRoleIds
+      : ctx.business.adminRoleIds
+    )
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    await changeTicketChannelCategory({
+      botToken,
+      channelId: ctx.ticket.discordChannelId,
+      parentId,
+      grantRoleIds: staffRoles,
+    })
+  }
+
+  await postStatus(ctx.ticket, `Ticket category changed to ${cat.label} by <@${ctx.session.user.discordId}>`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 

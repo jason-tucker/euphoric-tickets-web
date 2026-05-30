@@ -363,6 +363,37 @@ export async function postBotMessageToThread(input: {
   return (await res.json()) as { id: string }
 }
 
+// P5: move a ticket channel under a new Discord parent category and grant the
+// new category's staff roles channel access (additive — existing overwrites
+// stay). Best-effort; mirrors the bot's changeTicketCategory.
+export async function changeTicketChannelCategory(input: {
+  botToken: string
+  channelId: string
+  parentId: string | null
+  grantRoleIds: string[]
+}): Promise<void> {
+  const { botToken, channelId, parentId, grantRoleIds } = input
+  const headers = { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' }
+
+  if (parentId) {
+    await fetch(`${DISCORD_API}/channels/${channelId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ parent_id: parentId }),
+    }).catch((err) => console.error('[changeTicketChannelCategory] move failed', err))
+  }
+
+  // ViewChannel|SendMessages|ReadMessageHistory|AttachFiles|EmbedLinks
+  const ALLOW = String((1 << 10) | (1 << 11) | (1 << 16) | (1 << 15) | (1 << 14))
+  for (const roleId of grantRoleIds) {
+    await fetch(`${DISCORD_API}/channels/${channelId}/permissions/${roleId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ type: 0, allow: ALLOW, deny: '0' }),
+    }).catch((err) => console.error('[changeTicketChannelCategory] grant failed', err))
+  }
+}
+
 // Fetch a FRESH signed CDN URL for one attachment. Discord's attachment URLs
 // expire (~24h), so the web never serves the stored URL directly for audio —
 // it re-fetches the message via the bot token and returns the attachment's

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.10] — 2026-05-30 — Lantern P5: change a ticket's category (web)
+
+### Added
+- **`changeTicketCategory(slug, ticketId, formData)` server action** (admin-only via `resolveTicketAccess.canChangeCategory`) — validates the target category belongs to the same team, updates `tickets.category_id`, best-effort moves the Discord channel under the new parent + grants the new category's staff roles via the new `changeTicketChannelCategory()` helper in `lib/discord.ts`, and posts a `-# Ticket category changed to … by @x` footer.
+- **"Move" category `<select>`** in the admin action row on `/b/[slug]/tickets/[id]` (shown to admins on non-closed tickets). The team's categories load in the same parallel query batch as the rest of the page.
+
+Closes euphoric-tickets-web#18.
+
 ## [0.6.9] — 2026-05-30 — Audio + file attachments in the conversation
 
 ### Added
@@ -321,4 +329,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.9 · ac24c64`
+`v0.6.10 · pending`

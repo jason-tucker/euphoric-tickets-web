@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { requireBusinessAccess, resolveTicketAccess } from '@/server/permissions'
 import { db } from '@/db/client'
-import { businesses, businessMembers, tickets, ticketMessages, users } from '@/db/schema'
+import { businesses, businessMembers, tickets, ticketCategories, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import {
   addInternalNote,
   assignTicket,
+  changeTicketCategory,
   claimTicket,
   closeTicket,
   deleteTicketChannel,
@@ -92,6 +93,14 @@ export default async function TicketDetailPage({
   const parentQ = t.parentTicketId
     ? db.select({ id: tickets.id, subject: tickets.subject }).from(tickets).where(eq(tickets.id, t.parentTicketId)).limit(1)
     : Promise.resolve([])
+  // Category list powers the admin "Move" select.
+  const categoriesQ = ticketAccess.canChangeCategory
+    ? db
+        .select({ id: ticketCategories.id, key: ticketCategories.key, label: ticketCategories.label, emoji: ticketCategories.emoji })
+        .from(ticketCategories)
+        .where(eq(ticketCategories.businessId, access.business.id))
+        .orderBy(asc(ticketCategories.sortOrder), asc(ticketCategories.label))
+    : Promise.resolve([])
 
   const [
     openerRow,
@@ -101,7 +110,8 @@ export default async function TicketDetailPage({
     allMessages,
     subTickets,
     parentRow,
-  ] = await Promise.all([openerQ, clientBusinessQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ])
+    categories,
+  ] = await Promise.all([openerQ, clientBusinessQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ, categoriesQ])
   const opener = openerRow[0]
   const clientBusiness = clientBusinessRow[0] ?? null
   const assignee = assigneeRow[0] ?? null
@@ -131,6 +141,7 @@ export default async function TicketDetailPage({
   async function reopen() { 'use server'; await reopenTicket(slug, t.id) }
   async function deleteChannel() { 'use server'; await deleteTicketChannel(slug, t.id) }
   async function note(formData: FormData) { 'use server'; await addInternalNote(slug, t.id, formData) }
+  async function changeCat(formData: FormData) { 'use server'; await changeTicketCategory(slug, t.id, formData) }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
@@ -218,6 +229,22 @@ export default async function TicketDetailPage({
                 ))}
               </select>
               <SubmitButton size="sm" variant="secondary">Assign</SubmitButton>
+            </form>
+          )}
+          {ticketAccess.canChangeCategory && t.status !== 'closed' && categories.length > 0 && (
+            <form action={changeCat} className="flex items-center gap-1">
+              <select
+                name="categoryId"
+                defaultValue={t.categoryId ?? ''}
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+                aria-label="Move to category"
+              >
+                {!t.categoryId && <option value="">— category —</option>}
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.emoji ? `${c.emoji} ` : ''}{c.label}</option>
+                ))}
+              </select>
+              <SubmitButton size="sm" variant="outline">Move</SubmitButton>
             </form>
           )}
           {canClose && (
