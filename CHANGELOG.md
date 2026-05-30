@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.26] — 2026-05-30 — Identical filter bar on both ticket boards
+
+### Changed
+- The per-team queue (`/b/[slug]/tickets`) now has the **same filter buttons** as the All-tickets board: **Active / Open / Claimed / Waiting / Closed / All**, defaulting to **Active** (was "Open", which also hid claimed/waiting). Closed stays one click away. The filter now preserves the active sort when switched.
+
 ## [0.6.25] — 2026-05-30 — All-tickets board hides closed by default
 
 ### Changed

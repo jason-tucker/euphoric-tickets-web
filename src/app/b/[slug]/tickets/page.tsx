@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, asc, desc, eq, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, ne, type SQL } from 'drizzle-orm'
 import { ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -11,7 +11,6 @@ import { businesses, tickets, ticketStatuses, users, type TicketStatus } from '@
 import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-const ALL_STATUS = 'all' as const
 const SORT_KEYS = ['last', 'opened', 'id', 'subject', 'status', 'opener'] as const
 
 export default async function TicketQueuePage({
@@ -25,10 +24,18 @@ export default async function TicketQueuePage({
   const sp = await searchParams
   const { business } = await requireBusinessAccess(slug, 'admin')
 
-  const filter = sp.status ?? 'open'
-  const isAll = filter === ALL_STATUS
-  const isValid = isAll || (ticketStatuses as readonly string[]).includes(filter)
-  const status = isValid && !isAll ? (filter as TicketStatus) : null
+  // Default 'active' (everything except closed). 'all' = no filter. A specific
+  // status = exactly that. Mirrors the All-tickets board so both queues share
+  // the same buttons + default.
+  const filter = sp.status ?? 'active'
+  const statusWhere: SQL | undefined =
+    filter === 'all'
+      ? undefined
+      : filter === 'active'
+        ? ne(tickets.status, 'closed')
+        : (ticketStatuses as readonly string[]).includes(filter)
+          ? eq(tickets.status, filter as TicketStatus)
+          : ne(tickets.status, 'closed')
 
   const { sort, dir } = parseSort(sp, SORT_KEYS, 'last')
   const d = dir === 'asc' ? asc : desc
@@ -72,7 +79,7 @@ export default async function TicketQueuePage({
     .from(tickets)
     .leftJoin(users, eq(users.id, tickets.openerUserId))
     .leftJoin(clientBusinessAlias, eq(clientBusinessAlias.id, tickets.clientBusinessId))
-    .where(status ? and(businessFilter, eq(tickets.status, status)) : businessFilter)
+    .where(statusWhere ? and(businessFilter, statusWhere) : businessFilter)
     .orderBy(orderBy)
     .limit(200)
 
@@ -82,11 +89,13 @@ export default async function TicketQueuePage({
         <h1 className="text-2xl font-semibold">Tickets</h1>
         <p className="text-sm text-muted-foreground">
           {rows.length} {rows.length === 1 ? 'ticket' : 'tickets'} ·{' '}
-          {status ? <span className="font-medium text-foreground">{status}</span> : 'all statuses'}
+          <span className="font-medium text-foreground">
+            {filter === 'all' ? 'all statuses' : filter === 'active' ? 'active' : filter}
+          </span>
         </p>
       </div>
 
-      <FilterBar slug={slug} active={filter} />
+      <FilterBar slug={slug} active={filter} sort={sort} dir={dir} />
 
       <Card>
         <CardContent className="p-0">
@@ -169,28 +178,35 @@ export default async function TicketQueuePage({
   )
 }
 
-function FilterBar({ slug, active }: { slug: string; active: string }) {
+function FilterBar({ slug, active, sort, dir }: { slug: string; active: string; sort: string; dir: string }) {
   const tabs = [
+    { key: 'active', label: 'Active' },
     { key: 'open', label: 'Open' },
     { key: 'claimed', label: 'Claimed' },
     { key: 'waiting', label: 'Waiting' },
     { key: 'closed', label: 'Closed' },
-    { key: ALL_STATUS, label: 'All' },
+    { key: 'all', label: 'All' },
   ]
   return (
     <div className="flex flex-wrap gap-1">
-      {tabs.map((t) => (
-        <Link
-          key={t.key}
-          href={`/b/${slug}/tickets?status=${t.key}`}
-          className={cn(
-            'rounded-md border px-3 py-1.5 text-sm transition-colors',
-            active === t.key ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent',
-          )}
-        >
-          {t.label}
-        </Link>
-      ))}
+      {tabs.map((t) => {
+        const sp = new URLSearchParams()
+        sp.set('status', t.key)
+        if (sort !== 'last') sp.set('sort', sort)
+        if (dir !== 'desc') sp.set('dir', dir)
+        return (
+          <Link
+            key={t.key}
+            href={`/b/${slug}/tickets?${sp.toString()}`}
+            className={cn(
+              'rounded-md border px-3 py-1.5 text-sm transition-colors',
+              active === t.key ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent',
+            )}
+          >
+            {t.label}
+          </Link>
+        )
+      })}
     </div>
   )
 }
