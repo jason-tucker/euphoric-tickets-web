@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.31] — 2026-05-30 — Per-guild identity (nickname + server avatar) in tickets
+
+### Changed
+- The ticket conversation now shows each person's **per-guild identity** — their **server nickname and server-specific avatar** for that team's Discord guild — instead of their global Discord profile. Applies to message authors (and internal notes), the opener line, the assignee badge, and the People card.
+- New `fetchGuildMemberIdentity` / `resolveGuildIdentities` helpers (lib/discord.ts) resolve nick + guild avatar via the bot token, cached 5 min per (guild, user) so SSE-driven re-renders don't re-hit Discord. Falls back to the stored global name/avatar when a member has no per-guild override or isn't in the guild.
+
 ## [0.6.30] — 2026-05-30 — Assign & Move as dropdown buttons
 
 ### Changed

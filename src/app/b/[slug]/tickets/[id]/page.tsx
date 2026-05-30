@@ -91,6 +91,7 @@ export default async function TicketDetailPage({
       authorName: users.name,
       authorImage: users.image,
       authorId: users.id,
+      authorDiscordId: users.discordId,
     })
     .from(ticketMessages)
     .leftJoin(users, eq(users.id, ticketMessages.authorUserId))
@@ -152,6 +153,25 @@ export default async function TicketDetailPage({
     (pid) => peopleRows.find((p) => p.discordId === pid) ?? { discordId: pid, name: null, image: null },
   )
 
+  // Per-guild display identity (server nickname + server avatar) for everyone
+  // shown on this ticket — names/avatars reflect THIS team's guild, not the
+  // person's global Discord profile. Cached 5 min per (guild, user).
+  const identityIds = [
+    opener?.discordId,
+    assignee?.discordId,
+    ...allMessages.map((m) => m.authorDiscordId),
+    ...peopleIds,
+  ].filter((x): x is string => !!x)
+  const { resolveGuildIdentities } = await import('@/lib/discord')
+  const guildIdentities =
+    botToken && access.business.discordGuildId
+      ? await resolveGuildIdentities(botToken, access.business.discordGuildId, identityIds)
+      : new Map<string, { name: string; image: string | null }>()
+  const gName = (discordId: string | null | undefined, fallback: string | null | undefined) =>
+    (discordId && guildIdentities.get(discordId)?.name) || fallback
+  const gImage = (discordId: string | null | undefined, fallback: string | null | undefined) =>
+    (discordId && guildIdentities.get(discordId)?.image) || fallback
+
   // Deep link into the actual Discord client/web at the per-ticket channel.
   const discordChannelUrl =
     t.discordChannelId && access.business.discordGuildId
@@ -195,7 +215,7 @@ export default async function TicketDetailPage({
               </span>
             )}
             <span>·</span>
-            <span>opened {relativeTime(t.openedAt)} by {opener?.name ?? '?'}</span>
+            <span>opened {relativeTime(t.openedAt)} by {gName(opener?.discordId, opener?.name) ?? '?'}</span>
           </div>
           <h1 className="mt-1 break-words text-2xl font-semibold">{t.subject}</h1>
           {parentTicket && (
@@ -238,7 +258,7 @@ export default async function TicketDetailPage({
           <StatusBadge status={t.status} />
           {assignee && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              {t.status === 'claimed' ? 'claimed by' : 'assigned to'} {assignee.name ?? '?'}
+              {t.status === 'claimed' ? 'claimed by' : 'assigned to'} {gName(assignee.discordId, assignee.name) ?? '?'}
             </span>
           )}
           {canClaim && t.assigneeUserId === null && (
@@ -350,12 +370,12 @@ export default async function TicketDetailPage({
             messages.map((m) => (
               <div key={m.id} className="flex gap-3">
                 <Avatar className="h-8 w-8">
-                  {m.authorImage && <AvatarImage src={m.authorImage} alt="" />}
-                  <AvatarFallback className="text-[10px]">{(m.authorName ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                  {gImage(m.authorDiscordId, m.authorImage) && <AvatarImage src={gImage(m.authorDiscordId, m.authorImage)!} alt="" />}
+                  <AvatarFallback className="text-[10px]">{(gName(m.authorDiscordId, m.authorName) ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium">{m.authorName ?? 'Unknown'}</span>
+                    <span className="text-sm font-medium">{gName(m.authorDiscordId, m.authorName) ?? 'Unknown'}</span>
                     <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
                       via {m.source}
                     </span>
@@ -401,10 +421,10 @@ export default async function TicketDetailPage({
                   return (
                     <li key={p.discordId} className="flex items-center gap-2 py-1.5">
                       <Avatar className="h-6 w-6">
-                        {p.image && <AvatarImage src={p.image} alt="" />}
-                        <AvatarFallback className="text-[9px]">{(p.name ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                        {gImage(p.discordId, p.image) && <AvatarImage src={gImage(p.discordId, p.image)!} alt="" />}
+                        <AvatarFallback className="text-[9px]">{(gName(p.discordId, p.name) ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
-                      <span className="flex-1 truncate text-sm">{p.name ?? p.discordId}</span>
+                      <span className="flex-1 truncate text-sm">{gName(p.discordId, p.name) ?? p.discordId}</span>
                       {isOpener ? (
                         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">opener</span>
                       ) : (
@@ -446,12 +466,12 @@ export default async function TicketDetailPage({
               internalNotes.map((m) => (
                 <div key={m.id} className="flex gap-3">
                   <Avatar className="h-7 w-7">
-                    {m.authorImage && <AvatarImage src={m.authorImage} alt="" />}
-                    <AvatarFallback className="text-[10px]">{(m.authorName ?? 'S').slice(0, 2).toUpperCase()}</AvatarFallback>
+                    {gImage(m.authorDiscordId, m.authorImage) && <AvatarImage src={gImage(m.authorDiscordId, m.authorImage)!} alt="" />}
+                    <AvatarFallback className="text-[10px]">{(gName(m.authorDiscordId, m.authorName) ?? 'S').slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-medium">{m.authorName ?? 'Staff'}</span>
+                      <span className="text-sm font-medium">{gName(m.authorDiscordId, m.authorName) ?? 'Staff'}</span>
                       <span className="text-xs text-muted-foreground">{relativeTime(m.createdAt)}</span>
                     </div>
                     <div className="mt-1 whitespace-pre-wrap break-words rounded-md bg-background/60 p-2 text-sm">

@@ -363,6 +363,57 @@ export async function postBotMessageToThread(input: {
   return (await res.json()) as { id: string }
 }
 
+// Per-guild display identity (server nickname + server avatar) for a member.
+// Falls back to global name/avatar when the member has no per-guild override,
+// and to null entirely if they're not in the guild. Cached 5 min per
+// (guild, user) so the ticket page's SSE re-renders don't re-hit Discord.
+const identityCache = new Map<string, { at: number; v: { name: string; image: string | null } | null }>()
+const IDENTITY_TTL_MS = 5 * 60 * 1000
+
+export async function fetchGuildMemberIdentity(
+  botToken: string,
+  guildId: string,
+  userId: string,
+): Promise<{ name: string; image: string | null } | null> {
+  const key = `${guildId}:${userId}`
+  const cached = identityCache.get(key)
+  if (cached && Date.now() - cached.at < IDENTITY_TTL_MS) return cached.v
+
+  const m = (await fetchGuildMemberAsBot(botToken, guildId, userId).catch(() => null)) as
+    | (DiscordGuildMember & { avatar?: string | null })
+    | null
+
+  let v: { name: string; image: string | null } | null = null
+  if (m?.user) {
+    const name = m.nick ?? m.user.global_name ?? m.user.username
+    const image = m.avatar
+      ? `https://cdn.discordapp.com/guilds/${guildId}/users/${userId}/avatars/${m.avatar}.png`
+      : m.user.avatar
+        ? `https://cdn.discordapp.com/avatars/${userId}/${m.user.avatar}.png`
+        : null
+    v = { name, image }
+  }
+  identityCache.set(key, { at: Date.now(), v })
+  return v
+}
+
+// Resolve several members' per-guild identities at once → Map keyed by user id.
+export async function resolveGuildIdentities(
+  botToken: string,
+  guildId: string,
+  userIds: string[],
+): Promise<Map<string, { name: string; image: string | null }>> {
+  const out = new Map<string, { name: string; image: string | null }>()
+  const unique = [...new Set(userIds.filter(Boolean))]
+  await Promise.all(
+    unique.map(async (uid) => {
+      const v = await fetchGuildMemberIdentity(botToken, guildId, uid)
+      if (v) out.set(uid, v)
+    }),
+  )
+  return out
+}
+
 // P16: fetch any Discord user by id (works for users NOT in a shared guild).
 export async function fetchDiscordUser(
   botToken: string,
