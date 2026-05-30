@@ -285,6 +285,13 @@ export default async function TicketDetailPage({
         </div>
       </div>
 
+      {t.needsAttention && (
+        <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          ⚠ This ticket&apos;s Discord channel went missing and was detected on the bot&apos;s last startup
+          resync. The transcript here is intact; reopen or close to tidy up.
+        </div>
+      )}
+
       {t.status === 'closed' && t.closedAt && (
         <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           Closed {relativeTime(t.closedAt)}.

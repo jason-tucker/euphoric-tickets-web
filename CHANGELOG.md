@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.16] — 2026-05-30 — Lantern P11 mirror: needs_attention banner
+
+### Added
+- **`tickets.needs_attention`** column (mirror of bot v0.5.11) — set by the bot's startup resync when a ticket's Discord channel vanishes.
+- An amber **"channel went missing"** banner on the ticket detail page for flagged tickets (the transcript stays intact).
+
 ## [0.6.15] — 2026-05-30 — Lantern P10: Discord-formatted reply preview
 
 ### Added
