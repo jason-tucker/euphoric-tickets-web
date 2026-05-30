@@ -51,7 +51,7 @@ export default async function DashboardPage() {
           <div>
             <h1 className="text-2xl font-semibold">My tickets</h1>
             <p className="text-sm text-muted-foreground">
-              Tickets you've opened across {myBusinesses.length} {myBusinesses.length === 1 ? 'community' : 'communities'}.
+              Tickets you've opened across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.
             </p>
           </div>
           <Button asChild>
@@ -65,9 +65,9 @@ export default async function DashboardPage() {
         {myBusinesses.length === 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>No communities yet</CardTitle>
+              <CardTitle>No teams yet</CardTitle>
               <CardDescription>
-                You're not a member of any Discord community that's connected to Euphoric Tickets.
+                You're not a member of any Discord team that's connected to Euphoric Tickets.
                 Ask an admin to add you, then sign out and back in.
               </CardDescription>
             </CardHeader>
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
                   <TableRow>
                     <TableHead className="w-16">#</TableHead>
                     <TableHead>Subject</TableHead>
-                    <TableHead className="hidden md:table-cell">Community</TableHead>
+                    <TableHead className="hidden md:table-cell">Team</TableHead>
                     <TableHead className="w-20">Status</TableHead>
                     <TableHead className="hidden w-32 sm:table-cell">Last activity</TableHead>
                   </TableRow>
@@ -118,7 +118,7 @@ export default async function DashboardPage() {
               <CardHeader>
                 <CardTitle>No tickets yet</CardTitle>
                 <CardDescription>
-                  When you open a ticket here or via your community's Discord panel, it'll show up in this list.
+                  When you open a ticket here or via your team's Discord panel, it'll show up in this list.
                 </CardDescription>
               </CardHeader>
             </Card>

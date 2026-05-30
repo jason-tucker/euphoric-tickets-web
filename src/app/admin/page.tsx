@@ -27,16 +27,16 @@ export default async function AdminPage() {
         <div>
           <h1 className="text-2xl font-semibold">Admin</h1>
           <p className="text-sm text-muted-foreground">
-            Sudo-only. Create and list every business in the app.
+            Sudo-only. Create and list every team in the app.
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Create business</CardTitle>
+            <CardTitle className="text-base">Create team</CardTitle>
             <CardDescription>
-              Each business is one Discord guild + one URL slug. You can edit everything else from
-              its own settings page after.
+              Each team has its own URL slug. Several teams can share one Discord guild. You can edit
+              everything else from a team&apos;s own settings page after.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -50,15 +50,15 @@ export default async function AdminPage() {
                     defaultValue="host"
                     className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                   >
-                    <option value="host">Host — vendor running the ticket system (EuphoricFM, MKE, …)</option>
+                    <option value="host">Team — runs the ticket system (EuphoricFM, MKE, …)</option>
                     <option value="client">Client — visitor org coming in with multiple people (Echo Studios, …)</option>
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    Hosts operate queues. Clients are visitor orgs whose members open tickets at a host.
+                    Teams operate queues. Clients are visitor orgs whose members open tickets at a team.
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="parentBusinessId">Parent host (clients only)</Label>
+                  <Label htmlFor="parentBusinessId">Parent team (clients only)</Label>
                   <select
                     id="parentBusinessId"
                     name="parentBusinessId"
@@ -70,7 +70,7 @@ export default async function AdminPage() {
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
-                  <p className="text-xs text-muted-foreground">Which host will operate this client&apos;s tickets.</p>
+                  <p className="text-xs text-muted-foreground">Which team will operate this client&apos;s tickets.</p>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -118,18 +118,18 @@ export default async function AdminPage() {
                   <Info className="mx-0.5 inline h-3 w-3" aria-hidden /> for details.
                 </p>
               </div>
-              <SubmitButton pendingChildren="Creating…">Create business</SubmitButton>
+              <SubmitButton pendingChildren="Creating…">Create team</SubmitButton>
             </form>
           </CardContent>
         </Card>
 
         <section>
-          <h2 className="mb-2 mt-8 text-lg font-semibold">Hosts ({hosts.length})</h2>
+          <h2 className="mb-2 mt-8 text-lg font-semibold">Teams ({hosts.length})</h2>
           {hosts.length === 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">None yet</CardTitle>
-                <CardDescription>Create one above with Kind = Host.</CardDescription>
+                <CardDescription>Create one above with Kind = Team.</CardDescription>
               </CardHeader>
             </Card>
           ) : (
@@ -162,7 +162,7 @@ export default async function AdminPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">None yet</CardTitle>
-                <CardDescription>Create one above with Kind = Client + a parent host.</CardDescription>
+                <CardDescription>Create one above with Kind = Client + a parent team.</CardDescription>
               </CardHeader>
             </Card>
           ) : (
@@ -180,7 +180,7 @@ export default async function AdminPage() {
                         <CardDescription className="flex flex-col gap-0.5">
                           <span>/{b.slug}</span>
                           <span className="text-[10px] text-muted-foreground">
-                            host: {parent?.name ?? '?'}
+                            team: {parent?.name ?? '?'}
                           </span>
                           <span className="font-mono text-[10px] text-muted-foreground">
                             guild {b.discordGuildId}

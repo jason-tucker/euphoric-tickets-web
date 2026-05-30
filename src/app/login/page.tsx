@@ -31,7 +31,7 @@ export default async function LoginPage({
           </div>
           <CardTitle>Euphoric Tickets</CardTitle>
           <CardDescription>
-            Open and manage support tickets across your communities.
+            Open and manage support tickets across your teams.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -42,7 +42,7 @@ export default async function LoginPage({
             </SubmitButton>
           </form>
           <p className="text-center text-xs text-muted-foreground">
-            We use Discord for sign-in and to know which communities you're a member of.
+            We use Discord for sign-in and to know which teams you're a member of.
           </p>
         </CardContent>
       </Card>

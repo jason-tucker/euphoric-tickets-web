@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.8] — 2026-05-30 — Rename "business" → "Team" across the UI
+
+### Changed
+- The umbrella tenant noun is now **Team** everywhere in the UI (was "Business"). The operator tenant kind also reads as **Team** (was "Host"); the visitor kind stays **Client**. End-user copy that said "community / communities" now says "team / teams" for one consistent vocabulary.
+- Touched surfaces: top-nav ("Team settings", "All teams / clients"), team switcher ("Teams"), `/admin` (Create team, Teams/Clients sections, Kind = Team), team settings page (card titles + helper text), dashboard, `/t/new`, `/clients` rollup, login.
+- `src/lib/terminology.ts` default noun flipped from "business" to "team" (the `terminology` enum value stays `'business'` in the DB for back-compat; only the surface label changed).
+- **Scope:** display strings only. DB columns (`businesses`, `business_id`, …), routes (`/b/<slug>`, `/clients`), the `kind` enum (`host`/`client`), and all code identifiers are unchanged — no migration.
+
 ## [0.6.7] — 2026-05-30 — Multiple businesses per Discord guild + webhook tooltip
 
 ### Changed
@@ -300,4 +308,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.7 · 4ff8217`
+`v0.6.8 · pending`

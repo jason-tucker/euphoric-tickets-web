@@ -94,13 +94,13 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                       <Link href={`/b/${activeBusiness.slug}/tickets`}>Ticket queue</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href={`/b/${activeBusiness.slug}/settings`}>Business settings</Link>
+                      <Link href={`/b/${activeBusiness.slug}/settings`}>Team settings</Link>
                     </DropdownMenuItem>
                   </>
                 )}
                 {(isSudo || myBusinesses.some((b) => b.level === 'admin' || b.level === 'owner')) && (
                   <DropdownMenuItem asChild>
-                    <Link href="/clients">All clients / businesses</Link>
+                    <Link href="/clients">All teams / clients</Link>
                   </DropdownMenuItem>
                 )}
                 {isSudo && (

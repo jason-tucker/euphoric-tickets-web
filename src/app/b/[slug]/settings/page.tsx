@@ -32,14 +32,14 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
       <div>
         <h1 className="text-2xl font-semibold">Settings — {business.name}</h1>
         <p className="text-sm text-muted-foreground">
-          Connect this business to Discord. Roles, webhook, and categories live here.
+          Connect this team to Discord. Roles, webhook, and categories live here.
         </p>
       </div>
 
       <form action={saveBusinessSettings.bind(null, slug)} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Business</CardTitle>
+            <CardTitle className="text-base">Team</CardTitle>
             <CardDescription>What end users and your team see.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -58,7 +58,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           <CardHeader>
             <CardTitle className="text-base">Discord</CardTitle>
             <CardDescription>
-              The Discord guild and which roles count as admins of this business.
+              The Discord guild and which roles count as admins of this team.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -84,7 +84,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 triggerLabel="Choose admin roles…"
               />
               <p className="text-xs text-muted-foreground">
-                Members with any of these roles get full admin access to this business — including channel deletion and settings edits. Type to filter, click to add, or paste a raw Discord role ID.
+                Members with any of these roles get full admin access to this team — including channel deletion and settings edits. Type to filter, click to add, or paste a raw Discord role ID.
               </p>
             </div>
             <div className="space-y-1">
@@ -155,7 +155,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 defaultValue={business.terminology}
                 className="h-9 w-full rounded-md border bg-background px-2 text-sm"
               >
-                <option value="business">Business</option>
+                <option value="business">Team</option>
                 <option value="client">Client</option>
               </select>
               <p className="text-xs text-muted-foreground">
@@ -268,7 +268,7 @@ function CategoryFormFields({
             defaultValue={v?.key}
             required
           />
-          <p className="text-xs text-muted-foreground">Internal id, lowercase. Unique per business.</p>
+          <p className="text-xs text-muted-foreground">Internal id, lowercase. Unique per team.</p>
         </div>
         <div className="space-y-1">
           <Label htmlFor={`${idPrefix}label`}>Label</Label>
@@ -309,7 +309,7 @@ function CategoryFormFields({
             defaultValue={v?.discordParentCategoryId ?? ''}
             triggerLabel="Choose a category…"
           />
-          <p className="text-xs text-muted-foreground">Per-ticket channels open here. Leave empty → business fallback.</p>
+          <p className="text-xs text-muted-foreground">Per-ticket channels open here. Leave empty → team fallback.</p>
         </div>
         <div className="space-y-1">
           <Label htmlFor={`${idPrefix}discordClosedCategoryId`}>Closed Discord category</Label>
@@ -320,7 +320,7 @@ function CategoryFormFields({
             defaultValue={v?.discordClosedCategoryId ?? ''}
             triggerLabel="Choose a category…"
           />
-          <p className="text-xs text-muted-foreground">Closed channels move here. Leave empty → business fallback.</p>
+          <p className="text-xs text-muted-foreground">Closed channels move here. Leave empty → team fallback.</p>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -346,7 +346,7 @@ function CategoryFormFields({
             guildId={guildId}
             name="staffRoleIds"
             defaultValue={v?.staffRoleIds ?? ''}
-            triggerLabel="Leave empty — fall back to business admins"
+            triggerLabel="Leave empty — fall back to team admins"
           />
           <p className="text-xs text-muted-foreground">
             Staff can claim/close/reply on tickets in this category. They cannot delete channels — that stays admin-only.

@@ -121,7 +121,7 @@ function BusinessSection({
   statsByBusiness: Map<string, { open: number; projects: number; lastActivity: Date | null }>
 }) {
   if (list.length === 0) return null
-  const title = kind === 'host' ? 'Hosts' : 'Clients'
+  const title = kind === 'host' ? 'Teams' : 'Clients'
   const Icon = kind === 'host' ? Building2 : Briefcase
   return (
     <section>

@@ -46,7 +46,7 @@ export function BusinessSwitcher({
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Businesses</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Teams</DropdownMenuLabel>
         {businesses.map((b) => {
           // Admins land on the queue view; members land on the business overview.
           const href = b.level === 'admin' || b.level === 'owner' ? `/b/${b.slug}/tickets` : `/b/${b.slug}`

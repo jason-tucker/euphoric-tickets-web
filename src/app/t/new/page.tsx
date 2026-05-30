@@ -24,9 +24,9 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
         <main className="container max-w-xl py-6">
           <Card>
             <CardHeader>
-              <CardTitle>No communities yet</CardTitle>
+              <CardTitle>No teams yet</CardTitle>
               <CardDescription>
-                You can&apos;t open a ticket because you&apos;re not in any Discord community connected to this app.
+                You can&apos;t open a ticket because you&apos;re not in any Discord team connected to this app.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -70,7 +70,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                 </p>
               )}
               <div className="space-y-1">
-                <Label htmlFor="businessSlug">Community</Label>
+                <Label htmlFor="businessSlug">Team</Label>
                 <select
                   id="businessSlug"
                   name="businessSlug"
@@ -97,7 +97,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                 </select>
                 {cats.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    This community has no categories yet. An admin can add them in business settings.
+                    This team has no categories yet. An admin can add them in team settings.
                   </p>
                 )}
               </div>
