@@ -4,6 +4,7 @@ import { asc, eq, inArray } from 'drizzle-orm'
 import { ArrowLeft, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react'
 import { DiscordPicker } from '@/components/app/discord-picker'
 import { LiveRefresh } from '@/components/app/live-refresh'
+import { TicketActionMenu } from '@/components/app/ticket-action-menu'
 import { fetchChannelMemberIds } from '@/lib/discord'
 import { StatusBadge } from '@/components/app/status-badge'
 import { ReplyForm } from '@/components/app/reply-form'
@@ -247,36 +248,30 @@ export default async function TicketDetailPage({
             <form action={unclaim}><SubmitButton size="sm" variant="outline">Unclaim</SubmitButton></form>
           )}
           {canAssign && (
-            <form action={assign} className="flex items-center gap-1">
-              <select
-                name="assigneeId"
-                defaultValue={t.assigneeUserId ?? ''}
-                className="h-8 rounded-md border bg-background px-2 text-xs"
-                aria-label="Assign to"
-              >
-                <option value="">— unassigned —</option>
-                {staff.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name ?? s.id.slice(0, 8)}</option>
-                ))}
-              </select>
-              <SubmitButton size="sm" variant="secondary">Assign</SubmitButton>
-            </form>
+            <TicketActionMenu
+              triggerLabel="Assign"
+              variant="secondary"
+              name="assigneeId"
+              currentValue={t.assigneeUserId ?? ''}
+              action={assign}
+              options={[
+                { value: '', label: '— Unassigned —' },
+                ...staff.map((s) => ({ value: s.id, label: s.name ?? s.id.slice(0, 8) })),
+              ]}
+            />
           )}
           {ticketAccess.canChangeCategory && t.status !== 'closed' && categories.length > 0 && (
-            <form action={changeCat} className="flex items-center gap-1">
-              <select
-                name="categoryId"
-                defaultValue={t.categoryId ?? ''}
-                className="h-8 rounded-md border bg-background px-2 text-xs"
-                aria-label="Move to category"
-              >
-                {!t.categoryId && <option value="">— category —</option>}
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.emoji ? `${c.emoji} ` : ''}{c.label}</option>
-                ))}
-              </select>
-              <SubmitButton size="sm" variant="outline">Move</SubmitButton>
-            </form>
+            <TicketActionMenu
+              triggerLabel="Move"
+              variant="outline"
+              name="categoryId"
+              currentValue={t.categoryId ?? ''}
+              action={changeCat}
+              options={categories.map((c) => ({
+                value: c.id,
+                label: `${c.emoji ? `${c.emoji} ` : ''}${c.label}`,
+              }))}
+            />
           )}
           {canClose && (
             <form action={close}><SubmitButton size="sm" variant="outline">Close</SubmitButton></form>

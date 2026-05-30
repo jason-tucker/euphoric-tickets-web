@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.30] — 2026-05-30 — Assign & Move as dropdown buttons
+
+### Changed
+- The **Assign** and **Move** (category) controls on the ticket detail page are now **button-triggered dropdown menus** instead of always-visible `<select>` boxes — cleaner action row. New `<TicketActionMenu>` client component: each option is a tiny form that submits the bound server action with the chosen value (a ✓ marks the current one).
+
 ## [0.6.29] — 2026-05-30 — Admin tab + dynamic per-team/category notifications + custom ntfy server
 
 ### Added
