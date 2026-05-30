@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.15] — 2026-05-30 — Lantern P10: Discord-formatted reply preview
+
+### Added
+- **Two-pane reply form** — write on the left, a live **Discord-rendered preview** on the right (collapses to a Write/Preview tab toggle on narrow screens / the in-game phone). Submit path is unchanged: raw text still posts to the webhook spoof and Discord renders it natively.
+- **`<DiscordMarkdown>`** (`components/app/discord-markdown.tsx`) — a small dependency-free renderer covering bold / italic / underline / strikethrough / spoiler / inline + block code / blockquote / headers / `-#` subtext / autolinks, plus styled mention + custom-emoji pills (`<@id>`, `<#id>`, `<@&id>`, `<:name:id>`). No npm dep added (avoids CJS/ESM interop in the standalone build).
+
+Mention **name** resolution (showing `@DisplayName` instead of `@id`) is a small follow-up — the pill already shows what you're tagging.
+
+Closes euphoric-tickets-web#23.
+
 ## [0.6.14] — 2026-05-30 — Lantern P9: sortable ticket lists
 
 ### Added
