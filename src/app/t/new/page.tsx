@@ -47,7 +47,11 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
         .from(ticketCategories)
         .where(inArray(ticketCategories.businessId, businessIds))
     : []
-  const cats = allCats.filter((c) => c.businessId === selectedBusiness.id)
+  // Hide `staffOnly` destinations from the open-ticket picker — those exist
+  // only as move-into targets for staff. Filter applies to everyone (member
+  // and staff/admin alike), since staff still open tickets via this same flow
+  // and a staff-only destination is by definition not a fresh-ticket option.
+  const cats = allCats.filter((c) => c.businessId === selectedBusiness.id && !c.staffOnly)
 
   return (
     <>
@@ -101,21 +105,6 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                   </p>
                 )}
               </div>
-
-              {!parentId && (
-                <div className="space-y-1">
-                  <Label htmlFor="kind">Type</Label>
-                  <select
-                    id="kind"
-                    name="kind"
-                    defaultValue="normal"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="normal">Normal — one-off issue</option>
-                    <option value="project">Project — long-term work / retainer with sub-tickets</option>
-                  </select>
-                </div>
-              )}
 
               <div className="space-y-1">
                 <Label htmlFor="subject">Subject</Label>

@@ -514,13 +514,14 @@ export async function addTicketMember(
   return { ok: true }
 }
 
-// P6: remove a member's channel overwrite (staff/admin). Refuses the opener.
+// P6 + P16: remove a member. Handles both Discord channel overwrites (in-guild
+// members) and the `ticket_external_members` row (web-only access). Refuses
+// the opener — close the ticket instead.
 export async function removeTicketMember(slug: string, ticketId: number, discordUserId: string): Promise<void> {
   const ctx = await loadTicketAccess(slug, ticketId)
   if (!ctx) return
   if (!ctx.flags.canManageMembers) return
   if (!/^\d{17,20}$/.test(discordUserId)) return
-  if (!ctx.ticket.discordChannelId) return
 
   // Don't remove the opener — close the ticket instead.
   const [opener] = await db
@@ -530,11 +531,39 @@ export async function removeTicketMember(slug: string, ticketId: number, discord
     .limit(1)
   if (opener?.discordId === discordUserId) return
 
+  // Discord side: best-effort revoke of the channel overwrite. Skips silently
+  // when the ticket has no channel (legacy) or the user was external-only
+  // (no overwrite ever existed → Discord 404).
   const botToken = process.env.DISCORD_BOT_TOKEN
-  if (!botToken) return
-  await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
+  if (botToken && ctx.ticket.discordChannelId) {
+    await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
+  }
 
-  await postStatus(ctx.ticket, `<@${discordUserId}> was removed from the ticket by <@${ctx.session.user.discordId}>`)
+  // P16: also delete the web-only access row. Without this, an "external"
+  // member kept seeing + replying via their bookmark/DM link after staff hit
+  // the Remove button. Resolve discordId → users.id first.
+  const [u] = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.discordId, discordUserId))
+    .limit(1)
+  if (u) {
+    await db
+      .delete(ticketExternalMembers)
+      .where(
+        and(
+          eq(ticketExternalMembers.ticketId, ctx.ticket.id),
+          eq(ticketExternalMembers.userId, u.id),
+        ),
+      )
+  }
+
+  // Status footer in the Discord channel. For external removes use the
+  // stored display name (the `<@id>` mention won't resolve for someone not
+  // in the guild, so it would just render as a raw id).
+  const actor = `<@${ctx.session.user.discordId}>`
+  const subject = u?.name ? `${u.name} (external/Discord)` : `<@${discordUserId}>`
+  await postStatus(ctx.ticket, `${subject} was removed from the ticket by ${actor}`)
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 

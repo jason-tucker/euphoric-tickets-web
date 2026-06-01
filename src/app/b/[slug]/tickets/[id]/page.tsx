@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { requireSession, resolveBusinessAccess, resolveTicketAccess } from '@/server/permissions'
 import { db } from '@/db/client'
-import { businesses, businessMembers, tickets, ticketCategories, ticketMessages, users } from '@/db/schema'
+import { businesses, businessMembers, tickets, ticketCategories, ticketExternalMembers, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import {
   addInternalNote,
@@ -62,7 +62,33 @@ export default async function TicketDetailPage({
     ticket: { id: t.id, openerUserId: t.openerUserId, categoryId: t.categoryId },
     session: { user: { id: access.session.user.id, discordId: access.session.user.discordId } },
   })
-  if (!ticketAccess.canSee) notFound()
+  if (!ticketAccess.canSee) {
+    // Friendly 403 — distinguishes "you can't see this" from "doesn't exist"
+    // so signed-in users following a link don't see a confusing 404.
+    return (
+      <main className="container max-w-xl py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle>You don&apos;t have access to this ticket</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Ticket <span className="font-mono">#{t.id}</span> exists in{' '}
+              <strong>{biz.name}</strong>, but only the opener, the people on
+              the ticket, and staff/admins of this team can view it. If you
+              think you should have access, ask an admin to add you to the
+              ticket.
+            </p>
+            <p>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/dashboard">← Back to dashboard</Link>
+              </Button>
+            </p>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
   const isAdmin = ticketAccess.isAdmin
   const isStaff = ticketAccess.isStaff
 
@@ -152,9 +178,28 @@ export default async function TicketDetailPage({
         .from(users)
         .where(inArray(users.discordId, peopleIds))
     : []
-  const people = peopleIds.map(
-    (pid) => peopleRows.find((p) => p.discordId === pid) ?? { discordId: pid, name: null, image: null },
+  // P16: external members — people granted web-only access via
+  // ticket_external_members, not present in any Discord channel overwrite.
+  // Merge them into the People list so staff can see + remove them; they
+  // were invisible before this commit (only Discord overwrites were listed),
+  // which made revoking access impossible from the UI.
+  const externalRows = ticketAccess.canManageMembers
+    ? await db
+        .select({ discordId: users.discordId, name: users.name, image: users.image })
+        .from(ticketExternalMembers)
+        .innerJoin(users, eq(users.id, ticketExternalMembers.userId))
+        .where(eq(ticketExternalMembers.ticketId, t.id))
+    : []
+  const channelPeople = peopleIds.map(
+    (pid) => ({
+      ...(peopleRows.find((p) => p.discordId === pid) ?? { discordId: pid, name: null, image: null }),
+      isExternal: false,
+    }),
   )
+  const externalPeople = externalRows
+    .filter((r) => !peopleIds.includes(r.discordId))
+    .map((r) => ({ ...r, isExternal: true }))
+  const people = [...channelPeople, ...externalPeople]
 
   // Per-guild display identity (server nickname + server avatar) for everyone
   // shown on this ticket — names/avatars reflect THIS team's guild, not the
@@ -444,7 +489,14 @@ export default async function TicketDetailPage({
                         {gImage(p.discordId, p.image) && <AvatarImage src={gImage(p.discordId, p.image)!} alt="" />}
                         <AvatarFallback className="text-[9px]">{(gName(p.discordId, p.name) ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
-                      <span className="flex-1 truncate text-sm">{gName(p.discordId, p.name) ?? p.discordId}</span>
+                      <span className="flex-1 truncate text-sm">
+                        {gName(p.discordId, p.name) ?? p.discordId}
+                        {p.isExternal && (
+                          <span className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground" title="Web-only access — not in your Discord">
+                            external
+                          </span>
+                        )}
+                      </span>
                       {isOpener ? (
                         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">owner</span>
                       ) : (

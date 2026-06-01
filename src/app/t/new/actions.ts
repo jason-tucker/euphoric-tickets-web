@@ -20,7 +20,9 @@ const schema = z.object({
   categoryId: z.string().uuid().optional().or(z.literal('')),
   subject: z.string().min(3).max(120),
   body: z.string().min(3).max(1900),
-  kind: z.enum(['normal', 'project']).default('normal'),
+  // Removed in v0.6.37: ticket kind is now derived from the chosen
+  // category's `kind` column (set in team-settings), not picked per-ticket.
+  // Sub-tickets still force `normal` regardless of the parent category.
   parentTicketId: z.string().regex(/^\d+$/).optional().or(z.literal('')),
   // If submitting from a client-kind business slug, the form posts the
   // selected business id here; the action ensures the ticket lands on the
@@ -57,7 +59,6 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     categoryId: String(formData.get('categoryId') ?? '') || undefined,
     subject: String(formData.get('subject') ?? ''),
     body: String(formData.get('body') ?? ''),
-    kind: (String(formData.get('kind') ?? 'normal') as 'normal' | 'project'),
     parentTicketId: String(formData.get('parentTicketId') ?? '') || undefined,
     asClientBusinessId: String(formData.get('asClientBusinessId') ?? '') || undefined,
   })
@@ -107,6 +108,8 @@ export async function openTicketAction(formData: FormData): Promise<void> {
 
   // Categories belong to the HOST that operates them — same regardless of
   // whether the opener is the host's own staff or a client's member.
+  // Staff-only destinations are NEVER selectable here — they only exist as
+  // move-into targets in the staff change-category flow.
   let category: typeof ticketCategories.$inferSelect | null = null
   if (parsed.data.categoryId) {
     const [c] = await db
@@ -114,7 +117,10 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       .from(ticketCategories)
       .where(eq(ticketCategories.id, parsed.data.categoryId))
       .limit(1)
-    if (c && c.businessId === hostBusiness.id) category = c
+    if (c && c.businessId === hostBusiness.id) {
+      if (c.staffOnly) throw new Error('That category is staff-only — pick another.')
+      category = c
+    }
   }
 
   // Validate parent — must exist, belong to the same host, and be a project
@@ -139,7 +145,8 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       subject: parsed.data.subject,
       status: 'open',
       // Sub-tickets are always normal; only top-level tickets can be projects.
-      kind: parentTicketId ? 'normal' : parsed.data.kind,
+      // Derive kind from the chosen category — sub-tickets force 'normal'.
+      kind: parentTicketId ? 'normal' : (category?.kind ?? 'normal'),
       parentTicketId,
     })
     .returning()

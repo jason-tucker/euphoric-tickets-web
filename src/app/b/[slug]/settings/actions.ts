@@ -93,6 +93,12 @@ const categorySchema = z.object({
   // P1 (lantern, used by bot in P4): optional template for the first message
   // in newly-opened tickets of this category.
   firstMessageTemplate: z.string().max(2000).optional(),
+  // Staff-only destination — hidden from the open-ticket flow (web + bot),
+  // but still selectable in the staff change-category dropdown.
+  staffOnly: z.boolean().optional(),
+  // Default ticket kind for tickets opened in this category. Replaces the
+  // per-ticket Type picker that used to live on /t/new.
+  kind: z.enum(['normal', 'project']).optional(),
 })
 
 // Pulls the shared category fields out of a FormData and normalises blanks.
@@ -112,6 +118,8 @@ function readCategoryFields(formData: FormData) {
     allowRoleIds: String(formData.get('allowRoleIds') ?? '').trim().replace(/\s+/g, ''),
     staffRoleIds: String(formData.get('staffRoleIds') ?? '').trim().replace(/\s+/g, ''),
     firstMessageTemplate: norm('firstMessageTemplate'),
+    staffOnly: formData.get('staffOnly') != null,
+    kind: (formData.get('kind') === 'project' ? 'project' : 'normal') as 'normal' | 'project',
   }
 }
 
@@ -134,6 +142,8 @@ export async function addCategoryAction(slug: string, formData: FormData): Promi
     allowRoleIds: parsed.data.allowRoleIds ?? '',
     staffRoleIds: parsed.data.staffRoleIds ?? '',
     firstMessageTemplate: parsed.data.firstMessageTemplate ?? null,
+    staffOnly: parsed.data.staffOnly ?? false,
+    kind: parsed.data.kind ?? 'normal',
   })
 
   revalidatePath(`/b/${slug}/settings`)
@@ -164,6 +174,8 @@ export async function updateCategoryAction(
       allowRoleIds: parsed.data.allowRoleIds ?? '',
       staffRoleIds: parsed.data.staffRoleIds ?? '',
       firstMessageTemplate: parsed.data.firstMessageTemplate ?? null,
+      staffOnly: parsed.data.staffOnly ?? false,
+      kind: parsed.data.kind ?? 'normal',
     })
     .where(and(eq(ticketCategories.id, categoryId), eq(ticketCategories.businessId, business.id)))
 

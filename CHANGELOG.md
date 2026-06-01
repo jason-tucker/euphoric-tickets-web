@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.37] — 2026-05-30 — Staff-only categories, per-category ticket Type, 403 ticket page, external members in People box
+
+### Added
+- **Per-category "Staff-only destination" toggle in team settings.** New `staff_only` boolean column on `ticket_categories` (default false). When checked, the category disappears from the open-ticket form on `/t/new` (filter on `page.tsx`) and from the bot's panel buttons (filter in `settingsService.getPanelCategories`). Staff/admins can still **move** existing tickets into the category from the ticket detail page (the change-category dropdown does not filter, since it's already gated to staff/admin). Defense-in-depth: `/t/new`'s `openTicketAction` rejects a staff-only category id ("That category is staff-only — pick another."), and the bot's `openTicket()` refuses with a friendly Discord reply if a stale panel still has a button. Useful for triage/archive landing zones that should never be a fresh-ticket option.
+- **Per-category ticket Type (`kind`) in team settings.** New `kind` enum column on `ticket_categories` (`'normal' | 'project'`, default `'normal'`). The previous per-ticket Type picker on `/t/new` is gone — Type is now a property of the category, set once in team settings. Replaces the dropdown that used to ask every opener whether their ticket was a one-off or a project. Sub-tickets still force `kind='normal'` regardless of the parent category. Bot's `openTicket()` reads the category's kind when inserting the ticket row, so panel-opened tickets pick up the same setting as web-opened ones.
+
+### Fixed
+- **External members now show up in the ticket's People card so staff can remove them.** Adding someone via Discord ID when they aren't in the guild created a `ticket_external_members` row and DM'd them a web link (P16) — but the People card only listed Discord channel overwrites, so external members were invisible and there was no UI to revoke their access. Now the page also reads `ticket_external_members ⋈ users` and merges those rows into the list, marked with a small **external** badge. `removeTicketMember` was updated in lockstep: it tries the channel overwrite delete (best-effort, silent 404 for external-only users), then also deletes the `ticket_external_members` row so the removed user actually loses `canSee`. The status footer also switches from `<@id>` (which would render as a raw id for non-guild members) to the stored display name for external removals.
+
+### Changed
+- **Ticket pages return a friendly 403 instead of a blank 404 when you don't have access.** `/b/[slug]/tickets/[id]` was calling `notFound()` for both "ticket doesn't exist" and "you can't see this ticket" cases, which meant a signed-in user following a shared link to someone else's ticket saw the generic "This page could not be found." Now the no-access branch renders a small card — "You don't have access to this ticket" — that tells the user the ticket *does* exist in this team but they're not on it / not staff, and offers a Back to dashboard link. The "ticket doesn't exist" branch still 404s.
+
 ## [0.6.36] — 2026-05-30 — Ticket viewer status badge wrap fix + stale settings tooltip
 
 ### Fixed

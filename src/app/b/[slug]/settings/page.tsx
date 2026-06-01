@@ -353,6 +353,40 @@ function CategoryFormFields({
           </p>
         </div>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}kind`}>Type</Label>
+          <select
+            id={`${idPrefix}kind`}
+            name="kind"
+            defaultValue={v?.kind ?? 'normal'}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="normal">Normal — one-off issue</option>
+            <option value="project">Project — long-term work / retainer with sub-tickets</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Decides whether tickets opened in this category support sub-tickets.
+          </p>
+        </div>
+        <div className="flex items-start gap-3 rounded-md border border-input bg-background/40 p-3">
+          <input
+            id={`${idPrefix}staffOnly`}
+            name="staffOnly"
+            type="checkbox"
+            defaultChecked={!!v?.staffOnly}
+            className="mt-0.5 h-4 w-4 rounded border-input accent-foreground"
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor={`${idPrefix}staffOnly`} className="cursor-pointer">Staff-only destination</Label>
+            <p className="text-xs text-muted-foreground">
+              Hides this category from the open-ticket form everywhere — the web&apos;s <code>/t/new</code>
+              picker and the Discord panel buttons. Staff can still <strong>move</strong> existing tickets
+              into it from the ticket detail page. Useful for triage/archive landing zones.
+            </p>
+          </div>
+        </div>
+      </div>
       <div className="space-y-1">
         <Label htmlFor={`${idPrefix}firstMessageTemplate`}>First-ticket message template (optional)</Label>
         <Textarea
