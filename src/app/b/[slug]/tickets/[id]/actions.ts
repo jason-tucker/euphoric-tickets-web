@@ -4,10 +4,11 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { ticketCategories, tickets, ticketMessages, ticketExternalMembers, users } from '@/db/schema'
+import { businesses, ticketCategories, tickets, ticketMessages, ticketExternalMembers, users } from '@/db/schema'
 import {
   requireBusinessAccess,
   requireSession,
+  resolveBusinessAccess,
   resolveTicketAccess,
   type TicketAccessFlags,
 } from '@/server/permissions'
@@ -51,10 +52,17 @@ async function mentionForUserId(userId: string): Promise<string | null> {
 }
 
 // P2: shared loader for every ticket-detail server action. Looks up the
-// ticket, gates by business membership, and resolves the per-ticket access
-// flags (admin / staff / opener tiers — see TicketAccessFlags). Returns
-// null if the ticket isn't in this business; callers should treat null as
-// a denial and return without mutating.
+// ticket and resolves the per-ticket access flags (admin / staff / opener
+// / external tiers — see TicketAccessFlags). Returns null if the user
+// can't see the ticket; callers should treat null as a denial and return
+// without mutating.
+//
+// Soft auth — does NOT call requireBusinessAccess, which would redirect
+// an external user (no guild membership) to /dashboard. Externals reach
+// these actions via their canSee/canReply flags (set from
+// ticket_external_members), mirroring how the ticket detail page handles
+// them under P16. Without this soft path, an external user clicking
+// "Send reply" got redirected mid-action and lost their reply.
 async function loadTicketAccess(
   slug: string,
   ticketId: number,
@@ -69,19 +77,28 @@ async function loadTicketAccess(
   | null
 > {
   const session = await requireSession()
-  const access = await requireBusinessAccess(slug, 'member')
+  const [b] = await db.select().from(businesses).where(eq(businesses.slug, slug)).limit(1)
+  if (!b) return null
+  const resolved = await resolveBusinessAccess(slug)
+  // External members have no resolved business access (not in the guild) but
+  // can still act on this ticket if ticket_external_members covers them.
+  // Default their access level to 'member' so downstream flags compute
+  // sensibly; resolveTicketAccess will down-shift canManageMembers/canClose
+  // by checking isExternal directly.
+  const level = resolved?.level ?? ('member' as const)
   const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1)
-  if (!t || t.businessId !== access.business.id) return null
+  if (!t || t.businessId !== b.id) return null
   const flags = await resolveTicketAccess({
-    business: access.business,
-    level: access.level,
+    business: b,
+    level,
     ticket: { id: t.id, openerUserId: t.openerUserId, categoryId: t.categoryId },
     session: { user: { id: session.user.id, discordId: session.user.discordId } },
   })
+  if (!flags.canSee) return null
   return {
     session: session as never,
-    business: access.business,
-    level: access.level,
+    business: b,
+    level,
     ticket: t,
     flags,
   }
@@ -463,12 +480,22 @@ export async function addTicketMember(
       .values({ discordId: discordUserId, name, image })
       .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
       .returning({ id: users.id })
-    void u
     try {
       await addChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId)
     } catch (err) {
       return { ok: false, error: 'Discord rejected the add: ' + String(err) }
     }
+    // Also stamp a ticket_external_members row for in-guild adds — that's
+    // the DB-queryable "explicitly added to this ticket" signal used by
+    // /dashboard to surface tickets the user is on. Channel-overwrite alone
+    // can't be joined from SQL, so without this the dashboard would miss
+    // every in-guild-add membership. canSee already short-circuits through
+    // guild membership for these users, so the extra row is informational
+    // rather than authoritative.
+    await db
+      .insert(ticketExternalMembers)
+      .values({ ticketId: ctx.ticket.id, userId: u.id, addedByUserId: ctx.session.user.id })
+      .onConflictDoNothing()
     await postStatus(ctx.ticket, `<@${discordUserId}> was added to the ticket by <@${ctx.session.user.discordId}>`)
     revalidatePath(`/b/${slug}/tickets/${ticketId}`)
     return { ok: true }

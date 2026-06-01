@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, notInArray, or, sql } from 'drizzle-orm'
 import { Plus, Building2 } from 'lucide-react'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
@@ -8,13 +8,28 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { listMyBusinesses, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
-import { businesses, tickets } from '@/db/schema'
+import { businesses, ticketExternalMembers, tickets } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>
+}) {
   const session = await requireSession()
   const myBusinesses = await listMyBusinesses()
   const businessIds = myBusinesses.map((b) => b.business.id)
+  const adminBusinessIds = myBusinesses
+    .filter((b) => b.level === 'admin' || b.level === 'owner')
+    .map((b) => b.business.id)
+  const isStaff = adminBusinessIds.length > 0
+
+  // `mode` toggle (staff/admin only):
+  //   user  — tickets I opened OR was explicitly added to (ticket_external_members)
+  //   staff — tickets in my admin businesses I'm NOT personally on
+  // Non-staff users see the 'user' query only; the toggle UI is hidden.
+  const sp = await searchParams
+  const mode: 'user' | 'staff' = isStaff && sp.mode === 'staff' ? 'staff' : 'user'
 
   let myTickets: Array<{
     id: number
@@ -25,20 +40,62 @@ export default async function DashboardPage() {
     businessSlug: string
   }> = []
   if (businessIds.length > 0) {
-    myTickets = await db
-      .select({
-        id: tickets.id,
-        subject: tickets.subject,
-        status: tickets.status,
-        lastActivityAt: tickets.lastActivityAt,
-        businessName: businesses.name,
-        businessSlug: businesses.slug,
-      })
-      .from(tickets)
-      .innerJoin(businesses, eq(businesses.id, tickets.businessId))
-      .where(and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, businessIds)))
-      .orderBy(desc(tickets.lastActivityAt))
-      .limit(20)
+    // ticket_external_members holds every explicit add — externals get a row
+    // at add time (P16), and as of v0.6.39 in-guild adds get one too. So the
+    // subquery is the single "tickets I'm personally on" signal for the web.
+    const myMemberTicketIds = db
+      .select({ ticketId: ticketExternalMembers.ticketId })
+      .from(ticketExternalMembers)
+      .where(eq(ticketExternalMembers.userId, session.user.id))
+
+    const userWhere = and(
+      or(
+        eq(tickets.openerUserId, session.user.id),
+        inArray(tickets.id, myMemberTicketIds),
+      ),
+      inArray(tickets.businessId, businessIds),
+    )
+
+    if (mode === 'user') {
+      myTickets = await db
+        .select({
+          id: tickets.id,
+          subject: tickets.subject,
+          status: tickets.status,
+          lastActivityAt: tickets.lastActivityAt,
+          businessName: businesses.name,
+          businessSlug: businesses.slug,
+        })
+        .from(tickets)
+        .innerJoin(businesses, eq(businesses.id, tickets.businessId))
+        .where(userWhere)
+        .orderBy(desc(tickets.lastActivityAt))
+        .limit(50)
+    } else {
+      // Staff view: tickets in my admin businesses where I'm NEITHER the
+      // opener NOR an explicit member. These are the ones I can see purely
+      // because of my staff role — the "residual" queue.
+      myTickets = await db
+        .select({
+          id: tickets.id,
+          subject: tickets.subject,
+          status: tickets.status,
+          lastActivityAt: tickets.lastActivityAt,
+          businessName: businesses.name,
+          businessSlug: businesses.slug,
+        })
+        .from(tickets)
+        .innerJoin(businesses, eq(businesses.id, tickets.businessId))
+        .where(
+          and(
+            inArray(tickets.businessId, adminBusinessIds),
+            sql`${tickets.openerUserId} != ${session.user.id}`,
+            notInArray(tickets.id, myMemberTicketIds),
+          ),
+        )
+        .orderBy(desc(tickets.lastActivityAt))
+        .limit(50)
+    }
   }
 
   const adminOf = myBusinesses.filter((b) => b.level === 'admin' || b.level === 'owner')
@@ -48,11 +105,23 @@ export default async function DashboardPage() {
       <TopNav />
       <main className="container max-w-6xl space-y-6 py-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+          <div className="space-y-2">
             <h1 className="text-2xl font-semibold">My tickets</h1>
             <p className="text-sm text-muted-foreground">
-              Tickets you've opened across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.
+              {mode === 'user'
+                ? <>Tickets you&apos;ve opened or been added to across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.</>
+                : <>Tickets in {adminBusinessIds.length} {adminBusinessIds.length === 1 ? 'team' : 'teams'} you administer that you aren&apos;t personally on.</>}
             </p>
+            {isStaff && (
+              <div className="inline-flex gap-1 rounded-md border border-input bg-background p-0.5 text-xs">
+                <Button asChild size="sm" variant={mode === 'user' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                  <Link href="/dashboard">User</Link>
+                </Button>
+                <Button asChild size="sm" variant={mode === 'staff' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                  <Link href="/dashboard?mode=staff">Staff</Link>
+                </Button>
+              </div>
+            )}
           </div>
           <Button asChild>
             <Link href="/t/new">
@@ -116,9 +185,11 @@ export default async function DashboardPage() {
           myBusinesses.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>No tickets yet</CardTitle>
+                <CardTitle>{mode === 'user' ? 'No tickets yet' : 'Nothing in the staff queue'}</CardTitle>
                 <CardDescription>
-                  When you open a ticket here or via your team's Discord panel, it'll show up in this list.
+                  {mode === 'user'
+                    ? 'When you open a ticket here, or get added to one by staff, it shows up in this list.'
+                    : 'Every open ticket in your admin teams is currently one you opened or were added to — nothing left in the residual staff view.'}
                 </CardDescription>
               </CardHeader>
             </Card>

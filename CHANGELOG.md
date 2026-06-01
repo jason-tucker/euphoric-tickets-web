@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.39] — 2026-05-30 — My-tickets dashboard surfaces tickets you were added to + User/Staff filter for staff + external-user reply bug
+
+### Added
+- **`/dashboard` now shows tickets you were *added to*, not just ones you opened.** Query was `tickets WHERE opener = me`; now it's `tickets WHERE opener = me OR id IN (SELECT ticket_id FROM ticket_external_members WHERE user_id = me)`. Externals were already getting rows there at add time (P16); in-guild adds now write one too (see Fixed). Bumped the limit from 20 → 50 since the list grows once memberships count.
+- **User / Staff toggle on `/dashboard` for staff and admins.** Default view ("User") shows tickets you opened or were explicitly added to — the personally-relevant set. Staff/admins get a second toggle ("Staff") that swaps the list to *tickets in admin businesses you are NOT personally on* — the residual "I can see it because I'm staff" queue. Toggle is hidden entirely for non-staff users (it would be a no-op). URL state via `?mode=staff`; the empty-state copy and the page subtitle update with the toggle.
+
+### Fixed
+- **External users can finally send replies — server actions were redirecting them mid-submit.** `loadTicketAccess` (the shared loader behind `replyToTicket`, `claimTicket`, etc.) called `requireBusinessAccess(slug, 'member')`, which hard-redirects to `/dashboard` for any user not in the guild. External members (added via DM-link / P16) fell into that branch every time, so clicking **Send reply** bounced them to the dashboard and the reply never landed. Rewrote `loadTicketAccess` to use soft auth (mirroring the ticket detail page itself): load the business directly, fall back to `level='member'` when the user has no guild access, compute `resolveTicketAccess`, and short-circuit on `!flags.canSee`. External users with a `ticket_external_members` row now get `canReply` and reply correctly; everyone else is unaffected.
+- **In-guild "Add to ticket" now writes a `ticket_external_members` row alongside the channel overwrite.** Without this, in-guild members added via the People card showed up in the channel but never appeared on their own `/dashboard` — `canSee` worked (via business role), but the dashboard query couldn't find them because there was no DB-queryable signal. Now both branches of `addTicketMember` produce a row; `removeTicketMember` (already updated in 0.6.37) deletes it on the way out. The row is informational for in-guild adds since their `canSee` is already covered by guild role; for externals it's still the authoritative grant.
+
 ## [0.6.38] — 2026-05-30 — Fix: 0.6.37 CI failed on missing kind/staffOnly fields in CategoryFormFields type
 
 ### Fixed
