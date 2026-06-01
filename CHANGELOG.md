@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.40] — 2026-05-30 — Board subject search
+
+### Added
+- **Subject search field on both ticket boards.** `/tickets` (all I can see) and `/b/[slug]/tickets` (per-team queue) gain a small `<input type="search">` above the status FilterBar. Submitting reloads the page with `?q=…`, the SQL adds `ILIKE %q%` against `tickets.subject`, and the query stays scoped to whatever status/sort/dir were already active (the form forwards them via hidden inputs, and `hp` now carries `q` through to SortHeader so column-sorts keep the search). A small **Clear** link next to the input drops `?q=` without nuking the other filters. Opener / client checkbox filters land separately in the next patch.
+
 ## [0.6.39] — 2026-05-30 — My-tickets dashboard surfaces tickets you were added to + User/Staff filter for staff + external-user reply bug
 
 ### Added

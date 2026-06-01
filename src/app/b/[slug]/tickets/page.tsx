@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { and, asc, desc, eq, ne, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, ne, type SQL } from 'drizzle-orm'
 import { ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/components/app/status-badge'
 import { SortHeader, parseSort } from '@/components/app/sort-header'
@@ -18,11 +19,16 @@ export default async function TicketQueuePage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ status?: string; sort?: string; dir?: string }>
+  searchParams: Promise<{ status?: string; sort?: string; dir?: string; q?: string }>
 }) {
   const { slug } = await params
   const sp = await searchParams
   const { business } = await requireBusinessAccess(slug, 'admin')
+
+  // Subject search — case-insensitive substring. Empty / whitespace-only
+  // disables the filter so the URL stays clean and the page renders fully.
+  const q = (sp.q ?? '').trim()
+  const searchWhere: SQL | undefined = q ? ilike(tickets.subject, `%${q}%`) : undefined
 
   // Default 'active' (everything except closed). 'all' = no filter. A specific
   // status = exactly that. Mirrors the All-tickets board so both queues share
@@ -49,7 +55,7 @@ export default async function TicketQueuePage({
       default: return d(tickets.lastActivityAt)
     }
   })()
-  const hp = { status: sp.status, sort, dir }
+  const hp = { status: sp.status, sort, dir, q: q || undefined }
 
   // Client-kind business → queue is tickets where THIS business is the
   // client_business_id (across whatever host operates them). Host-kind →
@@ -79,7 +85,7 @@ export default async function TicketQueuePage({
     .from(tickets)
     .leftJoin(users, eq(users.id, tickets.openerUserId))
     .leftJoin(clientBusinessAlias, eq(clientBusinessAlias.id, tickets.clientBusinessId))
-    .where(statusWhere ? and(businessFilter, statusWhere) : businessFilter)
+    .where(and(businessFilter, statusWhere, searchWhere))
     .orderBy(orderBy)
     .limit(200)
 
@@ -94,6 +100,14 @@ export default async function TicketQueuePage({
           </span>
         </p>
       </div>
+
+      <BoardSearch
+        slug={slug}
+        q={q}
+        status={sp.status}
+        sort={sort}
+        dir={dir}
+      />
 
       <FilterBar slug={slug} active={filter} sort={sort} dir={dir} />
 
@@ -175,6 +189,60 @@ export default async function TicketQueuePage({
         </CardContent>
       </Card>
     </main>
+  )
+}
+
+// Lightweight server-form board search. Submitting reloads the page with
+// `?q=…` so the SQL `ILIKE %q%` runs on the next render. Hidden inputs
+// carry the other URL params forward so the existing status/sort/dir
+// selection survives a search submit.
+function BoardSearch({
+  slug,
+  q,
+  status,
+  sort,
+  dir,
+}: {
+  slug: string
+  q: string
+  status: string | undefined
+  sort: string
+  dir: string
+}) {
+  return (
+    <form action={`/b/${slug}/tickets`} method="get" className="flex items-center gap-2">
+      <Input
+        type="search"
+        name="q"
+        defaultValue={q}
+        placeholder="Search subject…"
+        className="h-9 max-w-xs"
+        aria-label="Search ticket subjects"
+      />
+      {status && <input type="hidden" name="status" value={status} />}
+      {sort !== 'last' && <input type="hidden" name="sort" value={sort} />}
+      {dir !== 'desc' && <input type="hidden" name="dir" value={dir} />}
+      <button
+        type="submit"
+        className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
+      >
+        Search
+      </button>
+      {q && (
+        <Link
+          href={`/b/${slug}/tickets${status || sort !== 'last' || dir !== 'desc' ? '?' : ''}${
+            new URLSearchParams({
+              ...(status ? { status } : {}),
+              ...(sort !== 'last' ? { sort } : {}),
+              ...(dir !== 'desc' ? { dir } : {}),
+            }).toString()
+          }`}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Clear
+        </Link>
+      )}
+    </form>
   )
 }
 

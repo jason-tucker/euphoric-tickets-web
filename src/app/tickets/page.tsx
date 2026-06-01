@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { and, asc, desc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from 'drizzle-orm'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
 import { SortHeader, parseSort } from '@/components/app/sort-header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { listMyBusinesses, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
@@ -20,12 +21,17 @@ const SORT_KEYS = ['last', 'opened', 'id', 'subject', 'status', 'team', 'opener'
 export default async function AllTicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string; status?: string }>
+  searchParams: Promise<{ sort?: string; dir?: string; status?: string; q?: string }>
 }) {
   const session = await requireSession()
   const my = await listMyBusinesses()
   const sp = await searchParams
   const { sort, dir } = parseSort(sp, SORT_KEYS, 'last')
+
+  // Subject search — case-insensitive substring. Empty / whitespace-only
+  // disables the filter.
+  const q = (sp.q ?? '').trim()
+  const searchWhere: SQL | undefined = q ? ilike(tickets.subject, `%${q}%`) : undefined
 
   // status: default 'active' (everything except closed). 'all' = no filter.
   // A specific status = exactly that.
@@ -80,12 +86,13 @@ export default async function AllTicketsPage({
                 and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, allIds)),
               ),
               statusWhere,
+              searchWhere,
             ),
           )
           .orderBy(orderBy)
           .limit(300)
 
-  const hp = { sort, dir, status: sp.status }
+  const hp = { sort, dir, status: sp.status, q: q || undefined }
 
   // Admins land on the team queue view of a row; non-admins on their own ticket.
   const adminSet = new Set(adminIds)
@@ -104,6 +111,8 @@ export default async function AllTicketsPage({
             </span>
           </p>
         </div>
+
+        <BoardSearch q={q} status={sp.status} sort={sort} dir={dir} />
 
         <FilterBar active={filter} sort={sort} dir={dir} />
 
@@ -177,6 +186,56 @@ export default async function AllTicketsPage({
         )}
       </main>
     </>
+  )
+}
+
+// Mirror of /b/[slug]/tickets/page.tsx::BoardSearch but for the cross-team
+// view — submits to /tickets and carries the other URL params forward.
+function BoardSearch({
+  q,
+  status,
+  sort,
+  dir,
+}: {
+  q: string
+  status: string | undefined
+  sort: string
+  dir: string
+}) {
+  return (
+    <form action="/tickets" method="get" className="flex items-center gap-2">
+      <Input
+        type="search"
+        name="q"
+        defaultValue={q}
+        placeholder="Search subject…"
+        className="h-9 max-w-xs"
+        aria-label="Search ticket subjects"
+      />
+      {status && <input type="hidden" name="status" value={status} />}
+      {sort !== 'last' && <input type="hidden" name="sort" value={sort} />}
+      {dir !== 'desc' && <input type="hidden" name="dir" value={dir} />}
+      <button
+        type="submit"
+        className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
+      >
+        Search
+      </button>
+      {q && (
+        <Link
+          href={`/tickets${status || sort !== 'last' || dir !== 'desc' ? '?' : ''}${
+            new URLSearchParams({
+              ...(status ? { status } : {}),
+              ...(sort !== 'last' ? { sort } : {}),
+              ...(dir !== 'desc' ? { dir } : {}),
+            }).toString()
+          }`}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Clear
+        </Link>
+      )}
+    </form>
   )
 }
 
