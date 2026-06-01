@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.38] — 2026-05-30 — Fix: 0.6.37 CI failed on missing kind/staffOnly fields in CategoryFormFields type
+
+### Fixed
+- **0.6.37 CI failed `next build` type-check.** The new `<select name="kind">` and `<input name="staffOnly">` inputs in the per-category form read `v?.kind` / `v?.staffOnly`, but the `CategoryFormFields` component's `defaults` prop type literal still only listed the v0.6.36 fields, so `tsc --noEmit` rejected the new property accesses. Added `staffOnly: boolean` and `kind: 'normal' | 'project'` to the type. No runtime change vs 0.6.37 — that commit just never produced an image because CI never got past `next build`.
+
 ## [0.6.37] — 2026-05-30 — Staff-only categories, per-category ticket Type, 403 ticket page, external members in People box
 
 ### Added

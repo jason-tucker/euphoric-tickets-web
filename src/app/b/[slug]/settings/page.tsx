@@ -251,6 +251,8 @@ function CategoryFormFields({
     allowRoleIds: string
     staffRoleIds: string
     firstMessageTemplate: string | null
+    staffOnly: boolean
+    kind: 'normal' | 'project'
   }
   guildId: string
 }) {
