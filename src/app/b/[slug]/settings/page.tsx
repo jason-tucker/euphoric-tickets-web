@@ -365,7 +365,8 @@ function CategoryFormFields({
         />
         <p className="text-xs text-muted-foreground">
           Substitutes <code>{'{{user}}'}</code>, <code>{'{{ticketId}}'}</code>, <code>{'{{subject}}'}</code>,
-          <code> {'{{category}}'}</code>. Blank = default welcome card. Used by the bot once P4 ships.
+          <code> {'{{category}}'}</code>. Blank = default welcome card. The bot uses this as the
+          ticket&apos;s first message in the Discord channel.
         </p>
       </div>
     </>

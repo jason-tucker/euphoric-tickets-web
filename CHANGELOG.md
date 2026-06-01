@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.36] — 2026-05-30 — Ticket viewer status badge wrap fix + stale settings tooltip
+
+### Fixed
+- **`In Progress` status badge no longer wraps to a "double-line bubble" on narrow screens.** The badge style was `inline-flex rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wider` with no `whitespace-nowrap`, so on phone-width viewports the longer labels ("IN PROGRESS", "COMPLETED") could wrap inside the pill, leaving a weird two-line oval. Added `whitespace-nowrap` to `StatusBadge` so every status renders as a single-line pill regardless of available width. Affects the ticket detail header, both queue tables, the all-tickets board, the dashboard, and sub-ticket rows.
+
+### Changed
+- **Team-settings: per-category first-message template tooltip no longer references unreleased work.** Was "Blank = default welcome card. Used by the bot once P4 ships." — P4 was already implemented in the bot (commit `31249b4`, bot v0.5.22) and the template is live in production. Updated to "The bot uses this as the ticket's first message in the Discord channel." Also dropped the internal "(P4)" phase marker — user-visible copy should not leak Lantern phase identifiers.
+
 ## [0.6.35] — 2026-05-30 — Fix: deleting a category with tickets threw a server error
 
 ### Fixed
