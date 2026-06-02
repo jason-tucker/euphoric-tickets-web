@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.43] — 2026-05-30 — Fix: 0.6.42 CI failed on renderAuditLine gName return-type mismatch
+
+### Fixed
+- **0.6.42 CI failed `next build` type-check.** `renderAuditLine`'s `gName` parameter was typed `... => string | null`, but the actual `gName` in `page.tsx` returns `string | null | undefined` (because its `fallback` parameter is itself `string | null | undefined`). Widened the helper's signature to match. No runtime change vs 0.6.42 — that commit just never produced an image.
+
 ## [0.6.42] — 2026-05-30 — Lifecycle audit log: chronological status events in the conversation + Log card
 
 ### Added

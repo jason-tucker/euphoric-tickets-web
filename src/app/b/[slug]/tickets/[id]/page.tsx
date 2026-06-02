@@ -761,7 +761,7 @@ function mergeConversation(messages: RawMessage[], audits: RawAudit[]): FeedEntr
 // the fields we expect (defensive — the bot and web both write here).
 function renderAuditLine(
   entry: RawAudit | EventEntry,
-  gName: (discordId: string | null | undefined, fallback: string | null | undefined) => string | null,
+  gName: (discordId: string | null | undefined, fallback: string | null | undefined) => string | null | undefined,
 ): React.ReactNode {
   const actor = gName(entry.actorDiscordId, entry.actorName) ?? 'Someone'
   const meta = entry.metadata as Record<string, unknown>
