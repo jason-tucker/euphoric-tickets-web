@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import { Trash2 } from 'lucide-react'
 import { requireBusinessAccess } from '@/server/permissions'
+import { env } from '@/lib/env'
 import { db } from '@/db/client'
 import { ticketCategories } from '@/db/schema'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -136,6 +137,60 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
               />
               <p className="text-xs text-muted-foreground">
                 Used only when per-ticket channel creation isn&apos;t configured (no bot token or no category mapped). Every reply goes to this one channel as a user-spoofed webhook post.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">TicketTool coexistence</CardTitle>
+            <CardDescription>
+              Ingest tickets the third-party TicketTool bot opens in this server and control them
+              from here. Channels TicketTool opens under the categories below are added to your
+              archive and become two-way replyable; euphoric never deletes or owns them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">One-time setup in TicketTool</p>
+              <p className="mt-1">
+                In TicketTool&apos;s dashboard → <strong>Server Configs → Bot</strong>, add this bot&apos;s
+                user ID so TicketTool obeys its commands:
+              </p>
+              <code className="mt-1 inline-block select-all rounded bg-background px-1.5 py-0.5 font-mono text-foreground">
+                {env.AUTH_DISCORD_ID}
+              </code>
+              <p className="mt-1">Without this, rename / add / remove / close-request won&apos;t reach TicketTool.</p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ticketToolCategoryIds">Watched TicketTool categories</Label>
+              <DiscordPicker
+                kind="category"
+                multi
+                guildId={business.discordGuildId}
+                name="ticketToolCategoryIds"
+                defaultValue={business.ticketToolCategoryIds}
+                triggerLabel="Leave empty — TicketTool ingest off"
+              />
+              <p className="text-xs text-muted-foreground">
+                The Discord categories TicketTool opens its ticket channels under. Empty = the
+                whole feature is off.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ticketToolPrefix">TicketTool command prefix</Label>
+              <Input
+                id="ticketToolPrefix"
+                name="ticketToolPrefix"
+                defaultValue={business.ticketToolPrefix}
+                maxLength={5}
+                placeholder="$"
+                className="w-24"
+              />
+              <p className="text-xs text-muted-foreground">
+                Matches your server&apos;s TicketTool prefix (Server Configs → Prefix). Default is{' '}
+                <code>$</code>. The bot uses it when emitting control commands.
               </p>
             </div>
           </CardContent>

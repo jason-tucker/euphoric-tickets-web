@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.44] — 2026-06-01 — TicketTool coexistence: ingest + control third-party TicketTool tickets (paired with bot 0.5.25)
+
+### Added
+- **TicketTool coexistence (web side).** When a server also runs the third-party TicketTool bot, Euphoric Tickets now ingests TicketTool's tickets into the shared archive and lets staff control them from the web. Schema: `tickets.external_source` (`'euphoric'` default / `'tickettool'`) + `tickets.external_transcript_url`, and `businesses.ticket_tool_category_ids` (CSV of watched GUILD_CATEGORY snowflakes — empty = feature off) + `businesses.ticket_tool_prefix` (default `$`). New `tickets_external_source_idx`. drizzle-kit push at deploy adds the columns; existing rows backfill to `'euphoric'`.
+- **Settings → TicketTool coexistence card** (`/b/[slug]/settings`, admin-gated): a multi-category picker (`ticketToolCategoryIds`), a prefix input (`ticketToolPrefix`), and one-time-setup instructions showing this bot's user ID to whitelist in TicketTool's Server Configs → Bot.
+- **Ticket-detail control of TicketTool tickets.** A `TicketTool` origin badge; **Rename**, **Add**/**Remove** people, and **Request close** route to TicketTool's `$rename` / `$add` / `$remove` / `$closeRequest` commands via the bot's internal HTTP bridge (`emitTicketToolCommand` → `POST /api/internal/tickettool/command`, auth `INTERNAL_TOKEN`). Replies still post via the per-ticket webhook (minted by the bot at ingest), so two-way replies work unchanged. Native hard Close / Delete / Move-category / Claim / Status are hidden and their actions guarded so euphoric never mutates a TicketTool-owned channel.
+- **Help page** gains a "TicketTool coexistence" section (setup, ingest, two-way replies, control set, the whitelist gotcha).
+
 ## [0.6.43] — 2026-05-30 — Fix: 0.6.42 CI failed on renderAuditLine gName return-type mismatch
 
 ### Fixed
