@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.41] — 2026-05-30 — Opener + client checkbox filters on the board views
+
+### Added
+- **Opener and client checkbox filters on both ticket boards.** Both `/tickets` (all I can see) and `/b/[slug]/tickets` (per-team queue) gain a `<details>` panel below the subject search labelled "Filters". Expanded shows a row of opener checkboxes (every distinct opener from the board's overall scope, regardless of currently-active filter selections — so checkboxes don't disappear as you pick them) and, on the per-team queue, a row of client checkboxes (every distinct `clientBusinessId` in the team's tickets). Submitting reloads with repeated `?openers=…&openers=…` (and `?clients=…&clients=…` on team queues); both array and comma-separated string shapes are accepted server-side. Hand-typed URLs with `?openers=uuid1,uuid2` still work. `hp` carries the selections through to SortHeader so column sorts preserve filter state. The details element starts open when any filter is active; the summary shows an "(N active)" badge so you don't lose track of off-screen selections. UUID-validation drops anything that isn't a real id. Clients filter on `/tickets` is intentionally skipped — the all-tickets board doesn't surface clients today.
+
 ## [0.6.40] — 2026-05-30 — Board subject search
 
 ### Added

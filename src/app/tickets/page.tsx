@@ -21,7 +21,13 @@ const SORT_KEYS = ['last', 'opened', 'id', 'subject', 'status', 'team', 'opener'
 export default async function AllTicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string; status?: string; q?: string }>
+  searchParams: Promise<{
+    sort?: string
+    dir?: string
+    status?: string
+    q?: string
+    openers?: string | string[]
+  }>
 }) {
   const session = await requireSession()
   const my = await listMyBusinesses()
@@ -32,6 +38,18 @@ export default async function AllTicketsPage({
   // disables the filter.
   const q = (sp.q ?? '').trim()
   const searchWhere: SQL | undefined = q ? ilike(tickets.subject, `%${q}%`) : undefined
+
+  // Opener multi-select. Repeated query params from checkboxes OR a
+  // comma-separated typed URL both work; bad input is dropped (uuids only).
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const normalizeIds = (raw: string | string[] | undefined): string[] =>
+    (Array.isArray(raw) ? raw.flatMap((v) => v.split(',')) : (raw ?? '').split(','))
+      .map((s) => s.trim())
+      .filter((s) => UUID.test(s))
+  const selectedOpenerIds = normalizeIds(sp.openers)
+  const openerWhere: SQL | undefined = selectedOpenerIds.length
+    ? inArray(tickets.openerUserId, selectedOpenerIds)
+    : undefined
 
   // status: default 'active' (everything except closed). 'all' = no filter.
   // A specific status = exactly that.
@@ -87,12 +105,37 @@ export default async function AllTicketsPage({
               ),
               statusWhere,
               searchWhere,
+              openerWhere,
             ),
           )
           .orderBy(orderBy)
           .limit(300)
 
-  const hp = { sort, dir, status: sp.status, q: q || undefined }
+  // Universe of openers for the filter UI — scoped to the user's overall
+  // "tickets I can see" envelope but NOT narrowed by the active opener
+  // selection, so checkboxes stay stable across submits.
+  const allOpeners =
+    allIds.length === 0
+      ? []
+      : await db
+          .selectDistinct({ id: users.id, name: users.name, image: users.image })
+          .from(tickets)
+          .innerJoin(users, eq(users.id, tickets.openerUserId))
+          .where(
+            or(
+              adminIds.length ? inArray(tickets.businessId, adminIds) : sql`false`,
+              and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, allIds)),
+            ),
+          )
+          .orderBy(asc(users.name))
+
+  const hp = {
+    sort,
+    dir,
+    status: sp.status,
+    q: q || undefined,
+    openers: selectedOpenerIds.length ? selectedOpenerIds.join(',') : undefined,
+  }
 
   // Admins land on the team queue view of a row; non-admins on their own ticket.
   const adminSet = new Set(adminIds)
@@ -112,7 +155,14 @@ export default async function AllTicketsPage({
           </p>
         </div>
 
-        <BoardSearch q={q} status={sp.status} sort={sort} dir={dir} />
+        <BoardSearch
+          q={q}
+          status={sp.status}
+          sort={sort}
+          dir={dir}
+          selectedOpenerIds={selectedOpenerIds}
+          allOpeners={allOpeners}
+        />
 
         <FilterBar active={filter} sort={sort} dir={dir} />
 
@@ -190,50 +240,85 @@ export default async function AllTicketsPage({
 }
 
 // Mirror of /b/[slug]/tickets/page.tsx::BoardSearch but for the cross-team
-// view — submits to /tickets and carries the other URL params forward.
+// view — submits to /tickets, carries the other URL params forward, and
+// drops the client filter (clients aren't surfaced on the all-tickets
+// board today, so a client checkbox would have nothing to apply to).
 function BoardSearch({
   q,
   status,
   sort,
   dir,
+  selectedOpenerIds,
+  allOpeners,
 }: {
   q: string
   status: string | undefined
   sort: string
   dir: string
+  selectedOpenerIds: string[]
+  allOpeners: Array<{ id: string; name: string | null; image: string | null }>
 }) {
+  const activeFilterCount = selectedOpenerIds.length
+  const baseParams = new URLSearchParams({
+    ...(status ? { status } : {}),
+    ...(sort !== 'last' ? { sort } : {}),
+    ...(dir !== 'desc' ? { dir } : {}),
+  })
   return (
-    <form action="/tickets" method="get" className="flex items-center gap-2">
-      <Input
-        type="search"
-        name="q"
-        defaultValue={q}
-        placeholder="Search subject…"
-        className="h-9 max-w-xs"
-        aria-label="Search ticket subjects"
-      />
-      {status && <input type="hidden" name="status" value={status} />}
-      {sort !== 'last' && <input type="hidden" name="sort" value={sort} />}
-      {dir !== 'desc' && <input type="hidden" name="dir" value={dir} />}
-      <button
-        type="submit"
-        className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
-      >
-        Search
-      </button>
-      {q && (
-        <Link
-          href={`/tickets${status || sort !== 'last' || dir !== 'desc' ? '?' : ''}${
-            new URLSearchParams({
-              ...(status ? { status } : {}),
-              ...(sort !== 'last' ? { sort } : {}),
-              ...(dir !== 'desc' ? { dir } : {}),
-            }).toString()
-          }`}
-          className="text-xs text-muted-foreground hover:text-foreground"
+    <form action="/tickets" method="get" className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Search subject…"
+          className="h-9 max-w-xs"
+          aria-label="Search ticket subjects"
+        />
+        {status && <input type="hidden" name="status" value={status} />}
+        {sort !== 'last' && <input type="hidden" name="sort" value={sort} />}
+        {dir !== 'desc' && <input type="hidden" name="dir" value={dir} />}
+        <button
+          type="submit"
+          className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
         >
-          Clear
-        </Link>
+          Apply
+        </button>
+        {(q || activeFilterCount > 0) && (
+          <Link
+            href={`/tickets${baseParams.toString() ? `?${baseParams.toString()}` : ''}`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </Link>
+        )}
+      </div>
+
+      {allOpeners.length > 0 && (
+        <details className="rounded-md border" open={activeFilterCount > 0}>
+          <summary className="cursor-pointer select-none px-3 py-1.5 text-sm hover:bg-accent">
+            Filters {activeFilterCount > 0 && <span className="ml-1 text-muted-foreground">({activeFilterCount} active)</span>}
+          </summary>
+          <div className="space-y-3 border-t p-3">
+            <fieldset className="space-y-1">
+              <legend className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Opener</legend>
+              <div className="flex max-h-48 flex-wrap gap-x-3 gap-y-1 overflow-y-auto">
+                {allOpeners.map((o) => (
+                  <label key={o.id} className="inline-flex items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      name="openers"
+                      value={o.id}
+                      defaultChecked={selectedOpenerIds.includes(o.id)}
+                      className="h-3.5 w-3.5 rounded border-input accent-foreground"
+                    />
+                    {o.name ?? <span className="font-mono text-xs text-muted-foreground">?</span>}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+        </details>
       )}
     </form>
   )

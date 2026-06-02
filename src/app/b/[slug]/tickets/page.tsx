@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, asc, desc, eq, ilike, ne, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, isNotNull, ne, type SQL } from 'drizzle-orm'
 import { ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -19,7 +19,17 @@ export default async function TicketQueuePage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ status?: string; sort?: string; dir?: string; q?: string }>
+  searchParams: Promise<{
+    status?: string
+    sort?: string
+    dir?: string
+    q?: string
+    // Browsers submit checkbox groups as repeated `?openers=a&openers=b`,
+    // so Next.js types these as `string | string[]`. We accept either
+    // shape and normalize below.
+    openers?: string | string[]
+    clients?: string | string[]
+  }>
 }) {
   const { slug } = await params
   const sp = await searchParams
@@ -29,6 +39,25 @@ export default async function TicketQueuePage({
   // disables the filter so the URL stays clean and the page renders fully.
   const q = (sp.q ?? '').trim()
   const searchWhere: SQL | undefined = q ? ilike(tickets.subject, `%${q}%`) : undefined
+
+  // Opener / client multi-selects — values arrive as repeated query params
+  // (`?openers=a&openers=b`) from the checkbox form, but a hand-typed URL
+  // with comma-separated ids is also accepted as a convenience. Bad input
+  // is dropped (uuids only). Empty selection disables the filter — picking
+  // every option is functionally the same as picking none.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const normalizeIds = (raw: string | string[] | undefined): string[] =>
+    (Array.isArray(raw) ? raw.flatMap((v) => v.split(',')) : (raw ?? '').split(','))
+      .map((s) => s.trim())
+      .filter((s) => UUID.test(s))
+  const selectedOpenerIds = normalizeIds(sp.openers)
+  const selectedClientIds = normalizeIds(sp.clients)
+  const openerWhere: SQL | undefined = selectedOpenerIds.length
+    ? inArray(tickets.openerUserId, selectedOpenerIds)
+    : undefined
+  const clientWhere: SQL | undefined = selectedClientIds.length
+    ? inArray(tickets.clientBusinessId, selectedClientIds)
+    : undefined
 
   // Default 'active' (everything except closed). 'all' = no filter. A specific
   // status = exactly that. Mirrors the All-tickets board so both queues share
@@ -55,7 +84,14 @@ export default async function TicketQueuePage({
       default: return d(tickets.lastActivityAt)
     }
   })()
-  const hp = { status: sp.status, sort, dir, q: q || undefined }
+  const hp = {
+    status: sp.status,
+    sort,
+    dir,
+    q: q || undefined,
+    openers: selectedOpenerIds.length ? selectedOpenerIds.join(',') : undefined,
+    clients: selectedClientIds.length ? selectedClientIds.join(',') : undefined,
+  }
 
   // Client-kind business → queue is tickets where THIS business is the
   // client_business_id (across whatever host operates them). Host-kind →
@@ -85,9 +121,27 @@ export default async function TicketQueuePage({
     .from(tickets)
     .leftJoin(users, eq(users.id, tickets.openerUserId))
     .leftJoin(clientBusinessAlias, eq(clientBusinessAlias.id, tickets.clientBusinessId))
-    .where(and(businessFilter, statusWhere, searchWhere))
+    .where(and(businessFilter, statusWhere, searchWhere, openerWhere, clientWhere))
     .orderBy(orderBy)
     .limit(200)
+
+  // Build the universe of openers + clients for the filter UI. Universe is
+  // scoped to `businessFilter` only (not the active opener/client/search/
+  // status filters) so the checkboxes don't disappear as you select them.
+  // Two extra cheap queries; rendering them as <details> keeps the page
+  // quiet for users who never expand the filters.
+  const allOpeners = await db
+    .selectDistinct({ id: users.id, name: users.name, image: users.image })
+    .from(tickets)
+    .innerJoin(users, eq(users.id, tickets.openerUserId))
+    .where(businessFilter)
+    .orderBy(asc(users.name))
+  const allClients = await db
+    .selectDistinct({ id: clientBusinessAlias.id, name: clientBusinessAlias.name })
+    .from(tickets)
+    .innerJoin(clientBusinessAlias, eq(clientBusinessAlias.id, tickets.clientBusinessId))
+    .where(and(businessFilter, isNotNull(tickets.clientBusinessId)))
+    .orderBy(asc(clientBusinessAlias.name))
 
   return (
     <main className="container max-w-6xl space-y-4 py-6">
@@ -107,6 +161,10 @@ export default async function TicketQueuePage({
         status={sp.status}
         sort={sort}
         dir={dir}
+        selectedOpenerIds={selectedOpenerIds}
+        selectedClientIds={selectedClientIds}
+        allOpeners={allOpeners}
+        allClients={allClients}
       />
 
       <FilterBar slug={slug} active={filter} sort={sort} dir={dir} />
@@ -192,55 +250,115 @@ export default async function TicketQueuePage({
   )
 }
 
-// Lightweight server-form board search. Submitting reloads the page with
-// `?q=…` so the SQL `ILIKE %q%` runs on the next render. Hidden inputs
-// carry the other URL params forward so the existing status/sort/dir
-// selection survives a search submit.
+// Server-form board search + filters. One form submits `q`, the opener
+// checkbox set, and the client checkbox set together. Hidden inputs carry
+// status/sort/dir forward so the FilterBar above and the SortHeader cells
+// below all stay consistent across submissions. Filters live behind a
+// <details> so unexpanded boards keep their visual weight low; the trigger
+// label includes a count when filters are active.
 function BoardSearch({
   slug,
   q,
   status,
   sort,
   dir,
+  selectedOpenerIds,
+  selectedClientIds,
+  allOpeners,
+  allClients,
 }: {
   slug: string
   q: string
   status: string | undefined
   sort: string
   dir: string
+  selectedOpenerIds: string[]
+  selectedClientIds: string[]
+  allOpeners: Array<{ id: string; name: string | null; image: string | null }>
+  allClients: Array<{ id: string; name: string }>
 }) {
+  const activeFilterCount = selectedOpenerIds.length + selectedClientIds.length
+  const baseParams = new URLSearchParams({
+    ...(status ? { status } : {}),
+    ...(sort !== 'last' ? { sort } : {}),
+    ...(dir !== 'desc' ? { dir } : {}),
+  })
   return (
-    <form action={`/b/${slug}/tickets`} method="get" className="flex items-center gap-2">
-      <Input
-        type="search"
-        name="q"
-        defaultValue={q}
-        placeholder="Search subject…"
-        className="h-9 max-w-xs"
-        aria-label="Search ticket subjects"
-      />
-      {status && <input type="hidden" name="status" value={status} />}
-      {sort !== 'last' && <input type="hidden" name="sort" value={sort} />}
-      {dir !== 'desc' && <input type="hidden" name="dir" value={dir} />}
-      <button
-        type="submit"
-        className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
-      >
-        Search
-      </button>
-      {q && (
-        <Link
-          href={`/b/${slug}/tickets${status || sort !== 'last' || dir !== 'desc' ? '?' : ''}${
-            new URLSearchParams({
-              ...(status ? { status } : {}),
-              ...(sort !== 'last' ? { sort } : {}),
-              ...(dir !== 'desc' ? { dir } : {}),
-            }).toString()
-          }`}
-          className="text-xs text-muted-foreground hover:text-foreground"
+    <form action={`/b/${slug}/tickets`} method="get" className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Search subject…"
+          className="h-9 max-w-xs"
+          aria-label="Search ticket subjects"
+        />
+        {status && <input type="hidden" name="status" value={status} />}
+        {sort !== 'last' && <input type="hidden" name="sort" value={sort} />}
+        {dir !== 'desc' && <input type="hidden" name="dir" value={dir} />}
+        <button
+          type="submit"
+          className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
         >
-          Clear
-        </Link>
+          Apply
+        </button>
+        {(q || activeFilterCount > 0) && (
+          <Link
+            href={`/b/${slug}/tickets${baseParams.toString() ? `?${baseParams.toString()}` : ''}`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </Link>
+        )}
+      </div>
+
+      {(allOpeners.length > 0 || allClients.length > 0) && (
+        <details className="rounded-md border" open={activeFilterCount > 0}>
+          <summary className="cursor-pointer select-none px-3 py-1.5 text-sm hover:bg-accent">
+            Filters {activeFilterCount > 0 && <span className="ml-1 text-muted-foreground">({activeFilterCount} active)</span>}
+          </summary>
+          <div className="space-y-3 border-t p-3">
+            {allOpeners.length > 0 && (
+              <fieldset className="space-y-1">
+                <legend className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Opener</legend>
+                <div className="flex max-h-48 flex-wrap gap-x-3 gap-y-1 overflow-y-auto">
+                  {allOpeners.map((o) => (
+                    <label key={o.id} className="inline-flex items-center gap-1.5 text-sm">
+                      <input
+                        type="checkbox"
+                        name="openers"
+                        value={o.id}
+                        defaultChecked={selectedOpenerIds.includes(o.id)}
+                        className="h-3.5 w-3.5 rounded border-input accent-foreground"
+                      />
+                      {o.name ?? <span className="font-mono text-xs text-muted-foreground">?</span>}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {allClients.length > 0 && (
+              <fieldset className="space-y-1">
+                <legend className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Client</legend>
+                <div className="flex max-h-48 flex-wrap gap-x-3 gap-y-1 overflow-y-auto">
+                  {allClients.map((c) => (
+                    <label key={c.id} className="inline-flex items-center gap-1.5 text-sm">
+                      <input
+                        type="checkbox"
+                        name="clients"
+                        value={c.id}
+                        defaultChecked={selectedClientIds.includes(c.id)}
+                        className="h-3.5 w-3.5 rounded border-input accent-foreground"
+                      />
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+          </div>
+        </details>
       )}
     </form>
   )
