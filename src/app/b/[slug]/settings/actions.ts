@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { db } from '@/db/client'
 import { businesses, ticketCategories, tickets } from '@/db/schema'
 import { requireBusinessAccess } from '@/server/permissions'
+import { reconcileTicketTool } from '@/server/tickettool'
 
 const snowflake = z.string().regex(/^\d{17,20}$/, 'Not a valid Discord snowflake')
 
@@ -86,6 +87,13 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
       updatedAt: sql`now()`,
     })
     .where(eq(businesses.id, business.id))
+
+  // If this team is on TicketTool with categories set, ask the bot to back-grab
+  // any already-open TicketTool tickets under those categories now (so linking a
+  // category surfaces existing tickets immediately). Best-effort.
+  if (parsed.data.ticketMode === 'tickettool' && (parsed.data.ticketToolCategoryIds ?? '') !== '') {
+    await reconcileTicketTool(business.id)
+  }
 
   revalidatePath(`/b/${slug}`)
   revalidatePath(`/b/${slug}/settings`)
