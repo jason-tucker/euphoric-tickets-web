@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { requireSession, resolveBusinessAccess, resolveTicketAccess } from '@/server/permissions'
 import { db } from '@/db/client'
-import { businesses, businessMembers, tickets, ticketCategories, ticketExternalMembers, ticketMessages, users } from '@/db/schema'
+import { auditLogs, businesses, businessMembers, tickets, ticketCategories, ticketExternalMembers, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import {
   addInternalNote,
@@ -126,6 +126,21 @@ export default async function TicketDetailPage({
     .leftJoin(users, eq(users.id, ticketMessages.authorUserId))
     .where(eq(ticketMessages.ticketId, t.id))
     .orderBy(asc(ticketMessages.createdAt))
+  // Audit/lifecycle events for this ticket — merged into the conversation
+  // chronologically and listed in full in the Log card below.
+  const auditQ = db
+    .select({
+      id: auditLogs.id,
+      action: auditLogs.action,
+      metadata: auditLogs.metadata,
+      createdAt: auditLogs.createdAt,
+      actorName: users.name,
+      actorDiscordId: users.discordId,
+    })
+    .from(auditLogs)
+    .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+    .where(eq(auditLogs.ticketId, t.id))
+    .orderBy(asc(auditLogs.createdAt))
   const subTicketsQ = t.kind === 'project'
     ? db
         .select({ id: tickets.id, subject: tickets.subject, status: tickets.status, lastActivityAt: tickets.lastActivityAt })
@@ -154,7 +169,8 @@ export default async function TicketDetailPage({
     subTickets,
     parentRow,
     categories,
-  ] = await Promise.all([openerQ, clientBusinessQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ, categoriesQ])
+    auditRows,
+  ] = await Promise.all([openerQ, clientBusinessQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ, categoriesQ, auditQ])
   const opener = openerRow[0]
   const clientBusiness = clientBusinessRow[0] ?? null
   const assignee = assigneeRow[0] ?? null
@@ -208,6 +224,7 @@ export default async function TicketDetailPage({
     opener?.discordId,
     assignee?.discordId,
     ...allMessages.map((m) => m.authorDiscordId),
+    ...auditRows.map((a) => a.actorDiscordId),
     ...peopleIds,
   ].filter((x): x is string => !!x)
   const { resolveGuildIdentities } = await import('@/lib/discord')
@@ -421,41 +438,76 @@ export default async function TicketDetailPage({
       )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-base">Conversation</CardTitle>
+          {auditRows.length > 0 && (
+            <Button asChild size="sm" variant="outline">
+              <Link href="#ticket-log">Log ({auditRows.length})</Link>
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
-          {messages.length === 0 ? (
+          {messages.length === 0 && auditRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No messages from the web yet. {t.discordChannelId
                 ? <>This ticket lives in Discord <code className="font-mono text-xs">#{t.discordChannelId}</code> — the bot is the source of truth there.</>
                 : 'Open conversation with a reply below.'}
             </p>
           ) : (
-            messages.map((m) => (
-              <div key={m.id} className="flex gap-3">
+            mergeConversation(messages, auditRows).map((entry) => entry.kind === 'event' ? (
+              <div key={`event-${entry.id}`} className="my-1 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" aria-hidden />
+                <span className="rounded-full bg-muted/60 px-2 py-0.5">
+                  {renderAuditLine(entry, gName)}{' · '}{relativeTime(entry.createdAt)}
+                </span>
+                <span className="h-px flex-1 bg-border" aria-hidden />
+              </div>
+            ) : (
+              <div key={entry.id} className="flex gap-3">
                 <Avatar className="h-8 w-8">
-                  {gImage(m.authorDiscordId, m.authorImage) && <AvatarImage src={gImage(m.authorDiscordId, m.authorImage)!} alt="" />}
-                  <AvatarFallback className="text-[10px]">{(gName(m.authorDiscordId, m.authorName) ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                  {gImage(entry.authorDiscordId, entry.authorImage) && <AvatarImage src={gImage(entry.authorDiscordId, entry.authorImage)!} alt="" />}
+                  <AvatarFallback className="text-[10px]">{(gName(entry.authorDiscordId, entry.authorName) ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium">{gName(m.authorDiscordId, m.authorName) ?? 'Unknown'}</span>
+                    <span className="text-sm font-medium">{gName(entry.authorDiscordId, entry.authorName) ?? 'Unknown'}</span>
                     <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                      via {m.source}
+                      via {entry.source}
                     </span>
-                    <span className="text-xs text-muted-foreground">{relativeTime(m.createdAt)}</span>
+                    <span className="text-xs text-muted-foreground">{relativeTime(entry.createdAt)}</span>
                   </div>
                   <div className="mt-1 break-words rounded-md bg-muted/40 p-2.5 text-sm">
-                    <DiscordMarkdown content={m.body} />
+                    <DiscordMarkdown content={entry.body} />
                   </div>
-                  <Attachments ticketId={t.id} messageId={m.discordMessageId} items={m.attachments} />
+                  <Attachments ticketId={t.id} messageId={entry.discordMessageId} items={entry.attachments} />
                 </div>
               </div>
             ))
           )}
         </CardContent>
       </Card>
+
+      {auditRows.length > 0 && (
+        <Card id="ticket-log">
+          <CardHeader>
+            <CardTitle className="text-base">Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ol className="space-y-1.5">
+              {auditRows.map((a) => (
+                <li key={a.id} className="flex items-baseline gap-2 text-xs">
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {new Date(a.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                  </span>
+                  <span className="flex-1 text-sm">
+                    {renderAuditLine(a, gName)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
 
       {t.status !== 'closed' && (
         <Card>
@@ -638,3 +690,112 @@ function Attachments({
     </div>
   )
 }
+
+// ─── conversation / audit merge ─────────────────────────────────────────
+
+type MessageEntry = {
+  kind: 'message'
+  id: string
+  body: string
+  source: string
+  createdAt: Date
+  discordMessageId: string | null
+  attachments: Array<{ id: string; name: string; url: string; contentType: string | null; size: number }>
+  authorName: string | null
+  authorImage: string | null
+  authorId: string | null
+  authorDiscordId: string | null
+}
+type EventEntry = {
+  kind: 'event'
+  id: string
+  action: string
+  metadata: Record<string, unknown>
+  createdAt: Date
+  actorName: string | null
+  actorDiscordId: string | null
+}
+type FeedEntry = MessageEntry | EventEntry
+
+type RawMessage = {
+  id: string
+  body: string
+  source: string
+  createdAt: Date
+  discordMessageId: string | null
+  attachments: Array<{ id: string; name: string; url: string; contentType: string | null; size: number }>
+  authorName: string | null
+  authorImage: string | null
+  authorId: string | null
+  authorDiscordId: string | null
+}
+type RawAudit = {
+  id: string
+  action: string
+  metadata: Record<string, unknown>
+  createdAt: Date
+  actorName: string | null
+  actorDiscordId: string | null
+}
+
+// Merge ticket_messages + audit_logs into a single chronological feed.
+// Stable sort by createdAt; ties broken by kind so messages always render
+// before the lifecycle event of the same millisecond (the audit row is
+// usually written a hair after the action it records).
+function mergeConversation(messages: RawMessage[], audits: RawAudit[]): FeedEntry[] {
+  const items: FeedEntry[] = [
+    ...messages.map((m): MessageEntry => ({ kind: 'message', ...m })),
+    ...audits.map((a): EventEntry => ({ kind: 'event', ...a })),
+  ]
+  items.sort((a, b) => {
+    const t = a.createdAt.getTime() - b.createdAt.getTime()
+    if (t !== 0) return t
+    if (a.kind === b.kind) return 0
+    return a.kind === 'message' ? -1 : 1
+  })
+  return items
+}
+
+// Produce a short human sentence for a lifecycle event. Pulls metadata
+// per-action; falls back to a generic "did X" if the payload is missing
+// the fields we expect (defensive — the bot and web both write here).
+function renderAuditLine(
+  entry: RawAudit | EventEntry,
+  gName: (discordId: string | null | undefined, fallback: string | null | undefined) => string | null,
+): React.ReactNode {
+  const actor = gName(entry.actorDiscordId, entry.actorName) ?? 'Someone'
+  const meta = entry.metadata as Record<string, unknown>
+  switch (entry.action) {
+    case 'opened':
+      return <><strong>{actor}</strong> opened the ticket{meta.categoryLabel ? <> in <em>{String(meta.categoryLabel)}</em></> : null}.</>
+    case 'claimed':
+      return <><strong>{actor}</strong> claimed the ticket.</>
+    case 'unclaimed':
+      return <><strong>{actor}</strong> unclaimed the ticket.</>
+    case 'status_changed':
+      return <><strong>{actor}</strong> set status to <em>{String(meta.to ?? '?')}</em>.</>
+    case 'assigned':
+      return <><strong>{actor}</strong> assigned the ticket{meta.assigneeMention ? <> to <em>{String(meta.assigneeMention)}</em></> : null}.</>
+    case 'unassigned':
+      return <><strong>{actor}</strong> unassigned the ticket.</>
+    case 'category_changed':
+      return <><strong>{actor}</strong> moved the ticket{meta.toCategoryLabel ? <> to <em>{String(meta.toCategoryLabel)}</em></> : null}.</>
+    case 'member_added':
+      return <><strong>{actor}</strong> added <em>{String(meta.name ?? meta.discordUserId ?? 'someone')}</em>{meta.isExternal ? ' (external)' : ''} to the ticket.</>
+    case 'member_removed':
+      return <><strong>{actor}</strong> removed <em>{String(meta.name ?? meta.discordUserId ?? 'someone')}</em> from the ticket.</>
+    case 'owner_changed':
+      return <><strong>{actor}</strong> made <em>{String(meta.name ?? meta.discordUserId ?? 'someone')}</em> the ticket owner.</>
+    case 'closed':
+      return <><strong>{actor}</strong> closed the ticket.</>
+    case 'reopened':
+      return <><strong>{actor}</strong> reopened the ticket.</>
+    case 'channel_deleted':
+      return <><strong>{actor}</strong> deleted the Discord channel (transcript kept).</>
+    case 'renamed':
+      return <><strong>{actor}</strong> renamed the ticket channel.</>
+    default:
+      return <><strong>{actor}</strong> {entry.action.replace(/_/g, ' ')}.</>
+  }
+}
+

@@ -28,6 +28,7 @@ import {
 } from '@/lib/discord'
 import { avatarUrl, statusLabel } from '@/lib/format'
 import { notify } from '@/server/notify'
+import { writeAudit } from '@/server/audit'
 import type { Ticket, TicketStatus } from '@/db/schema'
 import type { Session } from 'next-auth'
 
@@ -193,11 +194,19 @@ export async function setTicketStatus(
   if (!ctx.flags.canClaim) return
   const status = String(formData.get('status') ?? '')
   if (!(SETTABLE_STATUSES as readonly string[]).includes(status)) return
+  const prev = ctx.ticket.status
   await db
     .update(tickets)
     .set({ status: status as TicketStatus, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
   await postStatus(ctx.ticket, `Ticket status set to ${statusLabel(status)} by <@${ctx.session.user.discordId}>`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'status_changed',
+    metadata: { from: prev, to: status },
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -210,6 +219,12 @@ export async function claimTicket(slug: string, ticketId: number): Promise<void>
     .set({ status: 'in_progress', assigneeUserId: ctx.session.user.id, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
   await postStatus(ctx.ticket, `Ticket claimed by <@${ctx.session.user.discordId}>`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'claimed',
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -225,6 +240,12 @@ export async function unclaimTicket(slug: string, ticketId: number): Promise<voi
     .set({ status: 'open', assigneeUserId: null, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
   await postStatus(ctx.ticket, `Ticket unclaimed by <@${ctx.session.user.discordId}>`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'unclaimed',
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -246,6 +267,12 @@ export async function assignTicket(
       .set({ status: 'open', assigneeUserId: null, lastActivityAt: sql`now()` })
       .where(eq(tickets.id, ticketId))
     await postStatus(ctx.ticket, `Ticket unassigned by ${actor}`)
+    await writeAudit({
+      businessId: ctx.business.id,
+      ticketId,
+      actorUserId: ctx.session.user.id,
+      action: 'unassigned',
+    })
   } else {
     if (!/^[0-9a-f-]{36}$/i.test(raw)) throw new Error('Bad assignee id')
     await db
@@ -254,6 +281,13 @@ export async function assignTicket(
       .where(eq(tickets.id, ticketId))
     const target = (await mentionForUserId(raw)) ?? 'a staff member'
     await postStatus(ctx.ticket, `Ticket assigned to ${target} by ${actor}`)
+    await writeAudit({
+      businessId: ctx.business.id,
+      ticketId,
+      actorUserId: ctx.session.user.id,
+      action: 'assigned',
+      metadata: { assigneeUserId: raw, assigneeMention: target },
+    })
   }
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
@@ -271,6 +305,12 @@ export async function closeTicket(slug: string, ticketId: number): Promise<void>
 
   // Status footer before the archive move (the channel survives the move).
   await postStatus(t, `Ticket closed by <@${session.user.discordId}>`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: session.user.id,
+    action: 'closed',
+  })
 
   // Best-effort: rename + move the per-ticket channel into the configured
   // closed-tickets Discord category (per-category override → business
@@ -395,6 +435,12 @@ export async function deleteTicketChannel(slug: string, ticketId: number): Promi
     })
     .where(eq(tickets.id, ticketId))
 
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'channel_deleted',
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -445,6 +491,13 @@ export async function changeTicketCategory(
   }
 
   await postStatus(ctx.ticket, `Ticket category changed to ${cat.label} by <@${ctx.session.user.discordId}>`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'category_changed',
+    metadata: { fromCategoryId: ctx.ticket.categoryId, toCategoryId: cat.id, toCategoryLabel: cat.label },
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -497,6 +550,13 @@ export async function addTicketMember(
       .values({ ticketId: ctx.ticket.id, userId: u.id, addedByUserId: ctx.session.user.id })
       .onConflictDoNothing()
     await postStatus(ctx.ticket, `<@${discordUserId}> was added to the ticket by <@${ctx.session.user.discordId}>`)
+    await writeAudit({
+      businessId: ctx.business.id,
+      ticketId,
+      actorUserId: ctx.session.user.id,
+      action: 'member_added',
+      metadata: { discordUserId, name, isExternal: false },
+    })
     revalidatePath(`/b/${slug}/tickets/${ticketId}`)
     return { ok: true }
   }
@@ -537,6 +597,13 @@ export async function addTicketMember(
     ctx.ticket,
     `${du.name} (external) was added to the ticket by <@${ctx.session.user.discordId}>`,
   )
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'member_added',
+    metadata: { discordUserId, name: du.name, isExternal: true },
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
   return { ok: true }
 }
@@ -591,6 +658,13 @@ export async function removeTicketMember(slug: string, ticketId: number, discord
   const actor = `<@${ctx.session.user.discordId}>`
   const subject = u?.name ? `${u.name} (external/Discord)` : `<@${discordUserId}>`
   await postStatus(ctx.ticket, `${subject} was removed from the ticket by ${actor}`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'member_removed',
+    metadata: { discordUserId, name: u?.name ?? null },
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -630,6 +704,13 @@ export async function setTicketOwner(slug: string, ticketId: number, discordUser
     .where(eq(tickets.id, ticketId))
 
   await postStatus(ctx.ticket, `<@${discordUserId}> is now the ticket owner (set by <@${ctx.session.user.discordId}>)`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'owner_changed',
+    metadata: { discordUserId, name },
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
 
@@ -642,5 +723,11 @@ export async function reopenTicket(slug: string, ticketId: number): Promise<void
     .set({ status: 'open', closedAt: null, closedByUserId: null, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
   await postStatus(ctx.ticket, `Ticket reopened by <@${ctx.session.user.discordId}>`)
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'reopened',
+  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }

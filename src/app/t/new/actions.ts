@@ -14,6 +14,7 @@ import {
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
+import { writeAudit } from '@/server/audit'
 
 const schema = z.object({
   businessSlug: z.string().min(1),
@@ -150,6 +151,16 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       parentTicketId,
     })
     .returning()
+
+  // Audit the open event — the bot writes its own 'opened' row for panel
+  // opens, this covers /t/new opens.
+  await writeAudit({
+    businessId: hostBusiness.id,
+    ticketId: row.id,
+    actorUserId: session.user.id,
+    action: 'opened',
+    metadata: { via: 'web', categoryId: category?.id ?? null, parentTicketId },
+  })
 
   // Record successful insert for the dedupe window. Best-effort: also
   // garbage-collect stale entries so the map doesn't grow forever.
