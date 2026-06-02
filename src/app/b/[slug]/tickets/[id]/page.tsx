@@ -26,6 +26,8 @@ import {
   closeTicket,
   deleteTicketChannel,
   removeTicketMember,
+  renameTicketToolTicket,
+  requestCloseTicketToolTicket,
   setTicketOwner,
   reopenTicket,
   setTicketStatus,
@@ -243,11 +245,17 @@ export default async function TicketDetailPage({
       ? `https://discord.com/channels/${access.business.discordGuildId}/${t.discordChannelId}`
       : null
 
-  const canClose = t.status !== 'closed' && ticketAccess.canClose
-  const canClaim = t.status !== 'closed' && ticketAccess.canClaim
+  // TicketTool-owned ticket: euphoric controls it only via TicketTool's $
+  // commands (rename / add / remove / closeRequest), never by mutating the
+  // channel. Hide the native lifecycle controls for these.
+  const isExternal = t.externalSource === 'tickettool'
+  const canClose = t.status !== 'closed' && ticketAccess.canClose && !isExternal
+  const canClaim = t.status !== 'closed' && ticketAccess.canClaim && !isExternal
   const canAssign = canClaim
-  const canReopen = t.status === 'closed' && ticketAccess.canClaim
-  const canDelete = t.status === 'closed' && ticketAccess.canDeleteChannel && Boolean(t.discordChannelId)
+  const canReopen = t.status === 'closed' && ticketAccess.canClaim && !isExternal
+  const canDelete = t.status === 'closed' && ticketAccess.canDeleteChannel && Boolean(t.discordChannelId) && !isExternal
+  const canRequestClose = t.status !== 'closed' && ticketAccess.canClose && isExternal
+  const canRename = t.status !== 'closed' && ticketAccess.canManageMembers && isExternal
 
   async function claim() { 'use server'; await claimTicket(slug, t.id) }
   async function unclaim() { 'use server'; await unclaimTicket(slug, t.id) }
@@ -259,6 +267,8 @@ export default async function TicketDetailPage({
   async function changeCat(formData: FormData) { 'use server'; await changeTicketCategory(slug, t.id, formData) }
   async function addPerson(formData: FormData) { 'use server'; await addTicketMember(slug, t.id, formData) }
   async function setStatus(formData: FormData) { 'use server'; await setTicketStatus(slug, t.id, formData) }
+  async function requestClose() { 'use server'; await requestCloseTicketToolTicket(slug, t.id) }
+  async function rename(formData: FormData) { 'use server'; await renameTicketToolTicket(slug, t.id, formData) }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6">
@@ -322,12 +332,17 @@ export default async function TicketDetailPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={t.status} />
+          {isExternal && (
+            <span className="rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-indigo-500">
+              TicketTool
+            </span>
+          )}
           {assignee && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               assigned to {gName(assignee.discordId, assignee.name) ?? '?'}
             </span>
           )}
-          {ticketAccess.canClaim && t.status !== 'closed' && (
+          {ticketAccess.canClaim && t.status !== 'closed' && !isExternal && (
             <TicketActionMenu
               triggerLabel="Status"
               variant="outline"
@@ -362,7 +377,7 @@ export default async function TicketDetailPage({
               ]}
             />
           )}
-          {ticketAccess.canChangeCategory && t.status !== 'closed' && categories.length > 0 && (
+          {ticketAccess.canChangeCategory && t.status !== 'closed' && !isExternal && categories.length > 0 && (
             <TicketActionMenu
               triggerLabel="Move"
               variant="outline"
@@ -374,6 +389,23 @@ export default async function TicketDetailPage({
                 label: `${c.emoji ? `${c.emoji} ` : ''}${c.label}`,
               }))}
             />
+          )}
+          {canRename && (
+            <form action={rename} className="flex items-center gap-1">
+              <input
+                name="name"
+                required
+                maxLength={100}
+                placeholder="new-name"
+                className="h-8 w-28 rounded-md border bg-background px-2 text-xs"
+              />
+              <SubmitButton size="sm" variant="outline">Rename</SubmitButton>
+            </form>
+          )}
+          {canRequestClose && (
+            <form action={requestClose}>
+              <SubmitButton size="sm" variant="outline" pendingChildren="Requesting…">Request close</SubmitButton>
+            </form>
           )}
           {canClose && (
             <form action={close}><SubmitButton size="sm" variant="outline">Close</SubmitButton></form>

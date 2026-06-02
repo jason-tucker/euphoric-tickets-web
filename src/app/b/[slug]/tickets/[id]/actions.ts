@@ -29,8 +29,16 @@ import {
 import { avatarUrl, statusLabel } from '@/lib/format'
 import { notify } from '@/server/notify'
 import { writeAudit } from '@/server/audit'
+import { emitTicketToolCommand } from '@/server/tickettool'
 import type { Ticket, TicketStatus } from '@/db/schema'
 import type { Session } from 'next-auth'
+
+// A ticket the third-party TicketTool bot owns. euphoric ingests + controls it
+// via TicketTool's $-prefix commands, and must NEVER mutate its channel
+// directly (no archive/delete/category move).
+function isTicketTool(t: Pick<Ticket, 'externalSource'>): boolean {
+  return t.externalSource === 'tickettool'
+}
 
 // Workflow statuses a staffer can set directly (closed is the Close button,
 // which has side effects; claimed is legacy).
@@ -296,6 +304,10 @@ export async function closeTicket(slug: string, ticketId: number): Promise<void>
   const ctx = await loadTicketAccess(slug, ticketId)
   if (!ctx) return
   if (!ctx.flags.canClose) return
+  // TicketTool owns its channel — never archive/move it from here. Use
+  // requestCloseTicket ($closeRequest) instead; the UI hides the hard Close
+  // button for these tickets.
+  if (isTicketTool(ctx.ticket)) return
   const { session, business: businessRow, ticket: t } = ctx
   const access = { business: businessRow }
   await db
@@ -418,6 +430,8 @@ export async function deleteTicketChannel(slug: string, ticketId: number): Promi
   if (!ctx) return
   if (!ctx.flags.canDeleteChannel) throw new Error('Only admins can delete a ticket channel')
   const { ticket: t } = ctx
+  // Never delete a TicketTool-owned channel from here.
+  if (isTicketTool(t)) throw new Error('TicketTool owns this channel — delete it in TicketTool')
   if (t.status !== 'closed') throw new Error('Ticket must be closed before its channel is deleted')
 
   const botToken = process.env.DISCORD_BOT_TOKEN
@@ -455,6 +469,9 @@ export async function changeTicketCategory(
   const ctx = await loadTicketAccess(slug, ticketId)
   if (!ctx) return
   if (!ctx.flags.canChangeCategory) return
+  // TicketTool tickets have no euphoric category and we don't move their
+  // channel — no-op.
+  if (isTicketTool(ctx.ticket)) return
 
   const newCategoryId = String(formData.get('categoryId') ?? '').trim()
   if (!/^[0-9a-f-]{36}$/i.test(newCategoryId)) return
@@ -515,6 +532,36 @@ export async function addTicketMember(
 
   const discordUserId = String(formData.get('userId') ?? '').trim()
   if (!/^\d{17,20}$/.test(discordUserId)) return { ok: false, error: 'Pick a user' }
+
+  // TicketTool ticket: don't touch the channel overwrites ourselves — ask
+  // TicketTool to add the user via `$add <@id>`. Still record them locally so
+  // the web archive + /dashboard reflect the membership.
+  if (isTicketTool(ctx.ticket)) {
+    const emitted = await emitTicketToolCommand({
+      ticketId: ctx.ticket.id,
+      action: 'add',
+      discordUserId,
+    })
+    if (!emitted.ok) return { ok: false, error: emitted.error }
+    const [u] = await db
+      .insert(users)
+      .values({ discordId: discordUserId, name: null, image: null })
+      .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
+      .returning({ id: users.id })
+    await db
+      .insert(ticketExternalMembers)
+      .values({ ticketId: ctx.ticket.id, userId: u.id, addedByUserId: ctx.session.user.id })
+      .onConflictDoNothing()
+    await writeAudit({
+      businessId: ctx.business.id,
+      ticketId,
+      actorUserId: ctx.session.user.id,
+      action: 'member_added',
+      metadata: { discordUserId, via: 'tickettool' },
+    })
+    revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+    return { ok: true }
+  }
 
   const botToken = process.env.DISCORD_BOT_TOKEN
   if (!botToken) return { ok: false, error: 'Bot not configured' }
@@ -625,12 +672,17 @@ export async function removeTicketMember(slug: string, ticketId: number, discord
     .limit(1)
   if (opener?.discordId === discordUserId) return
 
-  // Discord side: best-effort revoke of the channel overwrite. Skips silently
-  // when the ticket has no channel (legacy) or the user was external-only
-  // (no overwrite ever existed → Discord 404).
-  const botToken = process.env.DISCORD_BOT_TOKEN
-  if (botToken && ctx.ticket.discordChannelId) {
-    await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
+  // Discord side: for euphoric tickets, best-effort revoke of the channel
+  // overwrite (skips silently when the ticket has no channel or the user was
+  // external-only). For TicketTool tickets, ask TicketTool to remove them via
+  // `$remove <@id>` rather than editing its channel ourselves.
+  if (isTicketTool(ctx.ticket)) {
+    await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'remove', discordUserId })
+  } else {
+    const botToken = process.env.DISCORD_BOT_TOKEN
+    if (botToken && ctx.ticket.discordChannelId) {
+      await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
+    }
   }
 
   // P16: also delete the web-only access row. Without this, an "external"
@@ -712,6 +764,66 @@ export async function setTicketOwner(slug: string, ticketId: number, discordUser
     metadata: { discordUserId, name },
   })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
+// TicketTool control: rename the ticket channel via `$rename <name>`. Staff+.
+// We optimistically update the DB subject; TicketTool renames the channel.
+export async function renameTicketToolTicket(
+  slug: string,
+  ticketId: number,
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return { ok: false, error: 'Not found' }
+  if (!ctx.flags.canManageMembers) return { ok: false, error: 'Staff only' }
+  if (!isTicketTool(ctx.ticket)) return { ok: false, error: 'Not a TicketTool ticket' }
+
+  const name = String(formData.get('name') ?? '').trim()
+  if (name.length < 1 || name.length > 100) return { ok: false, error: 'Name must be 1–100 chars' }
+
+  const emitted = await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'rename', name })
+  if (!emitted.ok) return { ok: false, error: emitted.error }
+
+  await db
+    .update(tickets)
+    .set({ subject: name, lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'renamed',
+    metadata: { name, via: 'tickettool' },
+  })
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+  return { ok: true }
+}
+
+// TicketTool control: send a close request via `$closeRequest`. Non-destructive
+// — TicketTool posts its own confirm prompt; the actual close (and our DB close)
+// follows when a human confirms and TicketTool deletes the channel (handled by
+// the bot's channelDelete / startup reconcile). Does NOT change status here.
+export async function requestCloseTicketToolTicket(
+  slug: string,
+  ticketId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return { ok: false, error: 'Not found' }
+  if (!ctx.flags.canClose) return { ok: false, error: 'You cannot close this ticket' }
+  if (!isTicketTool(ctx.ticket)) return { ok: false, error: 'Not a TicketTool ticket' }
+
+  const emitted = await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'closeRequest' })
+  if (!emitted.ok) return { ok: false, error: emitted.error }
+
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'status_changed',
+    metadata: { closeRequest: true, via: 'tickettool' },
+  })
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+  return { ok: true }
 }
 
 export async function reopenTicket(slug: string, ticketId: number): Promise<void> {

@@ -24,6 +24,13 @@ const settingsSchema = z.object({
   discordClosedCategoryId: snowflake.optional().or(z.literal('')),
   deleteClosedAfterDays: z.string().regex(/^\d+$/).optional().or(z.literal('')),
   terminology: z.enum(['business', 'client']),
+  // TicketTool coexistence: CSV of GUILD_CATEGORY snowflakes to watch (empty
+  // = off) + the prefix that server's TicketTool uses for its commands.
+  ticketToolCategoryIds: z
+    .string()
+    .regex(/^$|^(\d{17,20})(,\s*\d{17,20})*$/, 'Comma-separated Discord category snowflakes only')
+    .optional(),
+  ticketToolPrefix: z.string().min(1).max(5).optional(),
 })
 
 export async function saveBusinessSettings(slug: string, formData: FormData): Promise<void> {
@@ -39,6 +46,8 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     discordClosedCategoryId: String(formData.get('discordClosedCategoryId') ?? '').trim(),
     deleteClosedAfterDays: String(formData.get('deleteClosedAfterDays') ?? '').trim(),
     terminology: (formData.get('terminology') === 'client' ? 'client' : 'business') as 'business' | 'client',
+    ticketToolCategoryIds: String(formData.get('ticketToolCategoryIds') ?? '').trim().replace(/\s+/g, ''),
+    ticketToolPrefix: String(formData.get('ticketToolPrefix') ?? '').trim(),
   }
 
   const parsed = settingsSchema.safeParse({
@@ -49,6 +58,8 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     discordFallbackCategoryId: raw.discordFallbackCategoryId || undefined,
     discordClosedCategoryId: raw.discordClosedCategoryId || undefined,
     deleteClosedAfterDays: raw.deleteClosedAfterDays || undefined,
+    ticketToolCategoryIds: raw.ticketToolCategoryIds || undefined,
+    ticketToolPrefix: raw.ticketToolPrefix || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -66,6 +77,8 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
         ? Number(parsed.data.deleteClosedAfterDays)
         : null,
       terminology: parsed.data.terminology,
+      ticketToolCategoryIds: parsed.data.ticketToolCategoryIds ?? '',
+      ticketToolPrefix: parsed.data.ticketToolPrefix ?? '$',
       updatedAt: sql`now()`,
     })
     .where(eq(businesses.id, business.id))

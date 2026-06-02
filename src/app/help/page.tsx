@@ -30,6 +30,7 @@ export default function HelpPage() {
             ['notifications', 'Notifications'],
             ['staff', 'For staff'],
             ['admin', 'For admins'],
+            ['tickettool', 'TicketTool'],
             ['tiers', 'Who can do what'],
             ['commands', 'Command reference'],
             ['faq', 'FAQ'],
@@ -121,6 +122,25 @@ export default function HelpPage() {
             <li><strong>Delete a channel</strong> — <code>/tickets delete</code> permanently removes a <em>closed</em> ticket&apos;s channel (the transcript stays on the web). Admin-only.</li>
             <li><strong>External people</strong> — add someone by Discord ID even if they&apos;re <em>not in the server</em>. They get a DM link, sign in with Discord, and can view/reply here without ever joining the guild.</li>
           </ul>
+        </Section>
+
+        <Section id="tickettool" title="TicketTool coexistence">
+          <p>
+            If your server also runs the third-party <strong>TicketTool</strong> bot, Euphoric Tickets
+            can run alongside it: it <strong>ingests</strong> TicketTool&apos;s tickets into this archive
+            and lets you <strong>control</strong> them from here.
+          </p>
+          <ul className="ml-5 list-disc space-y-1">
+            <li><strong>Setup (admin, once)</strong> — on <em>Team settings → TicketTool coexistence</em>, pick the Discord categories TicketTool opens its channels under, and set its command prefix (default <code>$</code>). Then, in <strong>TicketTool&apos;s</strong> dashboard → <em>Server Configs → Bot</em>, paste this bot&apos;s user ID (shown on that settings card) so TicketTool accepts its commands.</li>
+            <li><strong>Ingest</strong> — every TicketTool ticket opened under a watched category appears here automatically, with its full message history, and stays in sync live.</li>
+            <li><strong>Two-way replies</strong> — reply from the web and it posts into the TicketTool channel as you.</li>
+            <li><strong>Control</strong> — <strong>Rename</strong>, <strong>Add</strong>/<strong>Remove</strong> people, and <strong>Request close</strong> from the ticket page; each becomes the matching TicketTool command (<code>$rename</code>, <code>$add</code>, <code>$remove</code>, <code>$closeRequest</code>).</li>
+            <li><strong>Hands-off by design</strong> — Euphoric never deletes or moves a TicketTool channel; TicketTool stays in charge of its own tickets.</li>
+          </ul>
+          <p className="text-sm text-muted-foreground">
+            Gotcha: if commands seem ignored, the bot&apos;s ID probably isn&apos;t whitelisted in TicketTool, or
+            the prefix doesn&apos;t match your server&apos;s TicketTool prefix.
+          </p>
         </Section>
 
         <Section id="tiers" title="Who can do what">
