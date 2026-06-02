@@ -51,11 +51,17 @@ export const businesses = pgTable('businesses', {
   kind: text('kind', { enum: ['host', 'client'] }).notNull().default('host'),
   parentBusinessId: uuid('parent_business_id'),
 
+  // Which ticket system this team runs. 'euphoric' (default) = native tickets
+  // via panels + web. 'tickettool' = the team is run by the third-party
+  // TicketTool bot; euphoric disables its own ticket-opening and instead
+  // ingests + controls TicketTool's tickets (see ticketToolCategoryIds).
+  ticketMode: text('ticket_mode').notNull().default('euphoric'),
+
   // TicketTool coexistence. CSV of GUILD_CATEGORY snowflakes that the
   // third-party TicketTool bot opens its ticket channels under. The bot
-  // watches these categories, ingests those channels as tickets
-  // (external_source='tickettool'), and controls them via TicketTool's
-  // $-prefix commands. Empty = feature off.
+  // watches these categories (when ticket_mode='tickettool'), ingests those
+  // channels as tickets (external_source='tickettool'), and controls them via
+  // TicketTool's $-prefix commands.
   ticketToolCategoryIds: text('ticket_tool_category_ids').notNull().default(''),
   // The command prefix configured in this server's TicketTool (Server Configs
   // → Prefix). Used when the bot emits control commands. Default '$'.
@@ -67,6 +73,11 @@ export const businesses = pgTable('businesses', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// Values for businesses.ticket_mode. Plain text column (not a pg enum) to keep
+// drizzle-kit push --force friction-free; this const is the app-level truth.
+export const ticketModes = ['euphoric', 'tickettool'] as const
+export type TicketMode = (typeof ticketModes)[number]
 
 export type Business = typeof businesses.$inferSelect
 export type NewBusiness = typeof businesses.$inferInsert

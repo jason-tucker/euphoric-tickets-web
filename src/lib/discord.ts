@@ -456,6 +456,33 @@ export async function fetchChannelMemberIds(botToken: string, channelId: string)
   return ids
 }
 
+const channelOverwritesCache = new Map<string, { at: number; memberIds: string[]; roleIds: string[] }>()
+
+// Like fetchChannelMemberIds but returns BOTH member (type 1) and role (type 0)
+// overwrites, so the People panel can show who AND which roles have access — the
+// full access list a TicketTool channel carries. Returns the raw `@everyone`
+// role (= guildId) too; callers filter it out when rendering.
+export async function fetchChannelOverwrites(
+  botToken: string,
+  channelId: string,
+): Promise<{ memberIds: string[]; roleIds: string[] }> {
+  const cached = channelOverwritesCache.get(channelId)
+  if (cached && Date.now() - cached.at < CHANNEL_MEMBERS_TTL_MS) {
+    return { memberIds: cached.memberIds, roleIds: cached.roleIds }
+  }
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) return cached ? { memberIds: cached.memberIds, roleIds: cached.roleIds } : { memberIds: [], roleIds: [] }
+  const ch = (await res.json()) as { permission_overwrites?: Array<{ id: string; type: number }> }
+  const ow = ch.permission_overwrites ?? []
+  const memberIds = ow.filter((o) => o.type === 1).map((o) => o.id)
+  const roleIds = ow.filter((o) => o.type === 0).map((o) => o.id)
+  channelOverwritesCache.set(channelId, { at: Date.now(), memberIds, roleIds })
+  return { memberIds, roleIds }
+}
+
 // P6: grant a user access to a ticket channel (member overwrite, type 1).
 export async function addChannelMember(botToken: string, channelId: string, userId: string): Promise<void> {
   // ViewChannel|SendMessages|ReadMessageHistory|AttachFiles|EmbedLinks

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.45] — 2026-06-02 — Per-team ticket mode + TicketTool People roles + no duplicate status (paired with bot 0.5.26)
+
+### Added
+- **Per-team ticket mode** (`businesses.ticket_mode`, `'euphoric'` default / `'tickettool'`). A team set to **TicketTool** mode no longer opens euphoric's own tickets — the web `/t/new` flow hides those teams and `openTicketAction` refuses them (with a "open it in TicketTool" message); euphoric only ingests + controls TicketTool's tickets there. Toggle lives in the new **Ticket system** select on `/b/[slug]/settings`. drizzle-kit push adds the column (existing teams default to `'euphoric'`).
+- **People panel shows roles too.** The ticket People card now lists both the members AND the **roles** with access, read live off the Discord channel's permission overwrites (`fetchChannelOverwrites` + `fetchGuildRoles`), with `@everyone` filtered out. Matters most for TicketTool tickets, where access is usually granted by role.
+
+### Changed
+- **No duplicate status lines on TicketTool tickets.** When euphoric drives a TicketTool ticket from the web (add / remove / rename / request-close), it no longer writes its own audit/status — TicketTool posts its own log message (it has its own logging settings), which we ingest. Removes the double "Tucker added X" + "X was added" the web conversation showed. Add/remove still keep a quiet `ticket_external_members` row so `/dashboard` reflects membership, but emit no euphoric status.
+- Internal notes on a TicketTool ticket now flow through TicketTool's own private notes thread (see bot 0.5.26) instead of euphoric creating a second thread.
+
 ## [0.6.44] — 2026-06-01 — TicketTool coexistence: ingest + control third-party TicketTool tickets (paired with bot 0.5.25)
 
 ### Added

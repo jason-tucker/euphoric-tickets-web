@@ -533,9 +533,11 @@ export async function addTicketMember(
   const discordUserId = String(formData.get('userId') ?? '').trim()
   if (!/^\d{17,20}$/.test(discordUserId)) return { ok: false, error: 'Pick a user' }
 
-  // TicketTool ticket: don't touch the channel overwrites ourselves — ask
-  // TicketTool to add the user via `$add <@id>`. Still record them locally so
-  // the web archive + /dashboard reflect the membership.
+  // TicketTool ticket: don't touch the channel overwrites or post our own
+  // status — ask TicketTool to add the user via `$add <@id>`. TicketTool owns
+  // the access AND the "added X" log message (it has its own logging settings),
+  // which we ingest. We record a quiet external-member row so the user sees the
+  // ticket on their /dashboard, but write NO audit/status of our own.
   if (isTicketTool(ctx.ticket)) {
     const emitted = await emitTicketToolCommand({
       ticketId: ctx.ticket.id,
@@ -552,13 +554,6 @@ export async function addTicketMember(
       .insert(ticketExternalMembers)
       .values({ ticketId: ctx.ticket.id, userId: u.id, addedByUserId: ctx.session.user.id })
       .onConflictDoNothing()
-    await writeAudit({
-      businessId: ctx.business.id,
-      ticketId,
-      actorUserId: ctx.session.user.id,
-      action: 'member_added',
-      metadata: { discordUserId, via: 'tickettool' },
-    })
     revalidatePath(`/b/${slug}/tickets/${ticketId}`)
     return { ok: true }
   }
@@ -672,17 +667,31 @@ export async function removeTicketMember(slug: string, ticketId: number, discord
     .limit(1)
   if (opener?.discordId === discordUserId) return
 
-  // Discord side: for euphoric tickets, best-effort revoke of the channel
-  // overwrite (skips silently when the ticket has no channel or the user was
-  // external-only). For TicketTool tickets, ask TicketTool to remove them via
-  // `$remove <@id>` rather than editing its channel ourselves.
+  // TicketTool ticket: ask TicketTool to remove them via `$remove <@id>` and
+  // let TicketTool post its own "removed X" log. We only clean up our quiet
+  // external-member row; NO euphoric status/audit of our own.
   if (isTicketTool(ctx.ticket)) {
-    await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'remove', discordUserId })
-  } else {
-    const botToken = process.env.DISCORD_BOT_TOKEN
-    if (botToken && ctx.ticket.discordChannelId) {
-      await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
+    const emitted = await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'remove', discordUserId })
+    if (!emitted.ok) return
+    const [u] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.discordId, discordUserId))
+      .limit(1)
+    if (u) {
+      await db
+        .delete(ticketExternalMembers)
+        .where(and(eq(ticketExternalMembers.ticketId, ctx.ticket.id), eq(ticketExternalMembers.userId, u.id)))
     }
+    revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+    return
+  }
+
+  // Discord side (euphoric ticket): best-effort revoke of the channel overwrite
+  // (skips silently when the ticket has no channel or the user was external-only).
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (botToken && ctx.ticket.discordChannelId) {
+    await removeChannelMember(botToken, ctx.ticket.discordChannelId, discordUserId).catch(() => {})
   }
 
   // P16: also delete the web-only access row. Without this, an "external"
@@ -784,17 +793,12 @@ export async function renameTicketToolTicket(
   const emitted = await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'rename', name })
   if (!emitted.ok) return { ok: false, error: emitted.error }
 
+  // Quietly track the new subject so the web title matches; TicketTool posts its
+  // own rename log, so we write no euphoric status/audit of our own.
   await db
     .update(tickets)
     .set({ subject: name, lastActivityAt: sql`now()` })
     .where(eq(tickets.id, ticketId))
-  await writeAudit({
-    businessId: ctx.business.id,
-    ticketId,
-    actorUserId: ctx.session.user.id,
-    action: 'renamed',
-    metadata: { name, via: 'tickettool' },
-  })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
   return { ok: true }
 }
@@ -815,13 +819,7 @@ export async function requestCloseTicketToolTicket(
   const emitted = await emitTicketToolCommand({ ticketId: ctx.ticket.id, action: 'closeRequest' })
   if (!emitted.ok) return { ok: false, error: emitted.error }
 
-  await writeAudit({
-    businessId: ctx.business.id,
-    ticketId,
-    actorUserId: ctx.session.user.id,
-    action: 'status_changed',
-    metadata: { closeRequest: true, via: 'tickettool' },
-  })
+  // TicketTool posts its own close-request prompt; no euphoric status/audit.
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
   return { ok: true }
 }

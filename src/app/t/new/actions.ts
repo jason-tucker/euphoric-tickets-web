@@ -67,6 +67,10 @@ export async function openTicketAction(formData: FormData): Promise<void> {
 
   const access = await resolveBusinessAccess(parsed.data.businessSlug)
   if (!access) throw new Error('You are not a member of that community.')
+  // TicketTool-mode teams don't open tickets through euphoric.
+  if (access.business.ticketMode === 'tickettool') {
+    throw new Error('This team uses TicketTool — open a ticket from its panel in Discord.')
+  }
 
   // Resolve the HOST that will operate this ticket vs the CLIENT it's for.
   // If the form was submitted from a client-kind business, the ticket

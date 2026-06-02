@@ -14,19 +14,25 @@ import { openTicketAction } from './actions'
 export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ b?: string; parent?: string }> }) {
   await requireSession()
   const sp = await searchParams
-  const myBusinesses = await listMyBusinesses()
+  const allMyBusinesses = await listMyBusinesses()
+  // TicketTool-mode teams don't open tickets through euphoric — they're opened
+  // in TicketTool. Hide them from this flow.
+  const myBusinesses = allMyBusinesses.filter((b) => b.business.ticketMode !== 'tickettool')
   const parentId = sp.parent && /^\d+$/.test(sp.parent) ? Number(sp.parent) : null
 
   if (myBusinesses.length === 0) {
+    const hasTicketToolTeam = allMyBusinesses.some((b) => b.business.ticketMode === 'tickettool')
     return (
       <>
         <TopNav />
         <main className="container max-w-xl py-6">
           <Card>
             <CardHeader>
-              <CardTitle>No teams yet</CardTitle>
+              <CardTitle>{hasTicketToolTeam ? 'Open a ticket in TicketTool' : 'No teams yet'}</CardTitle>
               <CardDescription>
-                You can&apos;t open a ticket because you&apos;re not in any Discord team connected to this app.
+                {hasTicketToolTeam
+                  ? 'Your team uses TicketTool for support. Open a ticket from the TicketTool panel in your Discord server — it’ll then appear here automatically.'
+                  : 'You can’t open a ticket because you’re not in any Discord team connected to this app.'}
               </CardDescription>
             </CardHeader>
           </Card>

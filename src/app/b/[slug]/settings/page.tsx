@@ -152,6 +152,24 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="ticketMode">Ticket system for this team</Label>
+              <select
+                id="ticketMode"
+                name="ticketMode"
+                defaultValue={business.ticketMode}
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="euphoric">Euphoric Tickets (native panels + web)</option>
+                <option value="tickettool">TicketTool (ingest + control its tickets)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                <strong>TicketTool</strong> mode disables euphoric&apos;s own ticket-opening (panels +
+                the web &quot;Open a ticket&quot; form) for this team — all new tickets come from
+                TicketTool, and euphoric ingests &amp; controls them. The settings below apply in
+                TicketTool mode.
+              </p>
+            </div>
             <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
               <p className="font-medium text-foreground">One-time setup in TicketTool</p>
               <p className="mt-1">
