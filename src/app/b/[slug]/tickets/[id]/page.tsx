@@ -6,7 +6,7 @@ import { DiscordPicker } from '@/components/app/discord-picker'
 import { LiveRefresh } from '@/components/app/live-refresh'
 import { TicketActionMenu } from '@/components/app/ticket-action-menu'
 import { DiscordMarkdown } from '@/components/app/discord-markdown'
-import { fetchChannelMemberIds } from '@/lib/discord'
+import { fetchChannelOverwrites, fetchGuildRoles } from '@/lib/discord'
 import { StatusBadge } from '@/components/app/status-badge'
 import { ReplyForm } from '@/components/app/reply-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -183,13 +183,27 @@ export default async function TicketDetailPage({
   const messages = allMessages.filter((m) => m.source !== 'internal')
   const internalNotes = isStaff ? allMessages.filter((m) => m.source === 'internal') : []
 
-  // P6: people explicitly added to the Discord channel (member overwrites).
-  // Staff-only, best-effort, one Discord call.
+  // P6: people + roles explicitly added to the Discord channel (member + role
+  // overwrites). Staff-only, best-effort. Roles matter especially for TicketTool
+  // tickets, where access is often granted by role — the People panel shows the
+  // full live access list straight off the channel.
   const botToken = process.env.DISCORD_BOT_TOKEN
-  const peopleIds =
+  const overwrites =
     ticketAccess.canManageMembers && t.discordChannelId && botToken
-      ? await fetchChannelMemberIds(botToken, t.discordChannelId).catch(() => [] as string[])
+      ? await fetchChannelOverwrites(botToken, t.discordChannelId).catch(() => ({ memberIds: [] as string[], roleIds: [] as string[] }))
+      : { memberIds: [] as string[], roleIds: [] as string[] }
+  const peopleIds = overwrites.memberIds
+  // Resolve role overwrites → names, dropping @everyone (= guildId, always a
+  // deny overwrite on ticket channels and not a "granted role").
+  const accessRoleIds = overwrites.roleIds.filter((id) => id !== access.business.discordGuildId)
+  const guildRoles =
+    accessRoleIds.length && botToken
+      ? await fetchGuildRoles(botToken, access.business.discordGuildId).catch(() => [])
       : []
+  const accessRoles = accessRoleIds.map((id) => ({
+    id,
+    name: guildRoles.find((r) => r.id === id)?.name ?? null,
+  }))
   const peopleRows = peopleIds.length
     ? await db
         .select({ discordId: users.discordId, name: users.name, image: users.image })
@@ -601,6 +615,22 @@ export default async function TicketDetailPage({
                   )
                 })}
               </ul>
+            )}
+            {accessRoles.length > 0 && (
+              <div className="border-t pt-3">
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">Roles with access</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {accessRoles.map((r) => (
+                    <span
+                      key={r.id}
+                      className="inline-flex items-center rounded-md bg-accent px-1.5 py-0.5 text-xs"
+                      title={r.id}
+                    >
+                      @{r.name ?? r.id}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
             <form action={addPerson} className="flex items-end gap-2 border-t pt-3">
               <div className="flex-1">
