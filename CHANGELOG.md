@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.46] — 2026-06-02 — Back-grab open TicketTool tickets when categories are linked (paired with bot 0.5.27)
+
+### Added
+- **Linking a TicketTool category now back-grabs already-open tickets immediately.** Previously, existing open TicketTool tickets under a newly-watched category were only ingested on the next bot restart (or when someone next posted in them). Now, saving the settings form (when the team is in TicketTool mode with categories set) calls a new bot endpoint `POST /api/internal/tickettool/reconcile` (auth `INTERNAL_TOKEN`, via `reconcileTicketTool(businessId)`), which scans those categories and ingests every existing channel right away. Best-effort — silently skipped if the bot is unreachable.
+
 ## [0.6.45] — 2026-06-02 — Per-team ticket mode + TicketTool People roles + no duplicate status (paired with bot 0.5.26)
 
 ### Added
