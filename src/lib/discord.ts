@@ -315,6 +315,20 @@ export async function archiveTicketChannel(input: {
   })
 }
 
+// Rename a ticket channel (native euphoric tickets — we own the channel). The
+// caller passes the already-formatted Discord channel name.
+export async function renameDiscordChannel(
+  botToken: string,
+  channelId: string,
+  name: string,
+): Promise<void> {
+  await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.slice(0, 90) }),
+  })
+}
+
 // Create a private thread off a ticket channel for staff-only internal
 // notes. Created lazily on the first internal note. Type 12 = PRIVATE_THREAD.
 export async function createPrivateThread(input: {

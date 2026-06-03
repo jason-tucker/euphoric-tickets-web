@@ -24,6 +24,7 @@ import {
   postChannelStatus,
   postWebhook,
   removeChannelMember,
+  renameDiscordChannel,
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl, statusLabel } from '@/lib/format'
@@ -773,6 +774,48 @@ export async function setTicketOwner(slug: string, ticketId: number, discordUser
     metadata: { discordUserId, name },
   })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+}
+
+// Rename a NATIVE euphoric ticket (staff+). Updates the subject and renames the
+// Discord channel to `ticket-<id>-<slug>` (mirrors the bot's /tickets rename),
+// posts a status footer, and writes a `renamed` audit. TicketTool tickets use
+// renameTicketToolTicket instead (euphoric doesn't own their channel).
+export async function renameTicket(
+  slug: string,
+  ticketId: number,
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await loadTicketAccess(slug, ticketId)
+  if (!ctx) return { ok: false, error: 'Not found' }
+  if (!ctx.flags.canManageMembers) return { ok: false, error: 'Staff only' }
+  if (isTicketTool(ctx.ticket)) return { ok: false, error: 'Use the TicketTool rename' }
+  if (ctx.ticket.status === 'closed') return { ok: false, error: 'Cannot rename a closed ticket' }
+
+  const raw = String(formData.get('name') ?? '').trim()
+  if (raw.length < 1 || raw.length > 100) return { ok: false, error: 'Name must be 1–100 chars' }
+  const sluglet = raw.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
+  if (!sluglet) return { ok: false, error: 'Name needs letters or digits' }
+
+  await db
+    .update(tickets)
+    .set({ subject: raw, lastActivityAt: sql`now()` })
+    .where(eq(tickets.id, ticketId))
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (botToken && ctx.ticket.discordChannelId) {
+    const finalName = `ticket-${ctx.ticket.id}-${sluglet}`.slice(0, 100)
+    await renameDiscordChannel(botToken, ctx.ticket.discordChannelId, finalName).catch(() => {})
+    await postStatus(ctx.ticket, `Channel renamed to \`#${finalName}\` by <@${ctx.session.user.discordId}>`)
+  }
+  await writeAudit({
+    businessId: ctx.business.id,
+    ticketId,
+    actorUserId: ctx.session.user.id,
+    action: 'renamed',
+    metadata: { name: raw },
+  })
+  revalidatePath(`/b/${slug}/tickets/${ticketId}`)
+  return { ok: true }
 }
 
 // TicketTool control: rename the ticket channel via `$rename <name>`. Staff+.
