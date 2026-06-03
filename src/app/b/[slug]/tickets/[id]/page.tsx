@@ -26,6 +26,7 @@ import {
   closeTicket,
   deleteTicketChannel,
   removeTicketMember,
+  renameTicket,
   renameTicketToolTicket,
   requestCloseTicketToolTicket,
   setTicketOwner,
@@ -272,7 +273,9 @@ export default async function TicketDetailPage({
   const canReopen = t.status === 'closed' && ticketAccess.canClaim && !isExternal
   const canDelete = t.status === 'closed' && ticketAccess.canDeleteChannel && Boolean(t.discordChannelId) && !isExternal
   const canRequestClose = t.status !== 'closed' && ticketAccess.canClose && isExternal
-  const canRename = t.status !== 'closed' && ticketAccess.canManageMembers && isExternal
+  // Rename now works on native tickets too (renames the Discord channel we own),
+  // matching the TicketTool feature.
+  const canRename = t.status !== 'closed' && ticketAccess.canManageMembers
 
   async function claim() { 'use server'; await claimTicket(slug, t.id) }
   async function unclaim() { 'use server'; await unclaimTicket(slug, t.id) }
@@ -285,7 +288,11 @@ export default async function TicketDetailPage({
   async function addPerson(formData: FormData) { 'use server'; await addTicketMember(slug, t.id, formData) }
   async function setStatus(formData: FormData) { 'use server'; await setTicketStatus(slug, t.id, formData) }
   async function requestClose() { 'use server'; await requestCloseTicketToolTicket(slug, t.id) }
-  async function rename(formData: FormData) { 'use server'; await renameTicketToolTicket(slug, t.id, formData) }
+  async function rename(formData: FormData) {
+    'use server'
+    if (isExternal) await renameTicketToolTicket(slug, t.id, formData)
+    else await renameTicket(slug, t.id, formData)
+  }
 
   return (
     <main className="container max-w-4xl space-y-4 py-6 lg:max-w-6xl">
@@ -510,7 +517,7 @@ export default async function TicketDetailPage({
             mergeConversation(messages, auditRows).map((entry) => entry.kind === 'event' ? (
               <div key={`event-${entry.id}`} className="my-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="h-px flex-1 bg-border" aria-hidden />
-                <span className={`rounded-full px-2 py-0.5 ${eventTone(entry.action)}`}>
+                <span className={`rounded-full px-2 py-0.5 ${eventTone(entry.action, entry.metadata as Record<string, unknown>)}`}>
                   {renderAuditLine(entry, gName)}{' · '}{relativeTime(entry.createdAt)}
                 </span>
                 <span className="h-px flex-1 bg-border" aria-hidden />
@@ -833,16 +840,35 @@ function mergeConversation(messages: RawMessage[], audits: RawAudit[]): FeedEntr
 // Produce a short human sentence for a lifecycle event. Pulls metadata
 // per-action; falls back to a generic "did X" if the payload is missing
 // the fields we expect (defensive — the bot and web both write here).
-// Color for the inline status pill: close/delete = red, open/reopen = green,
-// everything else neutral.
-function eventTone(action: string): string {
-  if (action === 'closed' || action === 'channel_deleted') {
-    return 'bg-red-500/10 text-red-600 dark:text-red-400'
+// Color for the inline status pill. Lifecycle close/delete = red, open/reopen =
+// green; `status_changed` is tinted by its target workflow status so native
+// status changes read at a glance, mirroring the TicketTool close/open colors.
+const RED = 'bg-red-500/10 text-red-600 dark:text-red-400'
+const GREEN = 'bg-green-500/10 text-green-600 dark:text-green-400'
+const AMBER = 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+const BLUE = 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+const NEUTRAL = 'bg-muted/60'
+
+function eventTone(action: string, meta?: Record<string, unknown>): string {
+  if (action === 'closed' || action === 'channel_deleted') return RED
+  if (action === 'opened' || action === 'reopened') return GREEN
+  if (action === 'status_changed') {
+    switch (String(meta?.to ?? '')) {
+      case 'closed':
+        return RED
+      case 'completed':
+      case 'open':
+        return GREEN
+      case 'in_progress':
+        return BLUE
+      case 'waiting':
+      case 'on_hold':
+        return AMBER
+      default:
+        return NEUTRAL
+    }
   }
-  if (action === 'opened' || action === 'reopened') {
-    return 'bg-green-500/10 text-green-600 dark:text-green-400'
-  }
-  return 'bg-muted/60'
+  return NEUTRAL
 }
 
 function renderAuditLine(

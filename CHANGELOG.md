@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.6.48] — 2026-06-02 — Colored close/open status events, in-server names on adds, wide two-column ticket layout (paired with bot 0.5.30)
+## [0.6.49] — 2026-06-02 — Native-ticket parity: web Rename + colored status_changed events
+
+### Added
+- **Rename works on native tickets from the web.** Previously only TicketTool tickets had a web Rename; native tickets could only be renamed via `/tickets rename` in Discord. New `renameTicket` server action (staff+) updates the subject and renames the Discord channel to `ticket-<id>-<slug>` (mirrors the bot), posts a status footer, and writes a `renamed` audit. The header Rename control now shows for both native and TicketTool tickets and routes to the right action; `renameDiscordChannel` added to the Discord lib.
+
+### Changed
+- **`status_changed` events are now colored** like close/open, so native status changes read at a glance: closed = red, completed/open = green, in_progress = blue, waiting/on_hold = amber. `eventTone` now takes the event metadata and tints by the target status. (Native tickets already shared the colored close/open events, two-column layout, in-server name resolution, and People+roles — this closes the last visible gaps so non-TicketTool tickets match.)
 
 ### Added
 - **Two-column ticket layout on wide (16:9) screens.** The ticket detail page widens to `max-w-6xl` at `lg` and splits into a grid: **chat + reply on the right**, **People · internal notes · Log on the left**. The conversation stays first in the DOM so phones/the embedded CEF iframe still lead with the chat in a single column.
