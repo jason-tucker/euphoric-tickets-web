@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.47] — 2026-06-02 — Fix: external users (not in a guild with the bot) now see their tickets on /dashboard
+
+### Fixed
+- **"My tickets" was gated by guild membership, hiding tickets from external users.** The dashboard query was wrapped in `if (businessIds.length > 0)` and filtered `tickets.businessId IN (my guilds)`, where `businessIds` came from `listMyBusinesses()` (teams whose Discord you're in). An external user — added to a ticket (or the ingested opener of a TicketTool ticket) but **not in that server** — has no businesses, so the query never ran and they saw nothing. The user-mode query is now scoped purely to `openerUserId = me OR ticket_external_members.userId = me`, with **no** guild-membership filter, so it works for users in zero guilds. Per-ticket access is still re-checked on the detail page (soft auth). The staff "residual" view still scopes to the teams you administer. `session.user.id` resolves to the `users` row keyed by Discord ID (Auth.js upsert on `discordId`), so the external user's id matches the `ticket_external_members` / opener rows the bot wrote. The "No teams yet" card now only shows when you also have no tickets.
+
 ## [0.6.46] — 2026-06-02 — Back-grab open TicketTool tickets when categories are linked (paired with bot 0.5.27)
 
 ### Added
