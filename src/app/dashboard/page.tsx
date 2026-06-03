@@ -18,7 +18,6 @@ export default async function DashboardPage({
 }) {
   const session = await requireSession()
   const myBusinesses = await listMyBusinesses()
-  const businessIds = myBusinesses.map((b) => b.business.id)
   const adminBusinessIds = myBusinesses
     .filter((b) => b.level === 'admin' || b.level === 'owner')
     .map((b) => b.business.id)
@@ -39,63 +38,56 @@ export default async function DashboardPage({
     businessName: string
     businessSlug: string
   }> = []
-  if (businessIds.length > 0) {
-    // ticket_external_members holds every explicit add — externals get a row
-    // at add time (P16), and as of v0.6.39 in-guild adds get one too. So the
-    // subquery is the single "tickets I'm personally on" signal for the web.
-    const myMemberTicketIds = db
-      .select({ ticketId: ticketExternalMembers.ticketId })
-      .from(ticketExternalMembers)
-      .where(eq(ticketExternalMembers.userId, session.user.id))
+  // ticket_external_members holds every explicit add — externals get a row at
+  // add time (P16), and as of v0.6.39 in-guild adds get one too. So the subquery
+  // is the single "tickets I'm personally on" signal for the web.
+  const myMemberTicketIds = db
+    .select({ ticketId: ticketExternalMembers.ticketId })
+    .from(ticketExternalMembers)
+    .where(eq(ticketExternalMembers.userId, session.user.id))
 
-    const userWhere = and(
-      or(
-        eq(tickets.openerUserId, session.user.id),
-        inArray(tickets.id, myMemberTicketIds),
-      ),
-      inArray(tickets.businessId, businessIds),
-    )
+  const selectShape = {
+    id: tickets.id,
+    subject: tickets.subject,
+    status: tickets.status,
+    lastActivityAt: tickets.lastActivityAt,
+    businessName: businesses.name,
+    businessSlug: businesses.slug,
+  }
 
-    if (mode === 'user') {
-      myTickets = await db
-        .select({
-          id: tickets.id,
-          subject: tickets.subject,
-          status: tickets.status,
-          lastActivityAt: tickets.lastActivityAt,
-          businessName: businesses.name,
-          businessSlug: businesses.slug,
-        })
-        .from(tickets)
-        .innerJoin(businesses, eq(businesses.id, tickets.businessId))
-        .where(userWhere)
-        .orderBy(desc(tickets.lastActivityAt))
-        .limit(50)
-    } else {
-      // Staff view: tickets in my admin businesses where I'm NEITHER the
-      // opener NOR an explicit member. These are the ones I can see purely
-      // because of my staff role — the "residual" queue.
-      myTickets = await db
-        .select({
-          id: tickets.id,
-          subject: tickets.subject,
-          status: tickets.status,
-          lastActivityAt: tickets.lastActivityAt,
-          businessName: businesses.name,
-          businessSlug: businesses.slug,
-        })
-        .from(tickets)
-        .innerJoin(businesses, eq(businesses.id, tickets.businessId))
-        .where(
-          and(
-            inArray(tickets.businessId, adminBusinessIds),
-            sql`${tickets.openerUserId} != ${session.user.id}`,
-            notInArray(tickets.id, myMemberTicketIds),
-          ),
-        )
-        .orderBy(desc(tickets.lastActivityAt))
-        .limit(50)
-    }
+  if (mode === 'user') {
+    // Tickets I opened OR was explicitly added to — across ANY team, INCLUDING
+    // teams whose Discord I'm not in. An external user added to a ticket but not
+    // in that server must still see it here; this is intentionally NOT gated by
+    // guild membership. Per-ticket access is re-checked on the detail page.
+    myTickets = await db
+      .select(selectShape)
+      .from(tickets)
+      .innerJoin(businesses, eq(businesses.id, tickets.businessId))
+      .where(
+        or(
+          eq(tickets.openerUserId, session.user.id),
+          inArray(tickets.id, myMemberTicketIds),
+        ),
+      )
+      .orderBy(desc(tickets.lastActivityAt))
+      .limit(50)
+  } else if (adminBusinessIds.length > 0) {
+    // Staff view: tickets in my admin businesses where I'm NEITHER the opener
+    // NOR an explicit member — the "residual" queue I see only via my staff role.
+    myTickets = await db
+      .select(selectShape)
+      .from(tickets)
+      .innerJoin(businesses, eq(businesses.id, tickets.businessId))
+      .where(
+        and(
+          inArray(tickets.businessId, adminBusinessIds),
+          sql`${tickets.openerUserId} != ${session.user.id}`,
+          notInArray(tickets.id, myMemberTicketIds),
+        ),
+      )
+      .orderBy(desc(tickets.lastActivityAt))
+      .limit(50)
   }
 
   const adminOf = myBusinesses.filter((b) => b.level === 'admin' || b.level === 'owner')
@@ -131,7 +123,7 @@ export default async function DashboardPage({
           </Button>
         </div>
 
-        {myBusinesses.length === 0 && (
+        {myBusinesses.length === 0 && myTickets.length === 0 && (
           <Card>
             <CardHeader>
               <CardTitle>No teams yet</CardTitle>
