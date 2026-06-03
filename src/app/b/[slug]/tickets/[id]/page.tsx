@@ -241,6 +241,9 @@ export default async function TicketDetailPage({
     assignee?.discordId,
     ...allMessages.map((m) => m.authorDiscordId),
     ...auditRows.map((a) => a.actorDiscordId),
+    // The target of member_added/removed/owner_changed events — so the inline
+    // status line can show their in-server nickname instead of a raw snowflake.
+    ...auditRows.map((a) => (a.metadata as Record<string, unknown> | null)?.discordUserId as string | undefined),
     ...peopleIds,
   ].filter((x): x is string => !!x)
   const { resolveGuildIdentities } = await import('@/lib/discord')
@@ -285,7 +288,7 @@ export default async function TicketDetailPage({
   async function rename(formData: FormData) { 'use server'; await renameTicketToolTicket(slug, t.id, formData) }
 
   return (
-    <main className="container max-w-4xl space-y-4 py-6">
+    <main className="container max-w-4xl space-y-4 py-6 lg:max-w-6xl">
       <LiveRefresh ticketId={t.id} />
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href={isAdmin ? `/b/${slug}/tickets` : '/dashboard'} className="inline-flex items-center gap-1 hover:text-foreground">
@@ -483,6 +486,10 @@ export default async function TicketDetailPage({
         </Card>
       )}
 
+      <div className="lg:grid lg:grid-cols-[22rem_minmax(0,1fr)] lg:items-start lg:gap-4">
+        {/* Chat + reply — DOM-first so mobile leads with the conversation; right
+            column on wide (16:9) screens. */}
+        <div className="space-y-4 lg:col-start-2 lg:row-start-1">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-base">Conversation</CardTitle>
@@ -503,7 +510,7 @@ export default async function TicketDetailPage({
             mergeConversation(messages, auditRows).map((entry) => entry.kind === 'event' ? (
               <div key={`event-${entry.id}`} className="my-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="h-px flex-1 bg-border" aria-hidden />
-                <span className="rounded-full bg-muted/60 px-2 py-0.5">
+                <span className={`rounded-full px-2 py-0.5 ${eventTone(entry.action)}`}>
                   {renderAuditLine(entry, gName)}{' · '}{relativeTime(entry.createdAt)}
                 </span>
                 <span className="h-px flex-1 bg-border" aria-hidden />
@@ -533,28 +540,6 @@ export default async function TicketDetailPage({
         </CardContent>
       </Card>
 
-      {auditRows.length > 0 && (
-        <Card id="ticket-log">
-          <CardHeader>
-            <CardTitle className="text-base">Log</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ol className="space-y-1.5">
-              {auditRows.map((a) => (
-                <li key={a.id} className="flex items-baseline gap-2 text-xs">
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                    {new Date(a.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                  </span>
-                  <span className="flex-1 text-sm">
-                    {renderAuditLine(a, gName)}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </CardContent>
-        </Card>
-      )}
-
       {t.status !== 'closed' && (
         <Card>
           <CardHeader><CardTitle className="text-base">Reply</CardTitle></CardHeader>
@@ -566,7 +551,10 @@ export default async function TicketDetailPage({
           </CardContent>
         </Card>
       )}
+        </div>
 
+        {/* People · internal notes · log — left column on wide screens. */}
+        <div className="space-y-4 lg:col-start-1 lg:row-start-1">
       {ticketAccess.canManageMembers && t.status !== 'closed' && t.discordChannelId && (
         <Card>
           <CardHeader>
@@ -689,6 +677,30 @@ export default async function TicketDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {auditRows.length > 0 && (
+        <Card id="ticket-log">
+          <CardHeader>
+            <CardTitle className="text-base">Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ol className="space-y-1.5">
+              {auditRows.map((a) => (
+                <li key={a.id} className="flex items-baseline gap-2 text-xs">
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {new Date(a.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                  </span>
+                  <span className="flex-1 text-sm">
+                    {renderAuditLine(a, gName)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
+        </div>
+      </div>
     </main>
   )
 }
@@ -821,6 +833,18 @@ function mergeConversation(messages: RawMessage[], audits: RawAudit[]): FeedEntr
 // Produce a short human sentence for a lifecycle event. Pulls metadata
 // per-action; falls back to a generic "did X" if the payload is missing
 // the fields we expect (defensive — the bot and web both write here).
+// Color for the inline status pill: close/delete = red, open/reopen = green,
+// everything else neutral.
+function eventTone(action: string): string {
+  if (action === 'closed' || action === 'channel_deleted') {
+    return 'bg-red-500/10 text-red-600 dark:text-red-400'
+  }
+  if (action === 'opened' || action === 'reopened') {
+    return 'bg-green-500/10 text-green-600 dark:text-green-400'
+  }
+  return 'bg-muted/60'
+}
+
 function renderAuditLine(
   entry: RawAudit | EventEntry,
   gName: (discordId: string | null | undefined, fallback: string | null | undefined) => string | null | undefined,
@@ -842,12 +866,18 @@ function renderAuditLine(
       return <><strong>{actor}</strong> unassigned the ticket.</>
     case 'category_changed':
       return <><strong>{actor}</strong> moved the ticket{meta.toCategoryLabel ? <> to <em>{String(meta.toCategoryLabel)}</em></> : null}.</>
-    case 'member_added':
-      return <><strong>{actor}</strong> added <em>{String(meta.name ?? meta.discordUserId ?? 'someone')}</em>{meta.isExternal ? ' (external)' : ''} to the ticket.</>
-    case 'member_removed':
-      return <><strong>{actor}</strong> removed <em>{String(meta.name ?? meta.discordUserId ?? 'someone')}</em> from the ticket.</>
-    case 'owner_changed':
-      return <><strong>{actor}</strong> made <em>{String(meta.name ?? meta.discordUserId ?? 'someone')}</em> the ticket owner.</>
+    case 'member_added': {
+      const who = gName(meta.discordUserId as string | undefined, (meta.name as string | undefined) ?? null)
+      return <><strong>{actor}</strong> added <em>{who ?? String(meta.discordUserId ?? 'someone')}</em>{meta.isExternal ? ' (external)' : ''} to the ticket.</>
+    }
+    case 'member_removed': {
+      const who = gName(meta.discordUserId as string | undefined, (meta.name as string | undefined) ?? null)
+      return <><strong>{actor}</strong> removed <em>{who ?? String(meta.discordUserId ?? 'someone')}</em> from the ticket.</>
+    }
+    case 'owner_changed': {
+      const who = gName(meta.discordUserId as string | undefined, (meta.name as string | undefined) ?? null)
+      return <><strong>{actor}</strong> made <em>{who ?? String(meta.discordUserId ?? 'someone')}</em> the ticket owner.</>
+    }
     case 'closed':
       return <><strong>{actor}</strong> closed the ticket.</>
     case 'reopened':

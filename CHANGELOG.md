@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.48] — 2026-06-02 — Colored close/open status events, in-server names on adds, wide two-column ticket layout (paired with bot 0.5.30)
+
+### Added
+- **Two-column ticket layout on wide (16:9) screens.** The ticket detail page widens to `max-w-6xl` at `lg` and splits into a grid: **chat + reply on the right**, **People · internal notes · Log on the left**. The conversation stays first in the DOM so phones/the embedded CEF iframe still lead with the chat in a single column.
+
+### Changed
+- **Close/open status events are colored.** The inline status dividers in the conversation are now tinted by action — **closed / channel-deleted = red**, **opened / reopened = green** — so a TicketTool (or native) close/reopen reads at a glance. Driven by the `closed`/`reopened` audit rows the bot writes (see bot 0.5.30).
+- **Add/remove/owner events resolve the target's in-server name.** `member_added` / `member_removed` / `owner_changed` lines used to show a raw Discord ID when no name was stored; they now resolve the user's **server nickname** via the same per-guild identity resolver (their IDs are added to the resolve set), falling back to the stored name, then the ID. External (not-in-guild) members keep the "(external)" tag.
+
 ## [0.6.47] — 2026-06-02 — Fix: external users (not in a guild with the bot) now see their tickets on /dashboard
 
 ### Fixed
