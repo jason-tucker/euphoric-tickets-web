@@ -159,7 +159,7 @@ export default async function DashboardPage({
 
         {myTickets.length > 0 ? (
           <Card>
-            <CardContent className="p-0">
+            <CardContent className="p-0 sm:p-0">
               <Table>
                 <TableHeader>
                   <TableRow>

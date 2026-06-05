@@ -177,7 +177,7 @@ export default async function AllTicketsPage({
           </Card>
         ) : (
           <Card>
-            <CardContent className="p-0">
+            <CardContent className="p-0 sm:p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -266,13 +266,13 @@ function BoardSearch({
   })
   return (
     <form action="/tickets" method="get" className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           type="search"
           name="q"
           defaultValue={q}
           placeholder="Search subject…"
-          className="h-9 max-w-xs"
+          className="h-9 min-w-0 flex-1 sm:max-w-xs"
           aria-label="Search ticket subjects"
         />
         {status && <input type="hidden" name="status" value={status} />}

@@ -60,7 +60,7 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
           {isSudo && (
             <Link
               href="/admin"
-              className="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="hidden rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-block"
             >
               Admin
             </Link>
