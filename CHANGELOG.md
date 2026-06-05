@@ -27,7 +27,6 @@ Docs only — no runtime change.
 ### Fixed
 - **No more horizontal overflow from menus/popovers on a phone.** Dropdown menus are capped at `max-w-[calc(100vw-1rem)]`, the default popover width is now `min(18rem, 100vw-1.5rem)`, and dialogs get a `2rem` viewport gutter, full rounding, and a scrollable `max-h` so they never exceed the screen. Long unbreakable tokens (Discord IDs, webhook URLs, inline `code`) wrap instead of forcing a horizontal scrollbar.
 - **Ticket-detail rename control wraps** its input + button on very narrow widths instead of overflowing the action row.
->>>>>>> origin/main
 
 ## [0.6.50] — 2026-06-05 — Dashboard: closed tickets hidden by default + Show closed toggle
 
