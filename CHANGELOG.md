@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.50] — 2026-06-05 — Dashboard: closed tickets hidden by default + Show closed toggle
+
+### Changed
+- **`/dashboard` now hides closed tickets by default in both User and Staff modes**, with a new **Show closed / Hide closed** toggle next to the User/Staff switch. Default-off keeps the "My tickets" list focused on what still needs attention; toggling adds `?closed=1` to the URL and the same filter relaxes in whichever mode you're in. The other boards (`/tickets`, `/b/[slug]/tickets`) already defaulted to Active via the status FilterBar — this brings the personal dashboard in line.
+
 ## [0.6.49] — 2026-06-02 — Native-ticket parity: web Rename + colored status_changed events
 
 ### Added

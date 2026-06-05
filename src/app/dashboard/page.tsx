@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, desc, eq, inArray, notInArray, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm'
 import { Plus, Building2 } from 'lucide-react'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
@@ -14,7 +14,7 @@ import { relativeTime } from '@/lib/format'
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string }>
+  searchParams: Promise<{ mode?: string; closed?: string }>
 }) {
   const session = await requireSession()
   const myBusinesses = await listMyBusinesses()
@@ -29,6 +29,9 @@ export default async function DashboardPage({
   // Non-staff users see the 'user' query only; the toggle UI is hidden.
   const sp = await searchParams
   const mode: 'user' | 'staff' = isStaff && sp.mode === 'staff' ? 'staff' : 'user'
+  // Closed tickets are hidden by default in both modes — `?closed=1` reveals them.
+  const showClosed = sp.closed === '1'
+  const closedWhere = showClosed ? undefined : ne(tickets.status, 'closed')
 
   let myTickets: Array<{
     id: number
@@ -65,9 +68,12 @@ export default async function DashboardPage({
       .from(tickets)
       .innerJoin(businesses, eq(businesses.id, tickets.businessId))
       .where(
-        or(
-          eq(tickets.openerUserId, session.user.id),
-          inArray(tickets.id, myMemberTicketIds),
+        and(
+          or(
+            eq(tickets.openerUserId, session.user.id),
+            inArray(tickets.id, myMemberTicketIds),
+          ),
+          closedWhere,
         ),
       )
       .orderBy(desc(tickets.lastActivityAt))
@@ -84,6 +90,7 @@ export default async function DashboardPage({
           inArray(tickets.businessId, adminBusinessIds),
           sql`${tickets.openerUserId} != ${session.user.id}`,
           notInArray(tickets.id, myMemberTicketIds),
+          closedWhere,
         ),
       )
       .orderBy(desc(tickets.lastActivityAt))
@@ -104,16 +111,31 @@ export default async function DashboardPage({
                 ? <>Tickets you&apos;ve opened or been added to across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.</>
                 : <>Tickets in {adminBusinessIds.length} {adminBusinessIds.length === 1 ? 'team' : 'teams'} you administer that you aren&apos;t personally on.</>}
             </p>
-            {isStaff && (
-              <div className="inline-flex gap-1 rounded-md border border-input bg-background p-0.5 text-xs">
-                <Button asChild size="sm" variant={mode === 'user' ? 'secondary' : 'ghost'} className="h-7 px-3">
-                  <Link href="/dashboard">User</Link>
-                </Button>
-                <Button asChild size="sm" variant={mode === 'staff' ? 'secondary' : 'ghost'} className="h-7 px-3">
-                  <Link href="/dashboard?mode=staff">Staff</Link>
-                </Button>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {isStaff && (
+                <div className="inline-flex gap-1 rounded-md border border-input bg-background p-0.5 text-xs">
+                  <Button asChild size="sm" variant={mode === 'user' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                    <Link href={showClosed ? '/dashboard?closed=1' : '/dashboard'}>User</Link>
+                  </Button>
+                  <Button asChild size="sm" variant={mode === 'staff' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                    <Link href={showClosed ? '/dashboard?mode=staff&closed=1' : '/dashboard?mode=staff'}>Staff</Link>
+                  </Button>
+                </div>
+              )}
+              <Button asChild size="sm" variant={showClosed ? 'secondary' : 'outline'} className="h-7 px-3 text-xs">
+                <Link
+                  href={(() => {
+                    const params = new URLSearchParams()
+                    if (mode === 'staff') params.set('mode', 'staff')
+                    if (!showClosed) params.set('closed', '1')
+                    const qs = params.toString()
+                    return qs ? `/dashboard?${qs}` : '/dashboard'
+                  })()}
+                >
+                  {showClosed ? 'Hide closed' : 'Show closed'}
+                </Link>
+              </Button>
+            </div>
           </div>
           <Button asChild>
             <Link href="/t/new">
