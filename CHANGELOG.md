@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.53] — 2026-06-05 — Fix: login works on both tickets.euphoric.fm and tickets.euphoric.gg
+
+### Fixed
+- **OAuth login was hard-pinned to a single domain, breaking the new `.gg` host.** With a fixed `AUTH_URL=https://tickets.euphoric.fm`, a login *begun* on `tickets.euphoric.gg` set its PKCE/state cookies on `.gg` but was bounced to the `.fm` callback (which can't read `.gg` cookies) → `InvalidCheck: pkceCodeVerifier value could not be parsed` → the generic "There is a problem with the server configuration" error page. Root cause: next-auth v5 derives the OAuth `redirect_uri` from `request.url`, which the Next.js standalone server pins to the container bind address (`0.0.0.0:3000`); `AUTH_URL` was the only thing rewriting it, and it can hold just one domain.
+- **Fix:** the Auth route handler ([`src/app/api/auth/[...nextauth]/route.ts`](src/app/api/auth/[...nextauth]/route.ts)) now reconstructs `request.url` per-request from the proxy's `X-Forwarded-Host` (falling back to `Host`) and `X-Forwarded-Proto` — the same thing `reqWithEnvURL` does for `AUTH_URL`, but per-request — so `redirect_uri`, the PKCE/state cookies, and the callback all stay on whichever domain the user actually used. The authority is composed as a string to avoid the WHATWG `URL.host` setter leaking the internal `:3000` port. When `AUTH_URL` is set (local dev) the rewrite is skipped. **Ops:** `AUTH_URL` must be **unset** in the production `.env` for this to engage, and **both** callback URLs (`https://tickets.euphoric.fm/api/auth/callback/discord` and `https://tickets.euphoric.gg/api/auth/callback/discord`) must be registered on the Discord application.
+
 ## [0.6.52] — 2026-06-05 — Docs: restructure README to the shared two-repo structure
 
 ### Changed
@@ -662,4 +668,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.51 · b51789d`
+`v0.6.53 · 28fcc6e`
