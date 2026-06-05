@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.54] — 2026-06-05 — Chore: add .dockerignore so a host .env can't be baked into the image
+
+### Changed
+- **Added `.dockerignore`.** The repo had none, and the Dockerfile does `COPY . .`. CI builds from a clean git checkout (where `.env` is gitignored and absent), so it was safe there — but a local `docker compose build` on the VPS would have copied the host `.env` (secrets) into the image. The new `.dockerignore` excludes `.env`/`.env.*`, `.git`, `.github`, `node_modules`, `.next`, build cruft, compose/ops files, and docs, while keeping everything the build needs (`package.json`, `pnpm-lock.yaml`, `src/`, `public/`, `scripts/`, `drizzle.docker.config.cjs`, the config files). Verified with a full `docker build` (exit 0) and confirmed the resulting image contains no `/app/.env`.
+
 ## [0.6.53] — 2026-06-05 — Fix: login works on both tickets.euphoric.fm and tickets.euphoric.gg
 
 ### Fixed
@@ -668,4 +673,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.53 · 28fcc6e`
+`v0.6.54 · 118d445`
