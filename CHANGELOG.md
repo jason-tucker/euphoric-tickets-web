@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.51] — 2026-06-05 — Reopen recreates a deleted channel + replays the convo (and adopts TicketTool tickets whose channel is gone)
+
+### Added
+- **Reopen now spins up a fresh Discord channel when the old one is gone.** Previously `reopenTicket` only flipped the DB status; if the channel had been hard-deleted (admin Delete button, or — for TicketTool tickets — TicketTool deleted it), the ticket came back online with nowhere to talk. Now reopen detects `discordChannelId IS NULL` and creates a new private channel under the ticket's category (per-category Discord parent → business fallback), mints a per-ticket webhook, posts a green header embed (subject / opener / opened / previously-closed / reopened-by), and replays the **last 20 user-facing messages** as silent (`SUPPRESS_NOTIFICATIONS`) user-spoofed webhook posts with the original author's nickname + avatar and the original timestamp prefixed. Internal staff notes are NEVER replayed (they'd leak to the opener). Posts are paced 500 ms apart to stay well under the per-webhook rate budget; the whole replay runs in ~10–12 s.
+- **TicketTool tickets become reopen-able once TicketTool deletes the channel.** Before this, `canReopen` was hard-blocked for any `externalSource='tickettool'` row, so a TicketTool ticket whose channel was deleted was a dead-end on the web. Now the Reopen button shows when the ticket is closed AND the channel is gone, AND choosing it **promotes the ticket to native** (`externalSource: 'euphoric'`) — TicketTool no longer owns the lifecycle because there's no TicketTool channel left to own. The ingested transcript and `externalTranscriptUrl` are preserved; only the source flag changes so the native lifecycle controls (Claim, Close, Move, Rename) light up on the next render. Reopen is still blocked for TicketTool tickets whose channel **still exists** — those should be reopened via `$reopen` from inside the channel.
+
+### Changed
+- **For native tickets that were closed (channel still archived under the closed category), reopen now moves the channel back.** New `unarchiveTicketChannel` helper strips the `closed-` prefix and moves the channel back to the original parent (per-category override → business fallback). No replay in this path — the in-channel history is already intact.
+- **`postWebhook` now takes an optional `silent: true` flag** that sets Discord's `SUPPRESS_NOTIFICATIONS` (`1 << 12`) flag. Used by the reopen replay; existing webhook callers are unchanged.
+- **The "Discord channel has been deleted" hint on closed tickets now reads "Reopen to spin up a fresh channel" / "(which promotes this to a native ticket)" for the TicketTool case**, so staff aren't left guessing what the button will do.
+- **Help page** "Close / reopen" line and "A ticket says its channel went missing" FAQ updated to describe the new replay-and-recreate path.
+
+### Paired with
+- **Bot 0.5.36** — `closeShadowTicket` now clears `discord_channel_id` (and the webhook fields) and writes a `channel_deleted` audit row when a TicketTool channel is deleted. Without that pair, the new web reopen path can't fire for TicketTool tickets ingested before 0.5.36 (stale channelId would still appear "alive" to the web).
+
 ## [0.6.50] — 2026-06-05 — Dashboard: closed tickets hidden by default + Show closed toggle
 
 ### Changed
