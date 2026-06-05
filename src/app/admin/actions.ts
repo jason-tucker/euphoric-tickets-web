@@ -23,12 +23,6 @@ const createSchema = z
       .startsWith('https://discord.com/api/webhooks/', 'Must be a Discord webhook URL')
       .optional()
       .or(z.literal('')),
-    kind: z.enum(['host', 'client']).default('host'),
-    parentBusinessId: z.string().uuid().optional().or(z.literal('')),
-  })
-  .refine((d) => d.kind === 'host' || !!d.parentBusinessId, {
-    path: ['parentBusinessId'],
-    message: 'Client businesses must reference a host parent.',
   })
 
 export async function createBusinessAction(formData: FormData): Promise<void> {
@@ -40,15 +34,12 @@ export async function createBusinessAction(formData: FormData): Promise<void> {
     description: String(formData.get('description') ?? '').trim(),
     discordGuildId: String(formData.get('discordGuildId') ?? '').trim(),
     webhookUrl: String(formData.get('webhookUrl') ?? '').trim(),
-    kind: (String(formData.get('kind') ?? 'host') === 'client' ? 'client' : 'host') as 'host' | 'client',
-    parentBusinessId: String(formData.get('parentBusinessId') ?? '').trim(),
   }
 
   const parsed = createSchema.safeParse({
     ...raw,
     description: raw.description || undefined,
     webhookUrl: raw.webhookUrl || undefined,
-    parentBusinessId: raw.parentBusinessId || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -58,8 +49,6 @@ export async function createBusinessAction(formData: FormData): Promise<void> {
     description: parsed.data.description ?? null,
     discordGuildId: parsed.data.discordGuildId,
     webhookUrl: parsed.data.webhookUrl ?? null,
-    kind: parsed.data.kind,
-    parentBusinessId: parsed.data.kind === 'client' ? (parsed.data.parentBusinessId as string) : null,
   })
 
   revalidatePath('/admin')

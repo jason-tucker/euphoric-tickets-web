@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { desc, eq } from 'drizzle-orm'
-import { Briefcase, Building2, Info } from 'lucide-react'
+import { desc } from 'drizzle-orm'
+import { Building2, Info } from 'lucide-react'
 import { TopNav } from '@/components/app/top-nav'
 import { db } from '@/db/client'
 import { businesses } from '@/db/schema'
@@ -16,9 +16,6 @@ import { createBusinessAction } from './actions'
 export default async function AdminPage() {
   await requireSudo()
   const allBusinesses = await db.select().from(businesses).orderBy(desc(businesses.createdAt))
-  const hosts = allBusinesses.filter((b) => b.kind === 'host')
-  const clients = allBusinesses.filter((b) => b.kind === 'client')
-  const hostById = new Map(hosts.map((h) => [h.id, h]))
 
   return (
     <>
@@ -50,38 +47,6 @@ export default async function AdminPage() {
           </CardHeader>
           <CardContent>
             <form action={createBusinessAction} className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="kind">Kind</Label>
-                  <select
-                    id="kind"
-                    name="kind"
-                    defaultValue="host"
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                  >
-                    <option value="host">Team — runs the ticket system (EuphoricFM, MKE, …)</option>
-                    <option value="client">Client — visitor org coming in with multiple people (Echo Studios, …)</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Teams operate queues. Clients are visitor orgs whose members open tickets at a team.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="parentBusinessId">Parent team (clients only)</Label>
-                  <select
-                    id="parentBusinessId"
-                    name="parentBusinessId"
-                    defaultValue=""
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                  >
-                    <option value="">— required if Kind = Client —</option>
-                    {hosts.map((h) => (
-                      <option key={h.id} value={h.id}>{h.name}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">Which team will operate this client&apos;s tickets.</p>
-                </div>
-              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label htmlFor="slug">URL slug</Label>
@@ -135,17 +100,17 @@ export default async function AdminPage() {
         </Card>
 
         <section>
-          <h2 className="mb-2 mt-8 text-lg font-semibold">Teams ({hosts.length})</h2>
-          {hosts.length === 0 ? (
+          <h2 className="mb-2 mt-8 text-lg font-semibold">Teams ({allBusinesses.length})</h2>
+          {allBusinesses.length === 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">None yet</CardTitle>
-                <CardDescription>Create one above with Kind = Team.</CardDescription>
+                <CardDescription>Create one above.</CardDescription>
               </CardHeader>
             </Card>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
-              {hosts.map((b) => (
+              {allBusinesses.map((b) => (
                 <Link key={b.id} href={`/b/${b.slug}`} className="block">
                   <Card className="transition-colors hover:bg-accent/50">
                     <CardHeader>
@@ -163,45 +128,6 @@ export default async function AdminPage() {
                   </Card>
                 </Link>
               ))}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2 className="mb-2 mt-8 text-lg font-semibold">Clients ({clients.length})</h2>
-          {clients.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">None yet</CardTitle>
-                <CardDescription>Create one above with Kind = Client + a parent team.</CardDescription>
-              </CardHeader>
-            </Card>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {clients.map((b) => {
-                const parent = b.parentBusinessId ? hostById.get(b.parentBusinessId) : null
-                return (
-                  <Link key={b.id} href={`/b/${b.slug}`} className="block">
-                    <Card className="transition-colors hover:bg-accent/50">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Briefcase className="h-4 w-4 text-muted-foreground" />
-                          {b.name}
-                        </CardTitle>
-                        <CardDescription className="flex flex-col gap-0.5">
-                          <span>/{b.slug}</span>
-                          <span className="text-[10px] text-muted-foreground">
-                            team: {parent?.name ?? '?'}
-                          </span>
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            guild {b.discordGuildId}
-                          </span>
-                        </CardDescription>
-                      </CardHeader>
-                    </Card>
-                  </Link>
-                )
-              })}
             </div>
           )}
         </section>

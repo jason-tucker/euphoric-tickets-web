@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0] — 2026-06-05 — Drop the host/client distinction — every tenant is just a Team
+
+### Removed
+- **The host/client team distinction is gone.** `businesses.kind` (`host`/`client`), `businesses.parent_business_id`, and `tickets.client_business_id` are dropped from the schema — `drizzle-kit push --force` removes the columns on next deploy. Every tenant is now simply a **Team**.
+  - `/admin` create-team form loses the **Kind** and **Parent team** selectors; the page lists one flat **Teams** section (no more "Clients").
+  - The ticket queue (`/b/<slug>/tickets`) loses the **Client** column and the client filter — a team's queue is always the tickets it operates (`business_id`).
+  - `/t/new` no longer routes a submission to a "parent host" or tags a `client_business_id`.
+  - The ticket detail page no longer shows a "For client …" line.
+- **The per-team "terminology" toggle is gone.** `businesses.terminology` (`business`/`client`) and `src/lib/terminology.ts` are removed; the UI always says **Team**. The Terminology selector is dropped from team settings.
+- **Route rename:** the all-teams rollup moved from `/clients` to **`/teams`** (nav label "All teams"); `middleware.ts` updated to match.
+
+### Paired with
+- **Bot 0.7.0** — mirrors the schema drop (`kind` / `parent_business_id` / `client_business_id` / `terminology`) and removes the host/client options from `/admin business create` + `list`; auto-provisioning just inserts a team row.
+
 ## [0.6.56] — 2026-06-05 — Manage Server unlocks per-guild admin + a bot-owner Sudo dashboard (pairs with bot 0.6.0)
 
 ### Added
@@ -706,4 +720,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.56 · a1199ef`
+`v0.7.0 · f6a1677`

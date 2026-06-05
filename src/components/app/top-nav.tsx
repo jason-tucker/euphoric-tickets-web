@@ -122,7 +122,7 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 )}
                 {(isSudo || myBusinesses.some((b) => b.level === 'admin' || b.level === 'owner')) && (
                   <DropdownMenuItem asChild>
-                    <Link href="/clients">All teams / clients</Link>
+                    <Link href="/teams">All teams</Link>
                   </DropdownMenuItem>
                 )}
                 {isSudo && (
@@ -132,7 +132,7 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                       Sudo
                     </DropdownMenuLabel>
                     <DropdownMenuItem asChild>
-                      <Link href="/admin">Teams &amp; clients</Link>
+                      <Link href="/admin">Teams</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/admin/bot">Bot dashboard</Link>

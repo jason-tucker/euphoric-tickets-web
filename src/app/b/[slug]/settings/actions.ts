@@ -24,7 +24,6 @@ const settingsSchema = z.object({
   discordFallbackCategoryId: snowflake.optional().or(z.literal('')),
   discordClosedCategoryId: snowflake.optional().or(z.literal('')),
   deleteClosedAfterDays: z.string().regex(/^\d+$/).optional().or(z.literal('')),
-  terminology: z.enum(['business', 'client']),
   // Which ticket system this team runs.
   ticketMode: z.enum(['euphoric', 'tickettool']).optional(),
   // TicketTool coexistence: CSV of GUILD_CATEGORY snowflakes to watch (empty
@@ -48,7 +47,6 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     discordFallbackCategoryId: String(formData.get('discordFallbackCategoryId') ?? '').trim(),
     discordClosedCategoryId: String(formData.get('discordClosedCategoryId') ?? '').trim(),
     deleteClosedAfterDays: String(formData.get('deleteClosedAfterDays') ?? '').trim(),
-    terminology: (formData.get('terminology') === 'client' ? 'client' : 'business') as 'business' | 'client',
     ticketMode: (formData.get('ticketMode') === 'tickettool' ? 'tickettool' : 'euphoric') as 'euphoric' | 'tickettool',
     ticketToolCategoryIds: String(formData.get('ticketToolCategoryIds') ?? '').trim().replace(/\s+/g, ''),
     ticketToolPrefix: String(formData.get('ticketToolPrefix') ?? '').trim(),
@@ -80,7 +78,6 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
       deleteClosedAfterDays: parsed.data.deleteClosedAfterDays
         ? Number(parsed.data.deleteClosedAfterDays)
         : null,
-      terminology: parsed.data.terminology,
       ticketMode: parsed.data.ticketMode ?? 'euphoric',
       ticketToolCategoryIds: parsed.data.ticketToolCategoryIds ?? '',
       ticketToolPrefix: parsed.data.ticketToolPrefix ?? '$',

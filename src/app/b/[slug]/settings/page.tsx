@@ -214,30 +214,6 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Display</CardTitle>
-            <CardDescription>How this tenant is named in the UI.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              <Label htmlFor="terminology">Terminology</Label>
-              <select
-                id="terminology"
-                name="terminology"
-                defaultValue={business.terminology}
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="business">Team</option>
-                <option value="client">Client</option>
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Affects navigation labels. Same data either way.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
         <SubmitButton pendingChildren="Saving…">Save settings</SubmitButton>
       </form>
 
