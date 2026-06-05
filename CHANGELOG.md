@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.52] — 2026-06-05 — Docs: restructure README to the shared two-repo structure
+
+### Changed
+- **README restructured to the shared section order** used by the sibling bot
+  ([`euphoric-tickets`](https://github.com/jason-tucker/euphoric-tickets)):
+  Overview → Architecture → Stack → Quick start → Configuration → Usage →
+  Deployment → Conventions. Existing content (routes table, permission model,
+  feature tour, env table, scaling/backups) was kept and reorganized, with the
+  data model, the per-user webhook-spoof anti-pattern, and the iframe-safe /
+  no-Cloudflare-proxy constraints called out explicitly. Verified against source
+  (`src/server/permissions.ts`, `src/db/schema/*`, `src/lib/discord.ts`).
+- **Fixed the stale README footer** (was `v0.6.22`) to track the
+  version-from-`package.json` convention.
+
+Docs only — no runtime change.
+
 ## [0.6.51] — 2026-06-05 — Full mobile optimization for the phone-width CEF iframe
 
 ### Changed
