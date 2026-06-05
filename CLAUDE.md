@@ -43,6 +43,8 @@ A web frontend for the `euphoric-tickets` Discord bot. Multi-tenant: any Discord
 
 A user can belong to several businesses. The top-nav has a business switcher. URLs are scoped to `/b/<slug>/...`. Admin and end-user views live side-by-side; admin role is what unlocks `/b/<slug>/tickets` and `/b/<slug>/settings`. End users always hit `/dashboard` for the cross-business "my tickets" view.
 
+**Admin vs Sudo.** Per-guild **admin** (Manage Server / Administrator / a Ticket Master role) manages a single team via its own `/b/<slug>` pages. Bot-owner **sudo** (the `users.is_sudo` flag) gets the `/admin/*` "Sudo" area — team/client CRUD (`/admin`), the bot dashboard with **bot name** + **force-leave server** controls (`/admin/bot`), and bot errors (`/admin/errors`). The nav surfaces this as a **Sudo** tab.
+
 ---
 
 ## Routes
@@ -73,6 +75,7 @@ Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
 | `ticket_categories` | businessId × key × label × emoji × description — drives the open-ticket form's category picker |
 | `tickets` | businessId × openerId × categoryId × subject × status × assigneeId × openedAt × closedAt × lastActivityAt |
 | `ticket_messages` | ticketId × authorId × body × source (`web` / `discord`) × discordMessageId × createdAt |
+| `app_settings` | Bot-owner global key/value settings (e.g. `bot_name`), set on the Sudo dashboard (`/admin/bot`) and applied to the bot via its internal HTTP |
 
 `ticket_messages.source = 'discord'` rows arrive via a future webhook-ingestion endpoint the bot will POST to (not yet wired in v0.1.0 — for now the web view shows only what the web has sent).
 

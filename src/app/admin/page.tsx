@@ -24,11 +24,20 @@ export default async function AdminPage() {
     <>
       <TopNav />
       <main className="container max-w-3xl space-y-6 py-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Admin</h1>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold">Sudo</h1>
           <p className="text-sm text-muted-foreground">
-            Sudo-only. Create and list every team in the app.
+            Bot-owner only. Create and list every team in the app. Per-guild settings live on each
+            team&apos;s own page.
           </p>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Link href="/admin/bot" className="rounded-md border px-2.5 py-1 hover:bg-accent">
+              Bot dashboard &amp; controls
+            </Link>
+            <Link href="/admin/errors" className="rounded-md border px-2.5 py-1 hover:bg-accent">
+              Bot errors
+            </Link>
+          </div>
         </div>
 
         <Card>
