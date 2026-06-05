@@ -415,7 +415,7 @@ export default async function TicketDetailPage({
             />
           )}
           {canRename && (
-            <form action={rename} className="flex items-center gap-1">
+            <form action={rename} className="flex flex-wrap items-center gap-1">
               <input
                 name="name"
                 required

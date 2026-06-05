@@ -39,7 +39,18 @@
   }
 }
 
-/* Mobile-first: extra-tight gutters for FiveM CEF phone screens (~360px). */
+/* Mobile-first: the container's default 1rem gutter wastes width on a
+   phone-sized iframe, so step it down below `sm`, then again on the very
+   narrowest FiveM CEF phone screens (~360px). */
+@media (max-width: 640px) {
+  .container { padding-left: 0.875rem; padding-right: 0.875rem; }
+}
 @media (max-width: 380px) {
   .container { padding-left: 0.75rem; padding-right: 0.75rem; }
+}
+
+/* Long unbreakable tokens — Discord snowflakes, webhook URLs, inline code —
+   must never force horizontal scroll on a phone-width iframe. */
+@media (max-width: 640px) {
+  code { overflow-wrap: anywhere; }
 }
