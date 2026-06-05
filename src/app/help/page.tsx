@@ -106,7 +106,7 @@ export default function HelpPage() {
             <li><strong>Assign</strong> it to a teammate — <code>/tickets assign @user</code>, or the dropdown on the web.</li>
             <li><strong>Add / remove people</strong> — <code>/tickets add @user</code> / <code>remove</code>, or the <strong>People</strong> card on the web.</li>
             <li><strong>Internal notes</strong> — staff-only notes, never shown to the opener. Add them from the web ticket page; they live in a private Discord thread.</li>
-            <li><strong>Close / reopen</strong> — close saves a transcript; on the web, closing archives the channel so it can be reopened.</li>
+            <li><strong>Close / reopen</strong> — close saves a transcript; on the web, closing archives the channel so it can be reopened. If the channel was already deleted (or a TicketTool channel was deleted by TicketTool), reopen creates a fresh native channel and silently replays the last 20 messages of context.</li>
             <li><strong>Rename</strong> — <code>/tickets rename new-name</code> (the ticket number is kept).</li>
             <li><strong>List</strong> — <code>/tickets list</code> shows every open ticket.</li>
           </ul>
@@ -195,7 +195,8 @@ export default function HelpPage() {
             </Faq>
             <Faq q="A ticket says its channel went missing.">
               The bot noticed the Discord channel was deleted. Your transcript is safe here on the
-              web — an admin can reopen or close the ticket to tidy up.
+              web — an admin can reopen the ticket (which spins up a fresh channel and silently
+              replays the last 20 messages) or close it to tidy up.
             </Faq>
             <Faq q="Can someone outside the server join a ticket?">
               Yes — an admin can add them by Discord ID. They&apos;ll get a DM with a link, sign in

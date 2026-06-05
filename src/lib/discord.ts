@@ -174,10 +174,14 @@ export type WebhookPostInput = {
   // Allow the webhook to ping nobody by default — we don't want web replies
   // accidentally pinging the role channel.
   allowedMentions?: { parse?: ('roles' | 'users' | 'everyone')[]; roles?: string[]; users?: string[] }
+  // SUPPRESS_NOTIFICATIONS — Discord delivers the message without pinging
+  // anyone or pushing a notification. Used by the conversation replay on
+  // reopen so the new channel doesn't notification-spam staff.
+  silent?: boolean
 }
 
 export async function postWebhook(input: WebhookPostInput): Promise<{ id: string } | null> {
-  const { webhookUrl, username, avatarUrl, content, embeds, allowedMentions } = input
+  const { webhookUrl, username, avatarUrl, content, embeds, allowedMentions, silent } = input
   // ?wait=true makes Discord return the created message object, so we can
   // persist the discordMessageId on our ticket_messages row.
   const url = webhookUrl.includes('?') ? `${webhookUrl}&wait=true` : `${webhookUrl}?wait=true`
@@ -188,6 +192,7 @@ export async function postWebhook(input: WebhookPostInput): Promise<{ id: string
     allowed_mentions: allowedMentions ?? { parse: [] },
   }
   if (embeds) body.embeds = embeds
+  if (silent) body.flags = 1 << 12 // SUPPRESS_NOTIFICATIONS
 
   const res = await fetch(url, {
     method: 'POST',
@@ -307,6 +312,35 @@ export async function archiveTicketChannel(input: {
 
   const patch: Record<string, unknown> = { name: newName }
   if (closedCategoryId) patch.parent_id = closedCategoryId
+
+  await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
+// Inverse of `archiveTicketChannel`: strip the `closed-` prefix and move the
+// channel back to a chosen parent category. Used by reopen for native tickets
+// whose channel was archived (not deleted). Best-effort — no throw on 404 so
+// a reopen still completes its DB writes if Discord disagrees.
+export async function unarchiveTicketChannel(input: {
+  botToken: string
+  channelId: string
+  parentId: string | null
+  prefix?: string
+}): Promise<void> {
+  const { botToken, channelId, parentId, prefix = 'closed-' } = input
+
+  const currentRes = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  })
+  if (!currentRes.ok) return
+  const current = (await currentRes.json()) as { name?: string; parent_id?: string | null }
+
+  const stripped = (current.name ?? 'ticket').replace(new RegExp(`^${prefix}`), '')
+  const patch: Record<string, unknown> = { name: stripped.slice(0, 90) }
+  if (parentId) patch.parent_id = parentId
 
   await fetch(`${DISCORD_API}/channels/${channelId}`, {
     method: 'PATCH',
