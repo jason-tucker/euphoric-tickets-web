@@ -37,6 +37,21 @@ export async function fetchGuildMemberAsBot(
   return (await res.json()) as DiscordGuildMember & { avatar?: string | null }
 }
 
+// List the guilds the BOT itself is in (bot token). Used by the sudo Bot
+// dashboard's force-leave list. `/users/@me/guilds` returns up to 200 guilds
+// per page; this bot is well under that, so we don't paginate.
+export async function fetchBotGuilds(
+  botToken: string,
+): Promise<Array<{ id: string; name: string; icon: string | null }>> {
+  const res = await fetch(`${DISCORD_API}/users/@me/guilds`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`fetchBotGuilds failed: ${res.status} ${await res.text()}`)
+  const raw = (await res.json()) as Array<{ id: string; name: string; icon: string | null }>
+  return raw.map((g) => ({ id: g.id, name: g.name, icon: g.icon ?? null }))
+}
+
 // ===== P3 (lantern) — guild directory bulk lookups ==========================
 // Used by the searchable Discord picker on the settings + members surfaces.
 // All three use the bot token; the bot must be in the guild and have the

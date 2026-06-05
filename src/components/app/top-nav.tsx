@@ -62,7 +62,7 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
               href="/admin"
               className="hidden rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-block"
             >
-              Admin
+              Sudo
             </Link>
           )}
           <Link
@@ -128,8 +128,11 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 {isSudo && (
                   <>
                     <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                      Sudo
+                    </DropdownMenuLabel>
                     <DropdownMenuItem asChild>
-                      <Link href="/admin">Admin</Link>
+                      <Link href="/admin">Teams &amp; clients</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/admin/bot">Bot dashboard</Link>

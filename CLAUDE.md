@@ -31,14 +31,19 @@ A web frontend for the `euphoric-tickets` Discord bot. Multi-tenant: any Discord
 
 - Auth.js v5 with the Discord provider; JWT session.
 - On login Discord returns the user's `guilds` array; we store the snapshot on the session and resolve per-business permissions from `business.discord_guild_id`.
-- For each business the user is "in" (their Discord guilds intersect), we check:
-  - If their member roles in that guild ∩ `business.admin_role_ids` → admin
-  - Otherwise → member (can only see their own tickets in that business)
-- Permission resolution lives in `src/server/permissions.ts` — every protected route/server action calls `requireBusinessAccess(slug, level)`.
+- For each business the user is "in" (their Discord guilds intersect), we resolve a level:
+  - Discord **ADMINISTRATOR** (or the guild owner) → `owner`
+  - Discord **Manage Server** (`MANAGE_GUILD`, bit `1 << 5`) → `admin`
+  - A "Ticket Master" role — member roles in that guild ∩ `business.admin_role_ids` → `admin`
+  - Otherwise → `member` (can only see their own tickets in that business)
+- Permission resolution lives in `src/server/permissions.ts` — every protected route/server action calls `requireBusinessAccess(slug, level)`. The Manage-Server / owner bits come straight from the OAuth guild snapshot; the role-level Ticket Master check needs the bot token and runs only in `resolveBusinessAccess`.
+- **Businesses are auto-provisioned by the bot.** The `euphoric-tickets` bot creates a `host` business row for any guild it joins (and backfills existing guilds on startup), so a guild generally has a row by the time anyone logs in here. The web's `/admin` create form is still there for manual/edge cases.
 
 ### Multi-business
 
 A user can belong to several businesses. The top-nav has a business switcher. URLs are scoped to `/b/<slug>/...`. Admin and end-user views live side-by-side; admin role is what unlocks `/b/<slug>/tickets` and `/b/<slug>/settings`. End users always hit `/dashboard` for the cross-business "my tickets" view.
+
+**Admin vs Sudo.** Per-guild **admin** (Manage Server / Administrator / a Ticket Master role) manages a single team via its own `/b/<slug>` pages. Bot-owner **sudo** (the `users.is_sudo` flag) gets the `/admin/*` "Sudo" area — team/client CRUD (`/admin`), the bot dashboard with **bot name** + **force-leave server** controls (`/admin/bot`), and bot errors (`/admin/errors`). The nav surfaces this as a **Sudo** tab.
 
 ---
 
@@ -70,6 +75,7 @@ Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
 | `ticket_categories` | businessId × key × label × emoji × description — drives the open-ticket form's category picker |
 | `tickets` | businessId × openerId × categoryId × subject × status × assigneeId × openedAt × closedAt × lastActivityAt |
 | `ticket_messages` | ticketId × authorId × body × source (`web` / `discord`) × discordMessageId × createdAt |
+| `app_settings` | Bot-owner global key/value settings (e.g. `bot_name`), set on the Sudo dashboard (`/admin/bot`) and applied to the bot via its internal HTTP |
 
 `ticket_messages.source = 'discord'` rows arrive via a future webhook-ingestion endpoint the bot will POST to (not yet wired in v0.1.0 — for now the web view shows only what the web has sent).
 

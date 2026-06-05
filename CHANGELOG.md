@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.56] — 2026-06-05 — Manage Server unlocks per-guild admin + a bot-owner Sudo dashboard (pairs with bot 0.6.0)
+
+### Added
+- **Bot-owner "Sudo" controls on the Bot dashboard** (`/admin/bot`, sudo-only). Two new controls:
+  - **Bot name** — persists to the new `app_settings` store and pushes the bot's global Discord username via the bot's internal endpoint. The name is saved even when Discord rejects the push (it rate-limits username changes to ≈2/hour); the page shows that as a warning so the next save reapplies it.
+  - **Servers** — lists every guild the bot is in (via the bot token, `fetchBotGuilds`), maps each to its team(s), and offers a confirm-gated **Force leave** that asks the bot to leave (team rows stay in the DB).
+- **`app_settings` table** — a flat key/value store for bot-owner global settings; created by the entrypoint's `drizzle-kit push`. Accessors in `src/server/appSettings.ts`; the web→bot control bridge is `src/server/botControl.ts` (same `BOT_INTERNAL_URL` + `INTERNAL_TOKEN` transport as the TicketTool/DM bridges).
+- **Nav: the sudo area is now labelled "Sudo"** (it was "Admin") to match the model — **Admin** = per-guild admin (each team's own pages, now reachable by Manage Server holders), **Sudo** = bot-owner global controls.
+
+### Changed
+- **Discord's Manage Server permission now grants per-guild admin.** `deriveLevel` (the cheap dashboard path) and `resolveBusinessAccess` (the protected-route resolver) previously treated only **ADMINISTRATOR** as `owner` and everyone else as `member` until a role-level check. They now also read the **MANAGE_GUILD** bit (`1 << 5 = 32`) from the OAuth guild snapshot and resolve those users to `admin` — unlocking `/b/<slug>` settings, the ticket queue, and reply/claim/close. ADMINISTRATOR (and the guild owner, whose snapshot carries the bit) still resolve to `owner`. The existing "Ticket Master" role check (`business.admin_role_ids`, fetched via the bot token) is unchanged and is now short-circuited when Manage Server already granted admin, saving a Discord round-trip per gated page view.
+
+### Paired with
+- **Bot 0.6.0** — auto-provisions a `host` team row for any guild it joins (so every server a user shares with the bot appears in the unified dashboard, with no manual setup), applies the same Manage Server / Ticket Master gate to panels + settings on the Discord side, and serves the two internal endpoints behind the Sudo dashboard (`/api/internal/bot/username`, `/api/internal/guild/leave`).
+
 ## [0.6.55] — 2026-06-05 — Reopen recreates a deleted channel + replays the convo (and adopts TicketTool tickets whose channel is gone)
 
 ### Added
@@ -691,4 +706,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.54 · 118d445`
+`v0.6.56 · a1199ef`

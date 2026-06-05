@@ -2,16 +2,54 @@ import Link from 'next/link'
 import { desc, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/app/top-nav'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { SubmitButton } from '@/components/app/submit-button'
 import { requireSudo } from '@/server/sudo'
+import { getAppSetting } from '@/server/appSettings'
+import { fetchBotGuilds } from '@/lib/discord'
 import { db } from '@/db/client'
 import { botErrors, businesses, tickets } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
+import { setBotNameAction } from './actions'
+import { LeaveGuildButton } from './leave-guild-button'
 
 // P15 (lantern) — sudo-only bot dashboard: health-at-a-glance + recent errors
-// + system-wide counts. Bot-questions tab folded in as a counts row (the
-// dedicated is_bot_questions category flag is a follow-up).
-export default async function AdminBotPage() {
+// + system-wide counts. Sudo controls (bot name, force-leave guilds) live here
+// too — this is the bot-owner surface behind the nav's "Sudo" tab.
+export default async function AdminBotPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ok?: string; warn?: string }>
+}) {
   await requireSudo()
+  const sp = await searchParams
+
+  // Sudo controls data: persisted bot name + the bot's live guild list.
+  const botName = await getAppSetting('bot_name')
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  let guilds: Array<{ id: string; name: string; icon: string | null }> = []
+  let guildsError: string | null = null
+  if (!botToken) {
+    guildsError = 'DISCORD_BOT_TOKEN is not set on the web service.'
+  } else {
+    try {
+      guilds = await fetchBotGuilds(botToken)
+      guilds.sort((a, b) => a.name.localeCompare(b.name))
+    } catch (err) {
+      guildsError = String(err)
+    }
+  }
+
+  const teamRows = await db
+    .select({ slug: businesses.slug, name: businesses.name, guildId: businesses.discordGuildId })
+    .from(businesses)
+  const teamsByGuild = new Map<string, Array<{ slug: string; name: string }>>()
+  for (const t of teamRows) {
+    const arr = teamsByGuild.get(t.guildId) ?? []
+    arr.push({ slug: t.slug, name: t.name })
+    teamsByGuild.set(t.guildId, arr)
+  }
 
   const [errorAgg] = await db
     .select({
@@ -50,8 +88,95 @@ export default async function AdminBotPage() {
       <main className="container max-w-4xl space-y-6 py-6">
         <div>
           <h1 className="text-2xl font-semibold">Bot dashboard</h1>
-          <p className="text-sm text-muted-foreground">Sudo-only. System health at a glance.</p>
+          <p className="text-sm text-muted-foreground">
+            Sudo-only. System health, plus bot-owner controls (bot name, force-leave servers).
+          </p>
         </div>
+
+        {sp.ok && (
+          <div className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
+            {sp.ok}
+          </div>
+        )}
+        {sp.warn && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+            {sp.warn}
+          </div>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Bot identity</CardTitle>
+            <CardDescription>
+              Sets the bot&apos;s global Discord username. Discord rate-limits username changes to
+              roughly twice an hour — if it bounces, the name is still saved and the next attempt
+              will apply it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={setBotNameAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="botName">Bot name</Label>
+                <Input
+                  id="botName"
+                  name="botName"
+                  defaultValue={botName ?? ''}
+                  placeholder="Euphoric Tickets"
+                  minLength={2}
+                  maxLength={32}
+                  required
+                />
+              </div>
+              <SubmitButton pendingChildren="Saving…">Save name</SubmitButton>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Servers ({guilds.length})</CardTitle>
+            <CardDescription>
+              Every guild the bot is currently in. Force-leaving severs the bot&apos;s access there;
+              the team&apos;s tickets stay in the database.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {guildsError ? (
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                Couldn&apos;t load the bot&apos;s servers: {guildsError}
+              </p>
+            ) : guilds.length === 0 ? (
+              <p className="text-sm text-muted-foreground">The bot isn&apos;t in any server.</p>
+            ) : (
+              guilds.map((g) => {
+                const teams = teamsByGuild.get(g.id) ?? []
+                return (
+                  <div
+                    key={g.id}
+                    className="flex items-center gap-3 border-t py-2 text-sm first:border-t-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{g.name}</div>
+                      <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                        <span className="font-mono">{g.id}</span>
+                        {teams.length > 0 ? (
+                          teams.map((t) => (
+                            <Link key={t.slug} href={`/b/${t.slug}`} className="text-primary hover:underline">
+                              /{t.slug}
+                            </Link>
+                          ))
+                        ) : (
+                          <span className="italic">no team row</span>
+                        )}
+                      </div>
+                    </div>
+                    <LeaveGuildButton guildId={g.id} guildName={g.name} />
+                  </div>
+                )
+              })
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {stat('Teams', counts?.teams ?? 0)}
