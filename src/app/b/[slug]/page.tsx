@@ -94,9 +94,9 @@ export default async function BusinessOverviewPage({
           <CardTitle className="text-base">My recent tickets</CardTitle>
           <CardDescription>Tickets you've opened in {business.name}.</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 sm:p-0">
           {myTickets.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No tickets yet.</div>
+            <div className="px-4 py-6 text-sm text-muted-foreground sm:p-6">No tickets yet.</div>
           ) : (
             <Table>
               <TableHeader>
@@ -140,7 +140,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'ope
   } as const
   return (
     <Card>
-      <CardContent className="py-4">
+      <CardContent className="py-4 sm:py-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
         <div className={`mt-1 text-2xl font-semibold ${colorByTone[tone]}`}>{value}</div>
       </CardContent>

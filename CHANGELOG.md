@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.51] — 2026-06-05 — Full mobile optimization for the phone-width CEF iframe
+
+### Changed
+- **Responsive card padding.** `Card` content/header/footer now use `p-4` on phones and `sm:p-6` on larger screens, reclaiming ~16px of width on each side at 360px without changing the desktop look. The table cards that render flush (`p-0`) and the compact stat cards were pinned (`p-0 sm:p-0` / `py-4 sm:py-4`) so they stay correct on desktop.
+- **Tighter mobile gutters.** The `.container` gutter steps down to `0.875rem` below `sm` (and the existing `0.75rem` under 380px), so content isn't double-padded by the container *and* the cards on a narrow iframe.
+- **Top nav no longer crowds on mobile.** The standalone **Admin** link (sudo only) is hidden below `sm` — it's already in the profile dropdown — so the logo, business switcher, Help, and avatar fit a 360px bar without overflow.
+- **Board search rows wrap.** The subject-search input on `/tickets` and `/b/[slug]/tickets` now flexes to fill the row and wraps the Apply/Clear controls below it on narrow screens instead of squeezing into one line.
+
+### Fixed
+- **No more horizontal overflow from menus/popovers on a phone.** Dropdown menus are capped at `max-w-[calc(100vw-1rem)]`, the default popover width is now `min(18rem, 100vw-1.5rem)`, and dialogs get a `2rem` viewport gutter, full rounding, and a scrollable `max-h` so they never exceed the screen. Long unbreakable tokens (Discord IDs, webhook URLs, inline `code`) wrap instead of forcing a horizontal scrollbar.
+- **Ticket-detail rename control wraps** its input + button on very narrow widths instead of overflowing the action row.
+
 ## [0.6.50] — 2026-06-05 — Dashboard: closed tickets hidden by default + Show closed toggle
 
 ### Changed
@@ -634,4 +646,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.6.35 · ddd0db5`
+`v0.6.51 · b51789d`

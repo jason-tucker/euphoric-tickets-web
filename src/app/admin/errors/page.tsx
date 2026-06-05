@@ -61,9 +61,9 @@ export default async function AdminErrorsPage({
         </div>
 
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="p-0 sm:p-0">
             {rows.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">No errors logged. 🎉</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground sm:p-6">No errors logged. 🎉</div>
             ) : (
               <Table>
                 <TableHeader>

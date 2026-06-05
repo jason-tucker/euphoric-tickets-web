@@ -71,7 +71,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
         </div>
 
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="p-4 sm:p-6">
             <form action={openTicketAction} className="space-y-4">
               {parentId && <input type="hidden" name="parentTicketId" value={parentId} />}
               {parentId && (
