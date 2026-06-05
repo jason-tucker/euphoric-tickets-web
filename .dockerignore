@@ -1,0 +1,37 @@
+# Build context excludes. Keep this in sync with the Dockerfile's needs:
+# the builder does `COPY . .` then `pnpm install`, so package.json,
+# pnpm-lock.yaml, src/, public/, scripts/, drizzle.docker.config.cjs and the
+# *.config.* / tsconfig files MUST stay in context. Everything below is either
+# regenerated in the image, irrelevant to the build, or a secret.
+
+# --- secrets: the whole reason this file exists -----------------------------
+# Without a .dockerignore, `COPY . .` would bake a host .env into the image
+# (CI builds from a clean git checkout so it's fine there, but a local
+# `docker compose build` on the VPS would leak it). Never ship .env.
+.env
+.env.*
+!.env.example
+
+# --- VCS / CI / tooling -----------------------------------------------------
+.git
+.github
+.claude
+.vscode
+.idea
+
+# --- dependencies & build output (reinstalled / rebuilt in the image) -------
+node_modules
+.next
+out
+dist
+*.tsbuildinfo
+
+# --- deploy / compose / ops (not used inside the image) ----------------------
+docker-compose.yml
+docker-compose.combined.yml
+ops
+
+# --- docs & misc ------------------------------------------------------------
+*.md
+.DS_Store
+*.log
