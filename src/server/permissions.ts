@@ -36,16 +36,17 @@ function deriveLevel(b: Business, guilds: DiscordGuildSnapshot[]): AccessLevel |
   const g = guilds.find((g) => g.id === b.discordGuildId)
   if (!g) return null
 
-  // Discord guild permissions bitfield: ADMINISTRATOR = 1 << 3 = 8.
+  // Discord guild permissions bitfield: ADMINISTRATOR = 1 << 3 = 8,
+  // MANAGE_GUILD ("Manage Server") = 1 << 5 = 32.
   const perms = BigInt(g.permissions || '0')
-  const isGuildAdmin = (perms & 8n) === 8n
-  if (isGuildAdmin) return 'owner'
+  if ((perms & 8n) === 8n) return 'owner'
+  if ((perms & 32n) === 32n) return 'admin'
 
-  // Admin if the user has any role in the configured admin role IDs.
-  // We don't have per-role data on the snapshot; the OAuth scope `guilds`
-  // alone returns only owner / permissions. For role-level admin checks
-  // we'd need `guilds.members.read` + a separate /users/@me/guilds/{id}/member
-  // request. Implemented in `resolveBusinessAccess` below.
+  // Otherwise the user may still be a role-level admin ("Ticket Master" — a
+  // role in the team's admin_role_ids). We don't have per-role data on the
+  // snapshot; the OAuth scope `guilds` alone returns only owner / permissions.
+  // That role-level check needs the bot's view of the member and is done in
+  // `resolveBusinessAccess` below.
   return 'member'
 }
 
@@ -115,21 +116,26 @@ export const resolveBusinessAccess = cache(async function resolveBusinessAccess(
   if (!guild) return null
 
   const adminRoleIds = parseCsv(b.adminRoleIds)
+  const perms = BigInt(guild.permissions || '0')
 
-  // Owner check — guild ADMINISTRATOR permission overrides everything.
-  const isGuildAdmin = (BigInt(guild.permissions || '0') & 8n) === 8n
-  if (isGuildAdmin) {
+  // Owner check — guild ADMINISTRATOR (and the guild owner) overrides everything.
+  if ((perms & 8n) === 8n) {
     await touchMember(b.id, session.user.id, 'owner', [])
     return { business: b, level: 'owner' }
   }
 
-  // Role-level admin check requires the bot's view of the member.
-  // Available via the bot token; we only do this on protected routes so we
-  // can afford one Discord request per gated page view.
   let level: AccessLevel = 'member'
   let roleSnapshot: string[] = []
+
+  // Manage Server → admin: per-guild settings, panels, and the ticket queue.
+  if ((perms & 32n) === 32n) level = 'admin'
+
+  // Role-level "Ticket Master" admin — any role in admin_role_ids. Requires the
+  // bot's view of the member; skip the Discord round-trip when Manage Server
+  // already granted admin. We only do this on protected routes, so one Discord
+  // request per gated page view is affordable.
   const botToken = process.env.DISCORD_BOT_TOKEN
-  if (botToken && adminRoleIds.length > 0) {
+  if (level !== 'admin' && botToken && adminRoleIds.length > 0) {
     try {
       const { fetchGuildMemberAsBot } = await import('@/lib/discord')
       const member = await fetchGuildMemberAsBot(botToken, b.discordGuildId, session.user.discordId)

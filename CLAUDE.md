@@ -31,10 +31,13 @@ A web frontend for the `euphoric-tickets` Discord bot. Multi-tenant: any Discord
 
 - Auth.js v5 with the Discord provider; JWT session.
 - On login Discord returns the user's `guilds` array; we store the snapshot on the session and resolve per-business permissions from `business.discord_guild_id`.
-- For each business the user is "in" (their Discord guilds intersect), we check:
-  - If their member roles in that guild ∩ `business.admin_role_ids` → admin
-  - Otherwise → member (can only see their own tickets in that business)
-- Permission resolution lives in `src/server/permissions.ts` — every protected route/server action calls `requireBusinessAccess(slug, level)`.
+- For each business the user is "in" (their Discord guilds intersect), we resolve a level:
+  - Discord **ADMINISTRATOR** (or the guild owner) → `owner`
+  - Discord **Manage Server** (`MANAGE_GUILD`, bit `1 << 5`) → `admin`
+  - A "Ticket Master" role — member roles in that guild ∩ `business.admin_role_ids` → `admin`
+  - Otherwise → `member` (can only see their own tickets in that business)
+- Permission resolution lives in `src/server/permissions.ts` — every protected route/server action calls `requireBusinessAccess(slug, level)`. The Manage-Server / owner bits come straight from the OAuth guild snapshot; the role-level Ticket Master check needs the bot token and runs only in `resolveBusinessAccess`.
+- **Businesses are auto-provisioned by the bot.** The `euphoric-tickets` bot creates a `host` business row for any guild it joins (and backfills existing guilds on startup), so a guild generally has a row by the time anyone logs in here. The web's `/admin` create form is still there for manual/edge cases.
 
 ### Multi-business
 
