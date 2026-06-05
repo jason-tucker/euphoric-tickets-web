@@ -270,7 +270,13 @@ export default async function TicketDetailPage({
   const canClose = t.status !== 'closed' && ticketAccess.canClose && !isExternal
   const canClaim = t.status !== 'closed' && ticketAccess.canClaim && !isExternal
   const canAssign = canClaim
-  const canReopen = t.status === 'closed' && ticketAccess.canClaim && !isExternal
+  // Reopen rules: staff/admin only; closed; AND either a native ticket OR a
+  // TicketTool ticket whose channel has been deleted (in which case reopening
+  // promotes it to a native ticket — see `reopenTicket` in actions.ts).
+  const canReopen =
+    t.status === 'closed' &&
+    ticketAccess.canClaim &&
+    (!isExternal || !t.discordChannelId)
   const canDelete = t.status === 'closed' && ticketAccess.canDeleteChannel && Boolean(t.discordChannelId) && !isExternal
   const canRequestClose = t.status !== 'closed' && ticketAccess.canClose && isExternal
   // Rename now works on native tickets too (renames the Discord channel we own),
@@ -457,7 +463,7 @@ export default async function TicketDetailPage({
           Closed {relativeTime(t.closedAt)}.
           {t.discordChannelId
             ? ' Discord channel was moved to the closed category.'
-            : ' Discord channel has been deleted; transcript stays here.'}
+            : ` Discord channel has been deleted; transcript stays here. Reopen to spin up a fresh channel${isExternal ? ' (which promotes this to a native ticket)' : ''}.`}
         </div>
       )}
 

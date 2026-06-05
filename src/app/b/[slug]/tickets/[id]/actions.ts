@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
 import { businesses, ticketCategories, tickets, ticketMessages, ticketExternalMembers, users } from '@/db/schema'
@@ -16,7 +16,9 @@ import {
   addChannelMember,
   archiveTicketChannel,
   changeTicketChannelCategory,
+  createChannelWebhook,
   createPrivateThread,
+  createTicketChannel,
   deleteDiscordChannel,
   fetchDiscordUser,
   fetchGuildMemberAsBot,
@@ -26,6 +28,7 @@ import {
   removeChannelMember,
   renameDiscordChannel,
   resolveWebhookIdentity,
+  unarchiveTicketChannel,
 } from '@/lib/discord'
 import { avatarUrl, statusLabel } from '@/lib/format'
 import { notify } from '@/server/notify'
@@ -867,20 +870,291 @@ export async function requestCloseTicketToolTicket(
   return { ok: true }
 }
 
+// Channel slug for a freshly-created reopened ticket channel — matches the
+// `${id}-${slug}` shape used by /t/new so reopens are visually consistent.
+function reopenChannelSlug(subject: string, id: number): string {
+  const slug = subject
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80)
+  return `${id}-${slug || 'ticket'}`
+}
+
+// Replay the most-recent user-facing messages into a freshly-created channel
+// via the per-ticket webhook. Internal staff notes are NEVER replayed (they'd
+// leak to the opener once the channel exists). Each post is silenced
+// (SUPPRESS_NOTIFICATIONS) and paced ~500ms apart to stay well inside the
+// per-webhook rate budget (5 req / 2s). Capped at the last 20 to keep the
+// whole replay under ~12s — anything larger is summarized in the header.
+const REPLAY_CAP = 20
+const REPLAY_INTERVAL_MS = 500
+
+type ReplayableMessage = {
+  body: string
+  createdAt: Date
+  source: 'web' | 'discord' | 'system' | 'internal'
+  authorDiscordId: string | null
+  authorName: string | null
+  authorImage: string | null
+  attachmentCount: number
+}
+
+async function loadReplayableMessages(ticketId: number): Promise<ReplayableMessage[]> {
+  const rows = await db
+    .select({
+      body: ticketMessages.body,
+      createdAt: ticketMessages.createdAt,
+      source: ticketMessages.source,
+      attachments: ticketMessages.attachments,
+      authorDiscordId: users.discordId,
+      authorName: users.name,
+      authorImage: users.image,
+    })
+    .from(ticketMessages)
+    .leftJoin(users, eq(users.id, ticketMessages.authorUserId))
+    .where(eq(ticketMessages.ticketId, ticketId))
+    .orderBy(asc(ticketMessages.createdAt))
+  return rows
+    .filter((r) => r.source !== 'internal')
+    .map((r) => ({
+      body: r.body,
+      createdAt: r.createdAt,
+      source: r.source as ReplayableMessage['source'],
+      authorDiscordId: r.authorDiscordId,
+      authorName: r.authorName,
+      authorImage: r.authorImage,
+      attachmentCount: Array.isArray(r.attachments) ? r.attachments.length : 0,
+    }))
+}
+
+async function replayConversationViaWebhook(opts: {
+  webhookUrl: string
+  botToken: string | undefined
+  guildId: string
+  messages: ReplayableMessage[]
+}): Promise<void> {
+  for (const m of opts.messages) {
+    const fallbackName = m.authorName ?? 'Past message'
+    const identity =
+      opts.botToken && m.authorDiscordId
+        ? await resolveWebhookIdentity({
+            botToken: opts.botToken,
+            guildId: opts.guildId,
+            discordUserId: m.authorDiscordId,
+            globalName: fallbackName,
+            globalAvatarUrl: m.authorImage,
+          })
+        : { username: fallbackName, avatarUrl: m.authorImage }
+    const stamp = new Date(m.createdAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
+    const attachmentNote =
+      m.attachmentCount > 0
+        ? `\n_(${m.attachmentCount} attachment${m.attachmentCount === 1 ? '' : 's'} — see the web for original media)_`
+        : ''
+    const body = (m.body || '_(no text)_').slice(0, 1800)
+    const content = `-# 📜 ${stamp}\n${body}${attachmentNote}`
+    try {
+      await postWebhook({
+        webhookUrl: opts.webhookUrl,
+        username: identity.username.slice(0, 80),
+        avatarUrl: identity.avatarUrl,
+        content,
+        silent: true,
+      })
+    } catch (err) {
+      console.error('[reopenTicket] replay post failed; continuing', err)
+    }
+    await new Promise((r) => setTimeout(r, REPLAY_INTERVAL_MS))
+  }
+}
+
 export async function reopenTicket(slug: string, ticketId: number): Promise<void> {
   const ctx = await loadTicketAccess(slug, ticketId)
   if (!ctx) return
   if (!ctx.flags.canClaim) return
+  const { session, business: businessRow, ticket: t } = ctx
+  const wasTicketTool = isTicketTool(t)
+  // TicketTool gate: reopen is only allowed when the channel was deleted.
+  // While the channel still exists, TicketTool owns the lifecycle and the
+  // user should use `$reopen` from inside the channel instead.
+  if (wasTicketTool && t.discordChannelId) return
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  const channelExists = Boolean(t.discordChannelId)
+
+  // Path A — native ticket with the archived channel still present: unarchive
+  // (move back to the original parent + strip `closed-` prefix). No replay.
+  if (channelExists && !wasTicketTool && botToken && t.discordChannelId) {
+    let parentId: string | null = businessRow.discordFallbackCategoryId ?? null
+    if (t.categoryId) {
+      const [c] = await db
+        .select({ override: ticketCategories.discordParentCategoryId })
+        .from(ticketCategories)
+        .where(eq(ticketCategories.id, t.categoryId))
+        .limit(1)
+      if (c?.override) parentId = c.override
+    }
+    try {
+      await unarchiveTicketChannel({
+        botToken,
+        channelId: t.discordChannelId,
+        parentId,
+      })
+    } catch (err) {
+      console.error('[reopenTicket] unarchive failed', err)
+    }
+  }
+
+  // Path B — no channel (native was hard-deleted, or TicketTool deleted its
+  // own channel). Create a fresh native channel + webhook, post a header
+  // embed, and replay the last 20 user-facing messages via silent webhook
+  // posts. If this was a TicketTool ticket, also promote it to native — the
+  // channel is gone and TicketTool no longer owns the lifecycle.
+  let newChannelInfo: { id: string; name: string } | null = null
+  let newWebhookInfo: { id: string; url: string } | null = null
+  if (!channelExists && botToken && businessRow.discordGuildId) {
+    const parentId =
+      (t.categoryId
+        ? (
+            await db
+              .select({ override: ticketCategories.discordParentCategoryId })
+              .from(ticketCategories)
+              .where(eq(ticketCategories.id, t.categoryId))
+              .limit(1)
+          )[0]?.override
+        : null) ?? businessRow.discordFallbackCategoryId ?? null
+
+    // Resolve opener's discord id so the new channel grants them view+send.
+    const [opener] = await db
+      .select({ discordId: users.discordId })
+      .from(users)
+      .where(eq(users.id, t.openerUserId))
+      .limit(1)
+
+    try {
+      const channel = await createTicketChannel({
+        botToken,
+        guildId: businessRow.discordGuildId,
+        parentCategoryId: parentId,
+        name: reopenChannelSlug(t.subject, t.id),
+        topic: `Reopened ticket #${t.id} — replayed history below`,
+        openerDiscordId: opener?.discordId ?? undefined,
+      })
+      // Claim the channel in `newChannelInfo` as soon as Discord acked the
+      // create — even if the webhook step below throws, the DB will still
+      // link the new channel to this ticket (no leaked orphan channels).
+      newChannelInfo = channel
+      const webhook = await createChannelWebhook({
+        botToken,
+        channelId: channel.id,
+        name: 'Euphoric Tickets',
+      })
+      newWebhookInfo = { id: webhook.id, url: webhook.url }
+
+      const messages = await loadReplayableMessages(t.id)
+      const totalCount = messages.length
+      const toReplay = messages.slice(-REPLAY_CAP)
+      const truncated = totalCount > REPLAY_CAP
+
+      // Header embed — orients staff so the replayed lines below have context.
+      const headerLines: string[] = [
+        `**Subject:** ${t.subject}`,
+        `**Opener:** ${opener?.discordId ? `<@${opener.discordId}>` : 'unknown'}`,
+        `**Originally opened:** <t:${Math.floor(new Date(t.openedAt).getTime() / 1000)}:f>`,
+      ]
+      if (t.closedAt) {
+        headerLines.push(`**Previously closed:** <t:${Math.floor(new Date(t.closedAt).getTime() / 1000)}:R>`)
+      }
+      headerLines.push(`**Reopened by:** <@${session.user.discordId}>`)
+      if (wasTicketTool) {
+        headerLines.push(`_This was a TicketTool ticket; promoted to native because the original channel was deleted._`)
+      }
+      if (totalCount === 0) {
+        headerLines.push(`_No prior conversation to replay._`)
+      } else {
+        headerLines.push(
+          truncated
+            ? `_Replaying the last **${toReplay.length}** of **${totalCount}** messages (silent)._`
+            : `_Replaying **${toReplay.length}** message${toReplay.length === 1 ? '' : 's'} (silent)._`,
+        )
+      }
+      try {
+        await postWebhook({
+          webhookUrl: webhook.url,
+          username: 'Euphoric Tickets',
+          avatarUrl: null,
+          content: '',
+          silent: true,
+          embeds: [
+            {
+              title: `🔓 Ticket #${t.id} reopened`,
+              description: headerLines.join('\n'),
+              color: 0x22c55e,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        })
+      } catch (err) {
+        console.error('[reopenTicket] header embed post failed', err)
+      }
+
+      if (toReplay.length > 0) {
+        await replayConversationViaWebhook({
+          webhookUrl: webhook.url,
+          botToken,
+          guildId: businessRow.discordGuildId,
+          messages: toReplay,
+        })
+      }
+    } catch (err) {
+      console.error('[reopenTicket] channel recreation failed', err)
+    }
+  }
+
+  // DB writes — flip status; promote tickettool→euphoric if we recreated the
+  // channel; persist the new channel/webhook ids; mark needsAttention cleared
+  // (the channel is healthy again).
   await db
     .update(tickets)
-    .set({ status: 'open', closedAt: null, closedByUserId: null, lastActivityAt: sql`now()` })
+    .set({
+      status: 'open',
+      closedAt: null,
+      closedByUserId: null,
+      lastActivityAt: sql`now()`,
+      needsAttention: false,
+      ...(newChannelInfo
+        ? {
+            discordChannelId: newChannelInfo.id,
+            discordWebhookId: newWebhookInfo?.id ?? null,
+            discordWebhookUrl: newWebhookInfo?.url ?? null,
+            discordInternalThreadId: null,
+          }
+        : {}),
+      ...(wasTicketTool && newChannelInfo ? { externalSource: 'euphoric' as const } : {}),
+    })
     .where(eq(tickets.id, ticketId))
-  await postStatus(ctx.ticket, `Ticket reopened by <@${ctx.session.user.discordId}>`)
+
+  // Post the reopen footer into whichever channel is live now (existing
+  // archive-unarchived, or the fresh one). For path B `postStatus` needs the
+  // new channelId — use it directly rather than the stale ticket row.
+  const liveChannelId = newChannelInfo?.id ?? t.discordChannelId
+  if (botToken && liveChannelId) {
+    await postChannelStatus({
+      botToken,
+      channelId: liveChannelId,
+      text: `Ticket reopened by <@${session.user.discordId}>`,
+    })
+  }
+
   await writeAudit({
     businessId: ctx.business.id,
     ticketId,
-    actorUserId: ctx.session.user.id,
+    actorUserId: session.user.id,
     action: 'reopened',
+    metadata: {
+      recreatedChannel: Boolean(newChannelInfo),
+      promotedFromTicketTool: wasTicketTool && Boolean(newChannelInfo),
+    },
   })
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)
 }
