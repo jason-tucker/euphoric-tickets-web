@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.2] — 2026-06-06 — Footer version opens the changelog
+
+### Added
+- **The footer version is now a button that pops up the changelog.** Clicking `v<x.y.z>` opens a dialog rendering `CHANGELOG.md`. The file is inlined into the bundle at build time (an `asset/source` webpack rule in `next.config.ts` + a `*.md` type declaration), so it ships in the standalone Docker image without a runtime file read. A small built-in Markdown renderer handles the headings / lists / inline formatting we use — no new dependency.
+
 ## [0.7.1] — 2026-06-06 — Show the app version in a site footer
 
 ### Added
@@ -728,4 +733,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.1 · b9d371f`
+`v0.7.2 · 7516de7`

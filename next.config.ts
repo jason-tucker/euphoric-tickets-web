@@ -30,6 +30,14 @@ const nextConfig: NextConfig = {
   // iframe (same as info.euphoric.fm). Disabling powered-by header is a
   // minor hardening cosmetic.
   poweredByHeader: false,
+
+  // Let modules `import changelog from '../CHANGELOG.md'` and get the raw file
+  // contents as a string. Baked into the bundle at build time, so it works in
+  // the standalone Docker image without copying the file into the runtime.
+  webpack: (config) => {
+    config.module.rules.push({ test: /\.md$/, type: 'asset/source' })
+    return config
+  },
 }
 
 export default nextConfig
