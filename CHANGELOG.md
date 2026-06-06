@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.3] — 2026-06-06 — Fix: ship CHANGELOG.md in the Docker build context
+
+### Fixed
+- **The 0.7.2 build failed** with `Module not found: Can't resolve '../../../CHANGELOG.md'`. `.dockerignore` excludes `*.md`, so `CHANGELOG.md` wasn't in the `COPY . .` build context and the changelog dialog's `asset/source` import couldn't resolve inside the builder. Added `!CHANGELOG.md` to keep just that file in context (other docs stay excluded). No prod impact — the failed build never produced an image, so the site stayed on 0.7.1.
+
 ## [0.7.2] — 2026-06-06 — Footer version opens the changelog
 
 ### Added
@@ -733,4 +738,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.2 · 7516de7`
+`v0.7.3 · 6ba1014`
