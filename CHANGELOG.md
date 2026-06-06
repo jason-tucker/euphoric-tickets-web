@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.8.2] — 2026-06-06 — Tickets console: invert the team-visibility toggle
+
+### Changed
+- **The team filter now shows every team you can see by default.** The bottom-right toggle is inverted: it's **"Hide admin-only teams," off by default**, and turning it **on** narrows the view to just the teams you staff (hiding the teams you only administer). Previously the default hid admin-only teams, so an owner/admin who holds no explicit category staff role saw an empty or near-empty console and had to enable a toggle to see their own teams — backwards. Off = everything; on = staffed-only. `?team=<slug>` deep-links to an admin-only team un-hide it as before.
+
 ## [0.8.1] — 2026-06-06 — Tickets console: per-column filters, staff-first teams, guild identities
 
 ### Added

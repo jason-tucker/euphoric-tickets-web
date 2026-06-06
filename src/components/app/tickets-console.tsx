@@ -72,7 +72,7 @@ const STATUS_ORDER: Record<string, number> = {
   closed: 5,
 }
 
-const LS_KEY = 'et-tickets-console-v2'
+const LS_KEY = 'et-tickets-console-v3'
 
 function statusMatches(s: string, filter: string): boolean {
   if (filter === 'all') return true
@@ -140,7 +140,7 @@ export function TicketsConsole({
   const router = useRouter()
   const [data, setData] = useState<TicketsConsoleData>(initial)
   const [selectedTeams, setSelectedTeams] = useState<string[]>([])
-  const [showAdmin, setShowAdmin] = useState(false)
+  const [hideAdmin, setHideAdmin] = useState(false)
   const [status, setStatus] = useState<string>('active')
   const [assignee, setAssignee] = useState<Assignee>('all')
   const [query, setQuery] = useState('')
@@ -159,14 +159,14 @@ export function TicketsConsole({
       if (raw) {
         const p = JSON.parse(raw) as Partial<{
           teams: string[]
-          showAdmin: boolean
+          hideAdmin: boolean
           status: string
           assignee: Assignee
           sort: { key: SortKey; dir: Dir }
           density: Density
         }>
         if (Array.isArray(p.teams)) setSelectedTeams(p.teams)
-        if (typeof p.showAdmin === 'boolean') setShowAdmin(p.showAdmin)
+        if (typeof p.hideAdmin === 'boolean') setHideAdmin(p.hideAdmin)
         if (typeof p.status === 'string') setStatus(p.status)
         if (p.assignee) setAssignee(p.assignee)
         if (p.sort?.key) setSort({ key: p.sort.key, dir: p.sort.dir === 'asc' ? 'asc' : 'desc' })
@@ -179,7 +179,7 @@ export function TicketsConsole({
       const team = initial.teams.find((t) => t.slug === initialTeamSlug)
       if (team) {
         setSelectedTeams([team.id])
-        if (team.admin && !team.staff) setShowAdmin(true)
+        if (team.admin && !team.staff) setHideAdmin(false)
         // Drop the query param so in-view filtering stays URL-free.
         try {
           window.history.replaceState(null, '', '/tickets')
@@ -199,12 +199,12 @@ export function TicketsConsole({
     try {
       localStorage.setItem(
         LS_KEY,
-        JSON.stringify({ teams: selectedTeams, showAdmin, status, assignee, sort, density }),
+        JSON.stringify({ teams: selectedTeams, hideAdmin, status, assignee, sort, density }),
       )
     } catch {
       /* storage full / disabled — non-fatal */
     }
-  }, [selectedTeams, showAdmin, status, assignee, sort, density])
+  }, [selectedTeams, hideAdmin, status, assignee, sort, density])
 
   // Live data: SSE nudge → debounced silent refetch, with poll + focus fallback.
   const refetch = useCallback(async () => {
@@ -280,11 +280,12 @@ export function TicketsConsole({
   }, [refetch])
 
   const teams = data.teams
-  // Default view shows only teams you staff; admin-only teams (you administer
-  // but hold no staff role in) hide behind the toggle. Default off.
+  // Default shows every team you can see; the toggle opts into hiding the
+  // admin-only ones (teams you administer but hold no staff role in). Off by
+  // default — you should never have to enable a toggle to see your own teams.
   const visibleTeams = useMemo(
-    () => (showAdmin ? teams : teams.filter((t) => !(t.admin && !t.staff))),
-    [teams, showAdmin],
+    () => (hideAdmin ? teams.filter((t) => !(t.admin && !t.staff)) : teams),
+    [teams, hideAdmin],
   )
   const visibleTeamIds = useMemo(() => new Set(visibleTeams.map((t) => t.id)), [visibleTeams])
   const adminOnlyCount = useMemo(() => teams.filter((t) => t.admin && !t.staff).length, [teams])
@@ -436,8 +437,8 @@ export function TicketsConsole({
           adminOnlyCount={adminOnlyCount}
           selected={selectedTeams}
           onChange={setSelectedTeams}
-          showAdmin={showAdmin}
-          onToggleAdmin={setShowAdmin}
+          hideAdmin={hideAdmin}
+          onToggleHideAdmin={setHideAdmin}
         />
 
         <AssigneeFilter value={assignee} onChange={setAssignee} hasMe={!!meId} />
@@ -575,9 +576,9 @@ export function TicketsConsole({
                       'No tickets in your teams yet.'
                     ) : visibleTeams.length === 0 && !selectedTeams.length ? (
                       <>
-                        You don&apos;t staff any team yet. Turn on{' '}
-                        <span className="font-medium text-foreground">admin-only teams</span> in the team filter to see
-                        the teams you administer.
+                        You&apos;re hiding admin-only teams and don&apos;t staff any team yet. Turn off{' '}
+                        <span className="font-medium text-foreground">Hide admin-only teams</span> in the team filter to
+                        see the teams you administer.
                       </>
                     ) : (
                       'No tickets match these filters.'
@@ -833,16 +834,16 @@ function TeamFilter({
   adminOnlyCount,
   selected,
   onChange,
-  showAdmin,
-  onToggleAdmin,
+  hideAdmin,
+  onToggleHideAdmin,
 }: {
   teams: ConsoleTeam[]
   visibleTeams: ConsoleTeam[]
   adminOnlyCount: number
   selected: string[]
   onChange: (ids: string[]) => void
-  showAdmin: boolean
-  onToggleAdmin: (v: boolean) => void
+  hideAdmin: boolean
+  onToggleHideAdmin: (v: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
   const selectedSet = new Set(selected)
@@ -854,9 +855,9 @@ function TeamFilter({
   }
   const label =
     selected.length === 0
-      ? showAdmin
-        ? 'All teams'
-        : 'Staffed teams'
+      ? hideAdmin
+        ? 'Staffed teams'
+        : 'All teams'
       : selected.length === 1
         ? teams.find((t) => t.id === selected[0])?.name ?? '1 team'
         : `${selected.length} teams`
@@ -887,7 +888,7 @@ function TeamFilter({
           <CommandList>
             <CommandEmpty>No teams found.</CommandEmpty>
             <CommandItem value="__all_teams__" onSelect={() => onChange([])} className="justify-between">
-              <span>{showAdmin ? 'All teams' : 'All staffed teams'}</span>
+              <span>{hideAdmin ? 'All staffed teams' : 'All teams'}</span>
               {selected.length === 0 && <Check className="h-4 w-4" />}
             </CommandItem>
             {visibleTeams.map((t) => {
@@ -916,12 +917,12 @@ function TeamFilter({
         {adminOnlyCount > 0 && (
           <div className="flex items-center justify-between gap-3 border-t p-2">
             <div className="min-w-0">
-              <div className="text-[11px] font-medium">Show admin-only teams</div>
+              <div className="text-[11px] font-medium">Hide admin-only teams</div>
               <div className="text-[10px] text-muted-foreground">
                 {adminOnlyCount} you administer but do not staff
               </div>
             </div>
-            <Switch checked={showAdmin} onChange={onToggleAdmin} />
+            <Switch checked={hideAdmin} onChange={onToggleHideAdmin} />
           </div>
         )}
       </PopoverContent>
