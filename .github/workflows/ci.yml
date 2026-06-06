@@ -1,0 +1,49 @@
+name: CI
+
+# Pull-request gate. The deploy workflow only runs on push to `main`, so
+# before this there was nothing to fail a PR — a type error or a broken
+# `next build` only surfaced post-merge, where it silently blocks every
+# deploy (CI builds the image, not the VPS). This job reproduces the
+# Dockerfile's build so the same breakage fails the PR instead, and gives
+# branch protection a required check to gate auto-merge on.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # action-setup reads the pnpm version from package.json's
+      # `packageManager` field; it must run before setup-node's pnpm cache.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Mirrors the Dockerfile build stage: `next build` evaluates server
+      # modules, so DATABASE_URL must be set — a placeholder is fine, nothing
+      # connects at build time.
+      - name: Build
+        env:
+          DATABASE_URL: postgresql://placeholder/placeholder
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: pnpm build
