@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.1] — 2026-06-06 — Tickets console: per-column filters, staff-first teams, guild identities
+
+### Added
+- **Live per-column filter row** under the grid headers. Free-text columns (`#`, Subject, Opener, Assignee) filter **per character — no submit, no Enter**; the Category column is a **dynamic options dropdown** that lists exactly the values present in the data (with counts).
+- **Staff-first team filter.** The console now defaults to showing only the teams you actually **staff**. The team-filter popover has a **toggle (bottom-right) to reveal admin-only teams** — teams you administer but hold no staff role in — **off by default**. Each team in the list is tagged `staff` or `admin`.
+- **Team deep-links.** The "You administer" cards, the Teams page, and the (now-redirected) per-team queue all open the console **pre-filtered to that team** via `/tickets?team=<slug>`; the param is consumed and stripped so the view stays URL-free afterward (and an admin-only deep-link auto-reveals that team).
+
+### Changed
+- **Opener and assignee now show their Discord *server profile*** (per-guild nickname + server avatar) — matching what shows inside the ticket — instead of the global account name. Resolved through the cached guild-identity helper, falling back to the global profile when unavailable.
+- **Opened / Last activity now track the conversation**, not the ticket row's bookkeeping columns: **Opened = first message timestamp, Last activity = last message timestamp** (falling back to the ticket columns when there are no messages). Fixes drift on ingested TicketTool tickets.
+- **TicketTool tickets**: their channel-name `#` prefix is **stripped** from the Subject, and they show **"TicketTool"** in the Category column (and as a filterable category) instead of a blank.
+
+### Removed
+- **The per-team ticket queue (`/b/<slug>/tickets`)** — it now redirects to the console (`/tickets?team=<slug>`), and the per-team sub-nav drops its **Tickets** tab (Overview + Settings remain). The per-ticket detail view `/b/<slug>/tickets/<id>` is unchanged.
+- **The Priority column** — `tickets.priority` has no configuration surface anywhere (every ticket is the `2`/"Normal" default), so it was noise.
+
 ## [0.8.0] — 2026-06-06 — Tickets console: a live cross-team data grid + one consolidated header
 
 ### Added

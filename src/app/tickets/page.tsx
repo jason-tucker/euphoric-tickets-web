@@ -10,14 +10,18 @@ import { getTicketsConsoleData, ticketsConsoleScope } from '@/server/tickets'
 // URL changes, or spinners once you're here.
 export const dynamic = 'force-dynamic'
 
-export default async function TicketsPage() {
+export default async function TicketsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ team?: string }>
+}) {
   const session = await requireSession()
   const scope = await ticketsConsoleScope()
   // Console is for people who manage or staff tickets; everyone else has the
   // personal "Overview" (My tickets) view.
   if (!scope.canUse) redirect('/dashboard')
 
-  const data = await getTicketsConsoleData()
+  const [data, sp] = await Promise.all([getTicketsConsoleData(), searchParams])
 
   return (
     <>
@@ -30,7 +34,7 @@ export default async function TicketsPage() {
             things change.
           </p>
         </div>
-        <TicketsConsole initial={data} meId={session.user.id} />
+        <TicketsConsole initial={data} meId={session.user.id} initialTeamSlug={sp.team} />
       </main>
     </>
   )

@@ -9,10 +9,10 @@
 //   - the user opened it (in any team they belong to).
 // Sudo users administer every team, so they see everything.
 
-import { and, desc, eq, inArray, or, type SQL } from 'drizzle-orm'
+import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '@/db/client'
-import { businesses, ticketCategories, tickets, users } from '@/db/schema'
+import { businesses, ticketCategories, ticketMessages, tickets, users } from '@/db/schema'
 import { auth } from './auth'
 import { listMyBusinesses, listMyStaffCategoryIds } from './permissions'
 
@@ -23,7 +23,6 @@ export type ConsoleTicket = {
   subject: string
   status: string
   kind: string
-  priority: number
   needsAttention: boolean
   externalSource: string
   openedAt: string
@@ -45,7 +44,7 @@ export type ConsoleTicket = {
   assigneeImage: string | null
 }
 
-export type ConsoleTeam = { id: string; name: string; slug: string; admin: boolean }
+export type ConsoleTeam = { id: string; name: string; slug: string; admin: boolean; staff: boolean }
 
 export type TicketsConsoleData = {
   tickets: ConsoleTicket[]
@@ -60,7 +59,7 @@ const EMPTY: TicketsConsoleData = { tickets: [], teams: [], generatedAt: '' }
 export type ConsoleScope = {
   canUse: boolean
   isAdminAnywhere: boolean
-  adminTeams: ConsoleTeam[]
+  adminTeams: { id: string; name: string; slug: string }[]
 }
 
 export async function ticketsConsoleScope(): Promise<ConsoleScope> {
@@ -68,9 +67,9 @@ export async function ticketsConsoleScope(): Promise<ConsoleScope> {
   if (!session?.user?.id) return { canUse: false, isAdminAnywhere: false, adminTeams: [] }
 
   const my = await listMyBusinesses()
-  const adminTeams: ConsoleTeam[] = my
+  const adminTeams = my
     .filter((b) => b.level === 'admin' || b.level === 'owner')
-    .map((b) => ({ id: b.business.id, name: b.business.name, slug: b.business.slug, admin: true }))
+    .map((b) => ({ id: b.business.id, name: b.business.name, slug: b.business.slug }))
     .sort((a, b) => a.name.localeCompare(b.name))
   const isAdminAnywhere = adminTeams.length > 0
 
@@ -83,6 +82,13 @@ export async function ticketsConsoleScope(): Promise<ConsoleScope> {
     canUse = staffCatIds.length > 0
   }
   return { canUse, isAdminAnywhere, adminTeams }
+}
+
+// Normalize an aggregate timestamp (Date or ISO string, depending on the
+// driver) to an ISO string, falling back to `fallback` when there's no value.
+function toIso(d: Date | string | null | undefined, fallback: Date): string {
+  if (d == null) return fallback.toISOString()
+  return (typeof d === 'string' ? new Date(d) : d).toISOString()
 }
 
 export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
@@ -116,7 +122,6 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       subject: tickets.subject,
       status: tickets.status,
       kind: tickets.kind,
-      priority: tickets.priority,
       needsAttention: tickets.needsAttention,
       externalSource: tickets.externalSource,
       openedAt: tickets.openedAt,
@@ -133,9 +138,11 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       openerId: tickets.openerUserId,
       openerName: users.name,
       openerImage: users.image,
+      openerDiscordId: users.discordId,
       assigneeId: tickets.assigneeUserId,
       assigneeName: assignee.name,
       assigneeImage: assignee.image,
+      assigneeDiscordId: assignee.discordId,
     })
     .from(tickets)
     .innerJoin(businesses, eq(businesses.id, tickets.businessId))
@@ -146,32 +153,96 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
     .orderBy(desc(tickets.lastActivityAt))
     .limit(1000)
 
-  const ticketsOut: ConsoleTicket[] = rows.map((r) => ({
-    id: r.id,
-    subject: r.subject,
-    status: r.status,
-    kind: r.kind,
-    priority: r.priority,
-    needsAttention: r.needsAttention,
-    externalSource: r.externalSource,
-    openedAt: r.openedAt.toISOString(),
-    lastActivityAt: r.lastActivityAt.toISOString(),
-    closedAt: r.closedAt ? r.closedAt.toISOString() : null,
-    teamId: r.teamId,
-    teamName: r.teamName,
-    teamSlug: r.teamSlug,
-    discordGuildId: r.discordGuildId,
-    discordChannelId: r.discordChannelId,
-    categoryId: r.categoryId,
-    categoryLabel: r.categoryLabel,
-    categoryEmoji: r.categoryEmoji,
-    openerId: r.openerId,
-    openerName: r.openerName,
-    openerImage: r.openerImage,
-    assigneeId: r.assigneeId,
-    assigneeName: r.assigneeName,
-    assigneeImage: r.assigneeImage,
-  }))
+  // Opened / Last activity should track the real conversation, not the ticket
+  // row's bookkeeping columns (which drift for ingested TicketTool tickets):
+  // first message timestamp = opened, last message timestamp = last activity.
+  // One grouped aggregate over ticket_messages; fall back to the ticket columns
+  // when a ticket has no messages yet.
+  const ids = rows.map((r) => r.id)
+  const msgTimes = new Map<number, { first: Date | string | null; last: Date | string | null }>()
+  if (ids.length) {
+    const agg = await db
+      .select({
+        ticketId: ticketMessages.ticketId,
+        firstAt: sql<Date | null>`min(${ticketMessages.createdAt})`,
+        lastAt: sql<Date | null>`max(${ticketMessages.createdAt})`,
+      })
+      .from(ticketMessages)
+      .where(inArray(ticketMessages.ticketId, ids))
+      .groupBy(ticketMessages.ticketId)
+    for (const a of agg) msgTimes.set(a.ticketId, { first: a.firstAt, last: a.lastAt })
+  }
+
+  // Opener/assignee identities should match what shows inside a Discord ticket
+  // — the per-guild server nickname + server avatar, not the global account.
+  // resolveGuildIdentities is cached ~5 min per (guild,user), so the live
+  // refetch path stays cheap; we fall back to the global users.* on any miss.
+  const identityByGuild = new Map<string, Map<string, { name: string; image: string | null }>>()
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (botToken) {
+    const byGuild = new Map<string, Set<string>>()
+    for (const r of rows) {
+      if (!r.discordGuildId) continue
+      const set = byGuild.get(r.discordGuildId) ?? new Set<string>()
+      if (r.openerDiscordId) set.add(r.openerDiscordId)
+      if (r.assigneeDiscordId) set.add(r.assigneeDiscordId)
+      byGuild.set(r.discordGuildId, set)
+    }
+    const { resolveGuildIdentities } = await import('@/lib/discord')
+    await Promise.all(
+      [...byGuild.entries()].map(async ([gid, gids]) => {
+        try {
+          identityByGuild.set(gid, await resolveGuildIdentities(botToken, gid, [...gids]))
+        } catch {
+          /* guild unreachable — fall back to global identities */
+        }
+      }),
+    )
+  }
+
+  const ticketsOut: ConsoleTicket[] = rows.map((r) => {
+    const gm = r.discordGuildId ? identityByGuild.get(r.discordGuildId) : undefined
+    const openerIdent = r.openerDiscordId ? gm?.get(r.openerDiscordId) : undefined
+    const assigneeIdent = r.assigneeDiscordId ? gm?.get(r.assigneeDiscordId) : undefined
+    const mt = msgTimes.get(r.id)
+    return {
+      id: r.id,
+      subject: r.subject,
+      status: r.status,
+      kind: r.kind,
+      needsAttention: r.needsAttention,
+      externalSource: r.externalSource,
+      openedAt: toIso(mt?.first, r.openedAt),
+      lastActivityAt: toIso(mt?.last, r.lastActivityAt),
+      closedAt: r.closedAt ? r.closedAt.toISOString() : null,
+      teamId: r.teamId,
+      teamName: r.teamName,
+      teamSlug: r.teamSlug,
+      discordGuildId: r.discordGuildId,
+      discordChannelId: r.discordChannelId,
+      categoryId: r.categoryId,
+      categoryLabel: r.categoryLabel,
+      categoryEmoji: r.categoryEmoji,
+      openerId: r.openerId,
+      openerName: openerIdent?.name ?? r.openerName,
+      openerImage: openerIdent?.image ?? r.openerImage,
+      assigneeId: r.assigneeId,
+      assigneeName: assigneeIdent?.name ?? r.assigneeName,
+      assigneeImage: assigneeIdent?.image ?? r.assigneeImage,
+    }
+  })
+
+  // Which teams the user actually *staffs* (holds a staff role in a category of)
+  // vs only administers — drives the console's default team filter (staff-only
+  // by default, admin-only teams behind a toggle).
+  const staffTeamIds = new Set<string>()
+  if (staffCatIds.length) {
+    const catRows = await db
+      .select({ businessId: ticketCategories.businessId })
+      .from(ticketCategories)
+      .where(inArray(ticketCategories.id, staffCatIds))
+    for (const c of catRows) staffTeamIds.add(c.businessId)
+  }
 
   // The team facet is *every* team the user can see — not just teams that
   // currently have a ticket — so the multi-select stays stable as you filter.
@@ -181,6 +252,7 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       name: b.business.name,
       slug: b.business.slug,
       admin: b.level === 'admin' || b.level === 'owner',
+      staff: staffTeamIds.has(b.business.id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 

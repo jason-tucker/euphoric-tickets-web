@@ -2,16 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, ListChecks, Settings } from 'lucide-react'
+import { LayoutDashboard, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Item = { href: string; label: string; icon: React.ReactNode; adminOnly?: boolean }
 
+// Tickets are no longer per-team — they live in the unified /tickets console
+// (reachable from the global header), so this team sub-nav only carries the
+// team's own Overview + Settings.
 export function BusinessNav({ slug, isAdmin }: { slug: string; isAdmin: boolean }) {
   const pathname = usePathname()
   const items: Item[] = [
     { href: `/b/${slug}`, label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { href: `/b/${slug}/tickets`, label: 'Tickets', icon: <ListChecks className="h-4 w-4" />, adminOnly: true },
     { href: `/b/${slug}/settings`, label: 'Settings', icon: <Settings className="h-4 w-4" />, adminOnly: true },
   ]
   const visible = items.filter((i) => !i.adminOnly || isAdmin)

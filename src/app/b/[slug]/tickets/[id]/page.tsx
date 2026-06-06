@@ -299,7 +299,7 @@ export default async function TicketDetailPage({
     <main className="container max-w-4xl space-y-4 py-6 lg:max-w-6xl">
       <LiveRefresh ticketId={t.id} />
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href={isAdmin ? `/b/${slug}/tickets` : '/dashboard'} className="inline-flex items-center gap-1 hover:text-foreground">
+        <Link href={isAdmin ? `/tickets?team=${slug}` : '/dashboard'} className="inline-flex items-center gap-1 hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" />
           {isAdmin ? 'All tickets' : 'My tickets'}
         </Link>
