@@ -477,6 +477,29 @@ export async function resolveGuildIdentities(
   return out
 }
 
+// A member's role IDs within a guild (bot-token read), cached ~5 min per
+// (guild,user). The tickets console uses this to decide whether the viewer
+// holds a real staff role in a team — independent of the cached
+// business_members role snapshot, which is empty for admins/sudo (their roles
+// are never fetched during permission resolution).
+const memberRolesCache = new Map<string, { at: number; roles: string[] | null }>()
+const MEMBER_ROLES_TTL_MS = 5 * 60 * 1000
+
+export async function fetchGuildMemberRoles(
+  botToken: string,
+  guildId: string,
+  userId: string,
+): Promise<string[] | null> {
+  const key = `${guildId}:${userId}`
+  const cached = memberRolesCache.get(key)
+  if (cached && Date.now() - cached.at < MEMBER_ROLES_TTL_MS) return cached.roles
+
+  const m = await fetchGuildMemberAsBot(botToken, guildId, userId).catch(() => null)
+  const roles = m?.roles ?? null
+  memberRolesCache.set(key, { at: Date.now(), roles })
+  return roles
+}
+
 // P16: fetch any Discord user by id (works for users NOT in a shared guild).
 export async function fetchDiscordUser(
   botToken: string,

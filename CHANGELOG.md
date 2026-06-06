@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.8.3] — 2026-06-06 — Tickets console: detect staff teams from live Discord roles
+
+### Fixed
+- **A team you both administer and staff is now correctly tagged `staff` (and shown by default), not `admin` (hidden).** The `staff` tag means "you hold a real Discord staff role in one of this team's ticket categories" — staff is the *primary* reason for access; admin is the fallback for categories you'd otherwise never reach. Previously the staff check read the cached `business_members` role snapshot, which `resolveBusinessAccess` stores **empty** for admins and sudo users (it never fetches their roles). So every team an admin/owner could see was reported as having "no staff role," mislabeled `admin`, and auto-hidden behind the *Hide admin-only teams* toggle — even teams where they genuinely held a staff role. The console now resolves the viewer's **live guild roles** (`fetchGuildMemberRoles`, cached ~5 min per guild) and intersects them with each category's `staff_role_ids`, so the `staff`/`admin` tag and the default visibility are accurate for admins and bot-owners too.
+
 ## [0.8.2] — 2026-06-06 — Tickets console: invert the team-visibility toggle
 
 ### Changed
