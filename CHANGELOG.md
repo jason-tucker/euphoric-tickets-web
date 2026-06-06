@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.4] — 2026-06-06 — One header everywhere; Settings team switcher; Team Admin/Staff badges
+
+### Changed
+- **There's never more than one header now.** The per-team sub-nav (`BusinessNav` — the second row of Overview/Settings tabs under `/b/<slug>`) is removed; the single app-wide top bar is the only header. Tickets already live in the global `/tickets` console, and team settings carry their own switcher (below).
+- **The Settings page has a team switcher at the top.** "Settings — &lt;team&gt;" is now a dropdown: pick which business/team you're editing without leaving the page (searchable; renders as plain text when you manage only one team). The standalone `/settings/teams` hub is gone — the header's **Settings** tab opens a team's settings directly, and `/settings/teams` redirects there.
+- **Team Admin and Team Staff are now distinct, role-based badges in the team filter.** A team shows a **Staff** badge when you hold a real staff role in one of its categories and an **Admin** badge when you administer it — and **both** when both apply, so the two ways you reach a team are each first-class. (Staff remains the primary reason a team shows by default; admin-only teams still hide behind the toggle.)
+
 ## [0.8.3] — 2026-06-06 — Tickets console: detect staff teams from live Discord roles
 
 ### Fixed
