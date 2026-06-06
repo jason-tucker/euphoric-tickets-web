@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.5] — 2026-06-06 — Add a pull-request CI gate (typecheck + build)
+
+### Added
+- **`.github/workflows/ci.yml` — a `pull_request` check that runs `pnpm typecheck` then `pnpm build`.** Until now the only workflow (`deploy.yml`) ran on push to `main`, so PRs had no checks: a type error or a build break only surfaced post-merge, where it silently blocks every deploy. The new job reproduces the Dockerfile's build (placeholder `DATABASE_URL`, Node 24, pnpm from `packageManager`) so that breakage fails the PR instead — and gives branch protection a required status check to gate **auto-merge** on. Enabling "Allow auto-merge" + a `main` ruleset that requires the `Typecheck & build` check is a repo-settings step (done in the GitHub UI), not part of this change.
+
 ## [0.7.4] — 2026-06-06 — My tickets: a true Staff tier alongside User and Admin
 
 ### Added
@@ -751,4 +756,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.4 · 16f2b1a`
+`v0.7.5 · 99177a3`
