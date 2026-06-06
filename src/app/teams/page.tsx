@@ -64,7 +64,7 @@ export default async function TeamsPage() {
             {adminScope.map((b) => {
               const s = statsByBusiness.get(b.id)
               return (
-                <Link key={b.id} href={`/b/${b.slug}/tickets`} className="block">
+                <Link key={b.id} href={`/tickets?team=${b.slug}`} className="block">
                   <Card className="transition-colors hover:bg-accent/50">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">

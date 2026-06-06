@@ -269,7 +269,7 @@ export default async function DashboardPage({
             <h2 className="mb-2 mt-8 text-lg font-semibold">You administer</h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {adminOf.map(({ business, level }) => (
-                <Link key={business.id} href={`/b/${business.slug}/tickets`} className="block">
+                <Link key={business.id} href={`/tickets?team=${business.slug}`} className="block">
                   <Card className="transition-colors hover:bg-accent/50">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">

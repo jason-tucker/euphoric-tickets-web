@@ -1,13 +1,12 @@
 'use client'
 
 // The cross-team tickets console — a dense, ConnectWise-Manage-style data grid.
-// Everything here is client-side: sorting, the multi-team filter, status, search
-// and assignee filters all run in memory off one dataset, so once you're on the
-// page there are no navigations, no URL changes and no spinners. The dataset
-// stays live via an SSE nudge (`/api/tickets/stream`) that triggers a silent
-// background refetch of `/api/tickets/list`, with a 20s poll + tab-focus refetch
-// as a fallback. Filter/sort/density preferences persist to localStorage so a
-// reload restores your view without ever touching the URL.
+// Everything here is client-side: sorting, the multi-team filter, the per-column
+// filter row, status/assignee/search all run in memory off one dataset, so once
+// you're on the page there are no navigations, no URL changes and no spinners.
+// The dataset stays live via an SSE nudge (`/api/tickets/stream`) that triggers a
+// silent background refetch of `/api/tickets/list`, with a 20s poll + tab-focus
+// refetch as a fallback. View preferences persist to localStorage.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -16,6 +15,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronsUpDown,
+  ChevronDown,
   Check,
   ExternalLink,
   Search,
@@ -41,7 +41,6 @@ type SortKey =
   | 'team'
   | 'category'
   | 'status'
-  | 'priority'
   | 'opener'
   | 'assignee'
   | 'opened'
@@ -73,14 +72,7 @@ const STATUS_ORDER: Record<string, number> = {
   closed: 5,
 }
 
-const PRIORITY: Record<number, { label: string; dot: string }> = {
-  1: { label: 'Urgent', dot: 'bg-red-500' },
-  2: { label: 'Normal', dot: 'bg-sky-500' },
-  3: { label: 'Low', dot: 'bg-muted-foreground/60' },
-  4: { label: 'Lowest', dot: 'bg-muted-foreground/30' },
-}
-
-const LS_KEY = 'et-tickets-console-v1'
+const LS_KEY = 'et-tickets-console-v2'
 
 function statusMatches(s: string, filter: string): boolean {
   if (filter === 'all') return true
@@ -99,9 +91,16 @@ function initials(name: string | null): string {
     .toUpperCase()
 }
 
-// Column definitions drive both the header (sortable) and the body, and carry
-// the responsive-hide class so the grid degrades gracefully on a phone-width
-// iframe while still allowing horizontal scroll for the rest.
+// TicketTool ticket subjects come in as channel names prefixed with `#`; strip
+// it for display. Their "category" is the third-party system itself.
+function displaySubject(t: ConsoleTicket): string {
+  if (t.externalSource !== 'tickettool') return t.subject
+  return t.subject.replace(/^#+\s*/, '').trim() || t.subject
+}
+function displayCategory(t: ConsoleTicket): string | null {
+  return t.categoryLabel ?? (t.externalSource === 'tickettool' ? 'TicketTool' : null)
+}
+
 type Column = {
   key: SortKey
   label: string
@@ -112,48 +111,62 @@ const COLUMNS: Column[] = [
   { key: 'id', label: '#', thClass: 'w-14', numeric: true },
   { key: 'subject', label: 'Subject' },
   { key: 'team', label: 'Team', thClass: 'hidden md:table-cell' },
-  { key: 'category', label: 'Category', thClass: 'hidden xl:table-cell' },
+  { key: 'category', label: 'Category', thClass: 'hidden lg:table-cell' },
   { key: 'status', label: 'Status', thClass: 'w-28' },
-  { key: 'priority', label: 'Priority', thClass: 'hidden lg:table-cell w-24' },
   { key: 'opener', label: 'Opener', thClass: 'hidden sm:table-cell' },
   { key: 'assignee', label: 'Assignee', thClass: 'hidden xl:table-cell' },
   { key: 'opened', label: 'Opened', thClass: 'hidden 2xl:table-cell w-28' },
   { key: 'last', label: 'Last activity', thClass: 'w-32' },
 ]
 
+type ColFilters = {
+  id: string
+  subject: string
+  opener: string
+  assignee: string
+  categories: string[]
+}
+const EMPTY_COL_FILTERS: ColFilters = { id: '', subject: '', opener: '', assignee: '', categories: [] }
+
 export function TicketsConsole({
   initial,
   meId,
+  initialTeamSlug,
 }: {
   initial: TicketsConsoleData
   meId: string
+  initialTeamSlug?: string
 }) {
   const router = useRouter()
   const [data, setData] = useState<TicketsConsoleData>(initial)
   const [selectedTeams, setSelectedTeams] = useState<string[]>([])
+  const [showAdmin, setShowAdmin] = useState(false)
   const [status, setStatus] = useState<string>('active')
   const [assignee, setAssignee] = useState<Assignee>('all')
   const [query, setQuery] = useState('')
+  const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_COL_FILTERS)
   const [sort, setSort] = useState<{ key: SortKey; dir: Dir }>({ key: 'last', dir: 'desc' })
   const [density, setDensity] = useState<Density>('comfortable')
   const [live, setLive] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const hydrated = useRef(false)
 
-  // Restore persisted view once, on mount (kept out of render to avoid an SSR
-  // hydration mismatch).
+  // Restore persisted view once, on mount; a `?team=` deep-link wins over the
+  // persisted team selection (and reveals that team if it's admin-only).
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY)
       if (raw) {
         const p = JSON.parse(raw) as Partial<{
           teams: string[]
+          showAdmin: boolean
           status: string
           assignee: Assignee
           sort: { key: SortKey; dir: Dir }
           density: Density
         }>
         if (Array.isArray(p.teams)) setSelectedTeams(p.teams)
+        if (typeof p.showAdmin === 'boolean') setShowAdmin(p.showAdmin)
         if (typeof p.status === 'string') setStatus(p.status)
         if (p.assignee) setAssignee(p.assignee)
         if (p.sort?.key) setSort({ key: p.sort.key, dir: p.sort.dir === 'asc' ? 'asc' : 'desc' })
@@ -162,7 +175,21 @@ export function TicketsConsole({
     } catch {
       /* ignore malformed storage */
     }
+    if (initialTeamSlug) {
+      const team = initial.teams.find((t) => t.slug === initialTeamSlug)
+      if (team) {
+        setSelectedTeams([team.id])
+        if (team.admin && !team.staff) setShowAdmin(true)
+        // Drop the query param so in-view filtering stays URL-free.
+        try {
+          window.history.replaceState(null, '', '/tickets')
+        } catch {
+          /* no-op */
+        }
+      }
+    }
     hydrated.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Persist on change (after the initial restore so we don't clobber storage
@@ -172,12 +199,12 @@ export function TicketsConsole({
     try {
       localStorage.setItem(
         LS_KEY,
-        JSON.stringify({ teams: selectedTeams, status, assignee, sort, density }),
+        JSON.stringify({ teams: selectedTeams, showAdmin, status, assignee, sort, density }),
       )
     } catch {
       /* storage full / disabled — non-fatal */
     }
-  }, [selectedTeams, status, assignee, sort, density])
+  }, [selectedTeams, showAdmin, status, assignee, sort, density])
 
   // Live data: SSE nudge → debounced silent refetch, with poll + focus fallback.
   const refetch = useCallback(async () => {
@@ -253,26 +280,62 @@ export function TicketsConsole({
   }, [refetch])
 
   const teams = data.teams
+  // Default view shows only teams you staff; admin-only teams (you administer
+  // but hold no staff role in) hide behind the toggle. Default off.
+  const visibleTeams = useMemo(
+    () => (showAdmin ? teams : teams.filter((t) => !(t.admin && !t.staff))),
+    [teams, showAdmin],
+  )
+  const visibleTeamIds = useMemo(() => new Set(visibleTeams.map((t) => t.id)), [visibleTeams])
+  const adminOnlyCount = useMemo(() => teams.filter((t) => t.admin && !t.staff).length, [teams])
+
+  const categoryOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of data.tickets) {
+      const c = displayCategory(t)
+      if (c) counts.set(c, (counts.get(c) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .map(([value, count]) => ({ value, label: value, count }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [data.tickets])
 
   const toggleSort = (key: SortKey) => {
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }))
   }
+  const setCol = (patch: Partial<ColFilters>) => setColFilters((p) => ({ ...p, ...patch }))
 
   // Everything except the status filter — so status-chip counts stay stable as
-  // you flip between statuses (the same trick the old server board used).
+  // you flip between statuses.
   const baseFiltered = useMemo(() => {
+    const allowed = selectedTeams.length ? new Set(selectedTeams) : visibleTeamIds
     const q = query.trim().toLowerCase()
+    const cf = colFilters
+    const fId = cf.id.trim()
+    const fSubject = cf.subject.trim().toLowerCase()
+    const fOpener = cf.opener.trim().toLowerCase()
+    const fAssignee = cf.assignee.trim().toLowerCase()
     return data.tickets.filter((t) => {
-      if (selectedTeams.length && !selectedTeams.includes(t.teamId)) return false
+      if (!allowed.has(t.teamId)) return false
       if (assignee === 'mine' && t.assigneeId !== meId) return false
       if (assignee === 'unassigned' && t.assigneeId) return false
-      if (q) {
-        const hay = `${t.id} ${t.subject} ${t.openerName ?? ''} ${t.assigneeName ?? ''} ${t.teamName} ${t.categoryLabel ?? ''}`.toLowerCase()
-        if (!hay.includes(q)) return false
-      }
+      const subj = displaySubject(t)
+      const cat = displayCategory(t)
+      if (
+        q &&
+        !`${t.id} ${subj} ${t.openerName ?? ''} ${t.assigneeName ?? ''} ${t.teamName} ${cat ?? ''}`
+          .toLowerCase()
+          .includes(q)
+      )
+        return false
+      if (fId && !String(t.id).includes(fId)) return false
+      if (fSubject && !subj.toLowerCase().includes(fSubject)) return false
+      if (fOpener && !(t.openerName ?? '').toLowerCase().includes(fOpener)) return false
+      if (fAssignee && !(t.assigneeName ?? '').toLowerCase().includes(fAssignee)) return false
+      if (cf.categories.length && (!cat || !cf.categories.includes(cat))) return false
       return true
     })
-  }, [data.tickets, selectedTeams, assignee, meId, query])
+  }, [data.tickets, selectedTeams, visibleTeamIds, assignee, meId, query, colFilters])
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -291,15 +354,13 @@ export function TicketsConsole({
         case 'id':
           return (a.id - b.id) * dir
         case 'subject':
-          return a.subject.localeCompare(b.subject) * dir
+          return displaySubject(a).localeCompare(displaySubject(b)) * dir
         case 'team':
           return a.teamName.localeCompare(b.teamName) * dir
         case 'category':
-          return (a.categoryLabel ?? '~').localeCompare(b.categoryLabel ?? '~') * dir
+          return (displayCategory(a) ?? '~').localeCompare(displayCategory(b) ?? '~') * dir
         case 'status':
           return ((STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9)) * dir
-        case 'priority':
-          return (a.priority - b.priority) * dir
         case 'opener':
           return (a.openerName ?? '~').localeCompare(b.openerName ?? '~') * dir
         case 'assignee':
@@ -313,16 +374,45 @@ export function TicketsConsole({
     return [...filtered].sort(cmp)
   }, [baseFiltered, status, sort])
 
+  const colFiltersActive =
+    !!(colFilters.id || colFilters.subject || colFilters.opener || colFilters.assignee) ||
+    colFilters.categories.length > 0
   const filtersActive =
-    selectedTeams.length > 0 || status !== 'active' || assignee !== 'all' || query.trim() !== ''
+    selectedTeams.length > 0 || status !== 'active' || assignee !== 'all' || query.trim() !== '' || colFiltersActive
   const clearAll = () => {
     setSelectedTeams([])
     setStatus('active')
     setAssignee('all')
     setQuery('')
+    setColFilters(EMPTY_COL_FILTERS)
   }
 
   const cellPad = density === 'compact' ? 'py-1.5' : 'py-2.5'
+  const teamsInView = selectedTeams.length || visibleTeams.length
+
+  const renderColFilter = (key: SortKey) => {
+    switch (key) {
+      case 'id':
+        return <ColInput value={colFilters.id} onChange={(v) => setCol({ id: v })} placeholder="#" numeric />
+      case 'subject':
+        return <ColInput value={colFilters.subject} onChange={(v) => setCol({ subject: v })} placeholder="Filter…" />
+      case 'category':
+        return (
+          <OptionFilter
+            label="Category"
+            options={categoryOptions}
+            selected={colFilters.categories}
+            onChange={(v) => setCol({ categories: v })}
+          />
+        )
+      case 'opener':
+        return <ColInput value={colFilters.opener} onChange={(v) => setCol({ opener: v })} placeholder="Filter…" />
+      case 'assignee':
+        return <ColInput value={colFilters.assignee} onChange={(v) => setCol({ assignee: v })} placeholder="Filter…" />
+      default:
+        return null
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -334,13 +424,21 @@ export function TicketsConsole({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search subject, opener, #id…"
+            placeholder="Search everything…"
             className="h-9 pl-8"
             aria-label="Search tickets"
           />
         </div>
 
-        <TeamFilter teams={teams} selected={selectedTeams} onChange={setSelectedTeams} />
+        <TeamFilter
+          teams={teams}
+          visibleTeams={visibleTeams}
+          adminOnlyCount={adminOnlyCount}
+          selected={selectedTeams}
+          onChange={setSelectedTeams}
+          showAdmin={showAdmin}
+          onToggleAdmin={setShowAdmin}
+        />
 
         <AssigneeFilter value={assignee} onChange={setAssignee} hasMe={!!meId} />
 
@@ -361,7 +459,7 @@ export function TicketsConsole({
             <span
               className={cn(
                 'h-2 w-2 rounded-full',
-                live ? 'bg-emerald-500 shadow-[0_0_0_3px_hsl(var(--background))] animate-pulse' : 'bg-muted-foreground/50',
+                live ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
               )}
             />
             {live ? 'Live' : 'Polling'}
@@ -412,20 +510,16 @@ export function TicketsConsole({
         <span>
           Showing <span className="font-medium text-foreground tabular-nums">{rows.length}</span> of{' '}
           <span className="tabular-nums">{data.tickets.length}</span>{' '}
-          {data.tickets.length === 1 ? 'ticket' : 'tickets'}
-          {selectedTeams.length > 0 && (
-            <>
-              {' '}· {selectedTeams.length} of {teams.length} teams
-            </>
-          )}
+          {data.tickets.length === 1 ? 'ticket' : 'tickets'} · {teamsInView}{' '}
+          {teamsInView === 1 ? 'team' : 'teams'}
         </span>
       </div>
 
       {/* The grid */}
       <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="max-h-[calc(100vh-16rem)] overflow-auto">
+        <div className="max-h-[calc(100vh-17rem)] overflow-auto">
           <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+            <thead className="sticky top-0 z-10 bg-card">
               <tr className="border-b">
                 {COLUMNS.map((col) => {
                   const isActive = sort.key === col.key
@@ -463,14 +557,31 @@ export function TicketsConsole({
                 })}
                 <th className="w-10 px-2" aria-label="Open in Discord" />
               </tr>
+              {/* Live per-column filter row */}
+              <tr className="border-b bg-card">
+                {COLUMNS.map((col) => (
+                  <th key={col.key} className={cn('px-2 pb-1.5 align-top font-normal', col.thClass)}>
+                    {renderColFilter(col.key)}
+                  </th>
+                ))}
+                <th className="px-2" />
+              </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.length + 1} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                    {data.tickets.length === 0
-                      ? 'No tickets in your teams yet.'
-                      : 'No tickets match these filters.'}
+                    {data.tickets.length === 0 ? (
+                      'No tickets in your teams yet.'
+                    ) : visibleTeams.length === 0 && !selectedTeams.length ? (
+                      <>
+                        You don&apos;t staff any team yet. Turn on{' '}
+                        <span className="font-medium text-foreground">admin-only teams</span> in the team filter to see
+                        the teams you administer.
+                      </>
+                    ) : (
+                      'No tickets match these filters.'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -480,7 +591,7 @@ export function TicketsConsole({
                     t.discordChannelId && t.discordGuildId
                       ? `https://discord.com/channels/${t.discordGuildId}/${t.discordChannelId}`
                       : null
-                  const pri = PRIORITY[t.priority] ?? PRIORITY[2]
+                  const cat = displayCategory(t)
                   return (
                     <tr
                       key={`${t.teamSlug}-${t.id}`}
@@ -500,7 +611,7 @@ export function TicketsConsole({
                             onClick={(e) => e.stopPropagation()}
                             className="truncate font-medium hover:underline"
                           >
-                            {t.subject}
+                            {displaySubject(t)}
                           </Link>
                           {t.externalSource === 'tickettool' && (
                             <span className="shrink-0 rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
@@ -514,11 +625,11 @@ export function TicketsConsole({
                       <td className={cn('hidden px-3 text-sm text-muted-foreground md:table-cell', cellPad)}>
                         <span className="truncate">{t.teamName}</span>
                       </td>
-                      <td className={cn('hidden px-3 text-sm text-muted-foreground xl:table-cell', cellPad)}>
-                        {t.categoryLabel ? (
+                      <td className={cn('hidden px-3 text-sm text-muted-foreground lg:table-cell', cellPad)}>
+                        {cat ? (
                           <span className="inline-flex items-center gap-1">
                             {t.categoryEmoji && <span>{t.categoryEmoji}</span>}
-                            <span className="truncate">{t.categoryLabel}</span>
+                            <span className="truncate">{cat}</span>
                           </span>
                         ) : (
                           <span className="text-muted-foreground/50">—</span>
@@ -526,12 +637,6 @@ export function TicketsConsole({
                       </td>
                       <td className={cn('px-3', cellPad)}>
                         <StatusBadge status={t.status} />
-                      </td>
-                      <td className={cn('hidden px-3 lg:table-cell', cellPad)}>
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className={cn('h-2 w-2 rounded-full', pri.dot)} />
-                          {pri.label}
-                        </span>
                       </td>
                       <td className={cn('hidden px-3 sm:table-cell', cellPad)}>
                         <UserCell name={t.openerName} image={t.openerImage} />
@@ -543,10 +648,16 @@ export function TicketsConsole({
                           <span className="text-xs text-muted-foreground/50">Unassigned</span>
                         )}
                       </td>
-                      <td className={cn('hidden px-3 text-xs text-muted-foreground 2xl:table-cell', cellPad)} title={new Date(t.openedAt).toLocaleString()}>
+                      <td
+                        className={cn('hidden px-3 text-xs text-muted-foreground 2xl:table-cell', cellPad)}
+                        title={new Date(t.openedAt).toLocaleString()}
+                      >
                         {relativeTime(t.openedAt)}
                       </td>
-                      <td className={cn('px-3 text-xs text-muted-foreground', cellPad)} title={new Date(t.lastActivityAt).toLocaleString()}>
+                      <td
+                        className={cn('px-3 text-xs text-muted-foreground', cellPad)}
+                        title={new Date(t.lastActivityAt).toLocaleString()}
+                      >
                         {relativeTime(t.lastActivityAt)}
                       </td>
                       <td className={cn('px-2', cellPad)}>
@@ -576,6 +687,112 @@ export function TicketsConsole({
   )
 }
 
+function ColInput({
+  value,
+  onChange,
+  placeholder,
+  numeric,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  numeric?: boolean
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        'h-7 w-full min-w-0 rounded border border-input bg-background px-2 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary/50',
+        numeric && 'text-right',
+      )}
+    />
+  )
+}
+
+function OptionFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string
+  options: { value: string; label: string; count: number }[]
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const sel = new Set(selected)
+  const toggle = (v: string) => {
+    const n = new Set(sel)
+    if (n.has(v)) n.delete(v)
+    else n.add(v)
+    onChange([...n])
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border bg-background px-2 text-xs text-muted-foreground hover:bg-accent',
+            selected.length > 0 && 'border-primary/40 text-foreground',
+          )}
+        >
+          <span className="truncate">
+            {label}
+            {selected.length > 0 && ` · ${selected.length}`}
+          </span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-1">
+        {options.length === 0 ? (
+          <div className="px-2 py-2 text-xs text-muted-foreground">No values</div>
+        ) : (
+          <div className="max-h-64 overflow-auto">
+            {options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => toggle(o.value)}
+                className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
+                      sel.has(o.value) ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
+                    )}
+                  >
+                    {sel.has(o.value) && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="truncate">{o.label}</span>
+                </span>
+                <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">{o.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {selected.length > 0 && (
+          <div className="border-t p-1">
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="w-full rounded-sm px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function UserCell({ name, image }: { name: string | null; image: string | null }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -588,14 +805,44 @@ function UserCell({ name, image }: { name: string | null; image: string | null }
   )
 }
 
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative h-4 w-7 shrink-0 rounded-full transition-colors',
+        checked ? 'bg-primary' : 'bg-muted',
+      )}
+    >
+      <span
+        className={cn(
+          'absolute top-0.5 h-3 w-3 rounded-full bg-background transition-all',
+          checked ? 'left-[14px]' : 'left-0.5',
+        )}
+      />
+    </button>
+  )
+}
+
 function TeamFilter({
   teams,
+  visibleTeams,
+  adminOnlyCount,
   selected,
   onChange,
+  showAdmin,
+  onToggleAdmin,
 }: {
   teams: ConsoleTeam[]
+  visibleTeams: ConsoleTeam[]
+  adminOnlyCount: number
   selected: string[]
   onChange: (ids: string[]) => void
+  showAdmin: boolean
+  onToggleAdmin: (v: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
   const selectedSet = new Set(selected)
@@ -607,7 +854,9 @@ function TeamFilter({
   }
   const label =
     selected.length === 0
-      ? 'All teams'
+      ? showAdmin
+        ? 'All teams'
+        : 'Staffed teams'
       : selected.length === 1
         ? teams.find((t) => t.id === selected[0])?.name ?? '1 team'
         : `${selected.length} teams`
@@ -637,15 +886,11 @@ function TeamFilter({
           <CommandInput placeholder="Filter teams…" />
           <CommandList>
             <CommandEmpty>No teams found.</CommandEmpty>
-            <CommandItem
-              value="__all_teams__"
-              onSelect={() => onChange([])}
-              className="justify-between"
-            >
-              <span>All teams</span>
+            <CommandItem value="__all_teams__" onSelect={() => onChange([])} className="justify-between">
+              <span>{showAdmin ? 'All teams' : 'All staffed teams'}</span>
               {selected.length === 0 && <Check className="h-4 w-4" />}
             </CommandItem>
-            {teams.map((t) => {
+            {visibleTeams.map((t) => {
               const checked = selectedSet.has(t.id)
               return (
                 <CommandItem key={t.id} value={t.name} onSelect={() => toggle(t.id)} className="justify-between gap-2">
@@ -660,25 +905,23 @@ function TeamFilter({
                     </span>
                     <span className="truncate">{t.name}</span>
                   </span>
-                  {t.admin && (
-                    <span className="shrink-0 rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
-                      admin
-                    </span>
-                  )}
+                  <span className="shrink-0 rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                    {t.staff ? 'staff' : 'admin'}
+                  </span>
                 </CommandItem>
               )
             })}
           </CommandList>
         </Command>
-        {selected.length > 0 && (
-          <div className="border-t p-1">
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="w-full rounded-sm px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              Clear selection
-            </button>
+        {adminOnlyCount > 0 && (
+          <div className="flex items-center justify-between gap-3 border-t p-2">
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium">Show admin-only teams</div>
+              <div className="text-[10px] text-muted-foreground">
+                {adminOnlyCount} you administer but do not staff
+              </div>
+            </div>
+            <Switch checked={showAdmin} onChange={onToggleAdmin} />
           </div>
         )}
       </PopoverContent>
