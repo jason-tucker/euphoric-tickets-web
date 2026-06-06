@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1] — 2026-06-06 — Show the app version in a site footer
+
+### Added
+- **Site footer with the running version.** A slim, full-width footer (`SiteFooter`) now renders on every page showing `Euphoric Tickets v<x.y.z>`. The semver is read from `package.json` at build time and injected as `NEXT_PUBLIC_APP_VERSION` via `next.config.ts`, so it stays in sync with releases automatically. The root layout is now a flex column so the footer pins to the bottom of the viewport on short pages.
+
+### Changed
+- **`NEXT_PUBLIC_APP_VERSION` is now actually populated** (it was only referenced as the `/api/version` fallback before). The deploy-detection build id is unchanged — the footer shows the human semver, the version-watcher still keys off the Next `BUILD_ID`.
+
 ## [0.7.0] — 2026-06-05 — Drop the host/client distinction — every tenant is just a Team
 
 ### Removed
@@ -720,4 +728,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.0 · f6a1677`
+`v0.7.1 · b9d371f`
