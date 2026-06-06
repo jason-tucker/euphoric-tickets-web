@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.0] — 2026-06-06 — Tickets console: a live cross-team data grid + one consolidated header
+
+### Added
+- **A brand-new cross-team Tickets console at `/tickets`** — a dense, ConnectWise-Manage-style data grid that replaces the old server-rendered queue. It's fully client-side and live, so once you're on the page there are **no navigations, no URL changes, and no spinners**:
+  - **Every field is a sortable column** — `#`, Subject, Team, Category, Status, Priority, Opener, Assignee, Opened, and Last activity. Click any header to sort; click again to flip direction.
+  - **A multi-team filter.** All your teams are always listed in one popover; tick any subset to narrow the grid to just those teams (no selection = all teams). This is what the old header team-dropdown used to do — now it's an in-grid filter you can combine with everything else.
+  - **Status chips with live counts**, an **assignee filter** (Anyone / Mine / Unassigned), a **search** box (subject, opener, assignee, team, category, or `#id`), and a **row-density** toggle.
+  - **Live updates with no loading state.** A global SSE nudge triggers a silent background refetch and swaps the data in place; a 20s poll and a tab-focus refetch cover any gap. A small "Live / Polling" indicator shows the stream state.
+  - Your team/status/assignee/sort/density choices **persist to `localStorage`**, so a reload restores your view — without ever putting state in the URL.
+- **`src/server/tickets.ts`** — one access-scoped query (admin teams + staffed categories + your own tickets) that powers both the first server render and the JSON feed, so they're always identical.
+- **`/api/tickets/list`** (JSON snapshot) and **`/api/tickets/stream`** (a ticket-agnostic `ticket_activity` SSE nudge) back the live grid. Scope is re-resolved server-side on every refetch, so the generic nudge can never leak a ticket you shouldn't see.
+- **A Settings hub at `/settings/teams`** for admins who manage more than one team.
+
+### Changed
+- **The header is now a single consolidated bar.** Brand · **Overview · Tickets · Settings** on the left (active tab highlighted via the new `MainNav`), with **Sudo · Help · account** on the right — everything in one row.
+  - **Tickets** shows for admins and category staff; everyone keeps the personal **Overview** ("My tickets").
+  - **Settings** smart-links: if you administer exactly one team it opens that team's settings directly; several teams open the new hub.
+- Overview (`/dashboard`) and the per-team pages are unchanged.
+
+### Removed
+- **The header "switch view" team dropdown.** Team selection now lives in the Tickets console's multi-team filter, so the dropdown is gone — `business-switcher.tsx` is deleted and `TopNav` no longer takes an `activeBusinessSlug`.
+
 ## [0.7.6] — 2026-06-06 — My tickets: relabel to Mine › Team › Admin; admins get all three
 
 ### Changed

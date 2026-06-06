@@ -61,7 +61,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <TopNav activeBusinessSlug={selectedSlug} />
+      <TopNav />
       <main className="container max-w-2xl space-y-4 py-6">
         <div>
           <h1 className="text-2xl font-semibold">Open a ticket</h1>

@@ -20,7 +20,7 @@ export default async function BusinessLayout({
 
   return (
     <>
-      <TopNav activeBusinessSlug={resolved ? slug : undefined} />
+      <TopNav />
       {resolved && <BusinessNav slug={slug} isAdmin={isAdmin} />}
       {children}
     </>
