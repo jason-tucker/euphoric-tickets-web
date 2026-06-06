@@ -32,6 +32,9 @@ docker-compose.combined.yml
 ops
 
 # --- docs & misc ------------------------------------------------------------
+# CHANGELOG.md is the exception: the footer's changelog dialog imports it
+# (asset/source in next.config.ts), so the builder needs it in context.
 *.md
+!CHANGELOG.md
 .DS_Store
 *.log
