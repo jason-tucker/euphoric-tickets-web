@@ -6,7 +6,7 @@ import { StatusBadge } from '@/components/app/status-badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { listMyBusinesses, requireSession } from '@/server/permissions'
+import { listMyBusinesses, listMyStaffCategoryIds, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
 import { businesses, ticketExternalMembers, tickets } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
@@ -21,17 +21,35 @@ export default async function DashboardPage({
   const adminBusinessIds = myBusinesses
     .filter((b) => b.level === 'admin' || b.level === 'owner')
     .map((b) => b.business.id)
-  const isStaff = adminBusinessIds.length > 0
+  // Categories the user staffs in teams they're a *member* of (not admin) — the
+  // "because of my team" tier from resolveTicketAccess. See listMyStaffCategoryIds.
+  const staffCategoryIds = await listMyStaffCategoryIds()
+  const isAdmin = adminBusinessIds.length > 0
+  const hasStaff = staffCategoryIds.length > 0
 
-  // `mode` toggle (staff/admin only):
+  // Three views, surfaced as a toggle (hidden for a plain end user — no staff
+  // role and no admin anywhere — who only ever sees 'user'):
   //   user  — tickets I opened OR was explicitly added to (ticket_external_members)
-  //   staff — tickets in my admin businesses I'm NOT personally on
-  // Non-staff users see the 'user' query only; the toggle UI is hidden.
+  //   staff — tickets in categories I staff via a team role, that I'm not already on
+  //   admin — every ticket in a team I administer, that I'm not already on
+  // The buckets are disjoint: staff/admin both exclude tickets I opened or was
+  // added to, so each ticket lands in exactly one tab.
   const sp = await searchParams
-  const mode: 'user' | 'staff' = isStaff && sp.mode === 'staff' ? 'staff' : 'user'
-  // Closed tickets are hidden by default in both modes — `?closed=1` reveals them.
+  let mode: 'user' | 'staff' | 'admin' = 'user'
+  if (sp.mode === 'admin' && isAdmin) mode = 'admin'
+  else if (sp.mode === 'staff' && hasStaff) mode = 'staff'
+  // Closed tickets are hidden by default in every mode — `?closed=1` reveals them.
   const showClosed = sp.closed === '1'
   const closedWhere = showClosed ? undefined : ne(tickets.status, 'closed')
+
+  // Build a /dashboard URL preserving the (mode, closed) pair across the toggles.
+  const dashHref = (m: 'user' | 'staff' | 'admin', closed: boolean) => {
+    const params = new URLSearchParams()
+    if (m !== 'user') params.set('mode', m)
+    if (closed) params.set('closed', '1')
+    const qs = params.toString()
+    return qs ? `/dashboard?${qs}` : '/dashboard'
+  }
 
   let myTickets: Array<{
     id: number
@@ -78,9 +96,28 @@ export default async function DashboardPage({
       )
       .orderBy(desc(tickets.lastActivityAt))
       .limit(50)
+  } else if (mode === 'staff') {
+    // Staff view: tickets in categories I staff via a team role, where I'm
+    // NEITHER the opener NOR an explicit member — the queue I reach only
+    // because of my team. Each staffed category already pins its tickets to a
+    // single member-level team, so no business filter is needed.
+    myTickets = await db
+      .select(selectShape)
+      .from(tickets)
+      .innerJoin(businesses, eq(businesses.id, tickets.businessId))
+      .where(
+        and(
+          inArray(tickets.categoryId, staffCategoryIds),
+          ne(tickets.openerUserId, session.user.id),
+          notInArray(tickets.id, myMemberTicketIds),
+          closedWhere,
+        ),
+      )
+      .orderBy(desc(tickets.lastActivityAt))
+      .limit(50)
   } else if (adminBusinessIds.length > 0) {
-    // Staff view: tickets in my admin businesses where I'm NEITHER the opener
-    // NOR an explicit member — the "residual" queue I see only via my staff role.
+    // Admin view: every ticket in a team I administer where I'm NEITHER the
+    // opener NOR an explicit member — the "residual" queue I see only via admin.
     myTickets = await db
       .select(selectShape)
       .from(tickets)
@@ -107,31 +144,34 @@ export default async function DashboardPage({
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold">My tickets</h1>
             <p className="text-sm text-muted-foreground">
-              {mode === 'user'
-                ? <>Tickets you&apos;ve opened or been added to across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.</>
-                : <>Tickets in {adminBusinessIds.length} {adminBusinessIds.length === 1 ? 'team' : 'teams'} you administer that you aren&apos;t personally on.</>}
+              {mode === 'user' ? (
+                <>Tickets you&apos;ve opened or been added to across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.</>
+              ) : mode === 'staff' ? (
+                <>Tickets you can reach through a staff role on your team that you aren&apos;t personally on.</>
+              ) : (
+                <>Every ticket in {adminBusinessIds.length} {adminBusinessIds.length === 1 ? 'team' : 'teams'} you administer that you aren&apos;t personally on.</>
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              {isStaff && (
+              {(hasStaff || isAdmin) && (
                 <div className="inline-flex gap-1 rounded-md border border-input bg-background p-0.5 text-xs">
                   <Button asChild size="sm" variant={mode === 'user' ? 'secondary' : 'ghost'} className="h-7 px-3">
-                    <Link href={showClosed ? '/dashboard?closed=1' : '/dashboard'}>User</Link>
+                    <Link href={dashHref('user', showClosed)}>User</Link>
                   </Button>
-                  <Button asChild size="sm" variant={mode === 'staff' ? 'secondary' : 'ghost'} className="h-7 px-3">
-                    <Link href={showClosed ? '/dashboard?mode=staff&closed=1' : '/dashboard?mode=staff'}>Staff</Link>
-                  </Button>
+                  {hasStaff && (
+                    <Button asChild size="sm" variant={mode === 'staff' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                      <Link href={dashHref('staff', showClosed)}>Staff</Link>
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <Button asChild size="sm" variant={mode === 'admin' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                      <Link href={dashHref('admin', showClosed)}>Admin</Link>
+                    </Button>
+                  )}
                 </div>
               )}
               <Button asChild size="sm" variant={showClosed ? 'secondary' : 'outline'} className="h-7 px-3 text-xs">
-                <Link
-                  href={(() => {
-                    const params = new URLSearchParams()
-                    if (mode === 'staff') params.set('mode', 'staff')
-                    if (!showClosed) params.set('closed', '1')
-                    const qs = params.toString()
-                    return qs ? `/dashboard?${qs}` : '/dashboard'
-                  })()}
-                >
+                <Link href={dashHref(mode, !showClosed)}>
                   {showClosed ? 'Hide closed' : 'Show closed'}
                 </Link>
               </Button>
@@ -199,11 +239,19 @@ export default async function DashboardPage({
           myBusinesses.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>{mode === 'user' ? 'No tickets yet' : 'Nothing in the staff queue'}</CardTitle>
+                <CardTitle>
+                  {mode === 'user'
+                    ? 'No tickets yet'
+                    : mode === 'staff'
+                      ? 'Nothing in your staff queue'
+                      : 'Nothing in your admin queue'}
+                </CardTitle>
                 <CardDescription>
                   {mode === 'user'
                     ? 'When you open a ticket here, or get added to one by staff, it shows up in this list.'
-                    : 'Every open ticket in your admin teams is currently one you opened or were added to — nothing left in the residual staff view.'}
+                    : mode === 'staff'
+                      ? 'No open tickets in the categories you staff right now — the ones you opened or were added to live under User.'
+                      : 'Every open ticket in your admin teams is currently one you opened or were added to — nothing left in the residual admin view.'}
                 </CardDescription>
               </CardHeader>
             </Card>
