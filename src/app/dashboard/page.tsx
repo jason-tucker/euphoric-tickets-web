@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm'
 import { Plus, Building2 } from 'lucide-react'
 import { TopNav } from '@/components/app/top-nav'
 import { StatusBadge } from '@/components/app/status-badge'
@@ -21,31 +21,32 @@ export default async function DashboardPage({
   const adminBusinessIds = myBusinesses
     .filter((b) => b.level === 'admin' || b.level === 'owner')
     .map((b) => b.business.id)
-  // Categories the user staffs in teams they're a *member* of (not admin) — the
-  // "because of my team" tier from resolveTicketAccess. See listMyStaffCategoryIds.
-  const staffCategoryIds = await listMyStaffCategoryIds()
+  // Categories I hold a staff role in (across every team I'm actually in, admin
+  // teams included) — the "because of my team" tier. See listMyStaffCategoryIds.
+  const teamCategoryIds = await listMyStaffCategoryIds()
   const isAdmin = adminBusinessIds.length > 0
-  const hasStaff = staffCategoryIds.length > 0
+  const hasTeam = teamCategoryIds.length > 0
 
-  // Three views, surfaced as a toggle (hidden for a plain end user — no staff
-  // role and no admin anywhere — who only ever sees 'user'):
-  //   user  — tickets I opened OR was explicitly added to (ticket_external_members)
-  //   staff — tickets in categories I staff via a team role, that I'm not already on
-  //   admin — every ticket in a team I administer, that I'm not already on
-  // The buckets are disjoint: staff/admin both exclude tickets I opened or was
-  // added to, so each ticket lands in exactly one tab.
+  // Three views, surfaced as a toggle. Each is the *reason* I can see a ticket,
+  // and the buckets are disjoint — every ticket lands in exactly one tab:
+  //   mine  — I opened it OR was explicitly added (ticket_external_members)
+  //   team  — not mine, but I hold a staff role in its category
+  //   admin — not mine, not staffed by me, but I administer the team
+  // Admins always get all three toggles; their Team tab is empty (with a note)
+  // when they hold no staff role of their own. A plain end user sees no toggle.
+  const showTeamTab = hasTeam || isAdmin
   const sp = await searchParams
-  let mode: 'user' | 'staff' | 'admin' = 'user'
+  let mode: 'mine' | 'team' | 'admin' = 'mine'
   if (sp.mode === 'admin' && isAdmin) mode = 'admin'
-  else if (sp.mode === 'staff' && hasStaff) mode = 'staff'
+  else if (sp.mode === 'team' && showTeamTab) mode = 'team'
   // Closed tickets are hidden by default in every mode — `?closed=1` reveals them.
   const showClosed = sp.closed === '1'
   const closedWhere = showClosed ? undefined : ne(tickets.status, 'closed')
 
   // Build a /dashboard URL preserving the (mode, closed) pair across the toggles.
-  const dashHref = (m: 'user' | 'staff' | 'admin', closed: boolean) => {
+  const dashHref = (m: 'mine' | 'team' | 'admin', closed: boolean) => {
     const params = new URLSearchParams()
-    if (m !== 'user') params.set('mode', m)
+    if (m !== 'mine') params.set('mode', m)
     if (closed) params.set('closed', '1')
     const qs = params.toString()
     return qs ? `/dashboard?${qs}` : '/dashboard'
@@ -76,11 +77,11 @@ export default async function DashboardPage({
     businessSlug: businesses.slug,
   }
 
-  if (mode === 'user') {
-    // Tickets I opened OR was explicitly added to — across ANY team, INCLUDING
-    // teams whose Discord I'm not in. An external user added to a ticket but not
-    // in that server must still see it here; this is intentionally NOT gated by
-    // guild membership. Per-ticket access is re-checked on the detail page.
+  if (mode === 'mine') {
+    // Mine: tickets I opened OR was explicitly added to — across ANY team,
+    // INCLUDING teams whose Discord I'm not in. An external user added to a
+    // ticket but not in that server must still see it here; this is intentionally
+    // NOT gated by guild membership. Per-ticket access is re-checked on detail.
     myTickets = await db
       .select(selectShape)
       .from(tickets)
@@ -96,18 +97,18 @@ export default async function DashboardPage({
       )
       .orderBy(desc(tickets.lastActivityAt))
       .limit(50)
-  } else if (mode === 'staff') {
-    // Staff view: tickets in categories I staff via a team role, where I'm
-    // NEITHER the opener NOR an explicit member — the queue I reach only
-    // because of my team. Each staffed category already pins its tickets to a
-    // single member-level team, so no business filter is needed.
+  } else if (mode === 'team' && teamCategoryIds.length > 0) {
+    // Team: tickets in a category I hold a staff role in, where I'm NEITHER the
+    // opener NOR an explicit member — the queue I reach only because of my team.
+    // Each staffed category already pins its tickets to a single team, so no
+    // business filter is needed. (Empty teamCategoryIds → no query, empty state.)
     myTickets = await db
       .select(selectShape)
       .from(tickets)
       .innerJoin(businesses, eq(businesses.id, tickets.businessId))
       .where(
         and(
-          inArray(tickets.categoryId, staffCategoryIds),
+          inArray(tickets.categoryId, teamCategoryIds),
           ne(tickets.openerUserId, session.user.id),
           notInArray(tickets.id, myMemberTicketIds),
           closedWhere,
@@ -115,9 +116,11 @@ export default async function DashboardPage({
       )
       .orderBy(desc(tickets.lastActivityAt))
       .limit(50)
-  } else if (adminBusinessIds.length > 0) {
-    // Admin view: every ticket in a team I administer where I'm NEITHER the
-    // opener NOR an explicit member — the "residual" queue I see only via admin.
+  } else if (mode === 'admin' && adminBusinessIds.length > 0) {
+    // Admin: every ticket in a team I administer where I'm NEITHER the opener
+    // NOR an explicit member, AND not in a category I personally staff (those
+    // live under Team — this subtraction keeps the buckets disjoint). NULL
+    // category isn't staffed, so it's kept (a bare `NOT IN` would drop NULLs).
     myTickets = await db
       .select(selectShape)
       .from(tickets)
@@ -127,6 +130,9 @@ export default async function DashboardPage({
           inArray(tickets.businessId, adminBusinessIds),
           sql`${tickets.openerUserId} != ${session.user.id}`,
           notInArray(tickets.id, myMemberTicketIds),
+          teamCategoryIds.length > 0
+            ? or(isNull(tickets.categoryId), notInArray(tickets.categoryId, teamCategoryIds))
+            : undefined,
           closedWhere,
         ),
       )
@@ -144,25 +150,23 @@ export default async function DashboardPage({
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold">My tickets</h1>
             <p className="text-sm text-muted-foreground">
-              {mode === 'user' ? (
+              {mode === 'mine' ? (
                 <>Tickets you&apos;ve opened or been added to across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.</>
-              ) : mode === 'staff' ? (
+              ) : mode === 'team' ? (
                 <>Tickets you can reach through a staff role on your team that you aren&apos;t personally on.</>
               ) : (
-                <>Every ticket in {adminBusinessIds.length} {adminBusinessIds.length === 1 ? 'team' : 'teams'} you administer that you aren&apos;t personally on.</>
+                <>Tickets in {adminBusinessIds.length} {adminBusinessIds.length === 1 ? 'team' : 'teams'} you administer — beyond your own and your team&apos;s queues.</>
               )}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              {(hasStaff || isAdmin) && (
+              {showTeamTab && (
                 <div className="inline-flex gap-1 rounded-md border border-input bg-background p-0.5 text-xs">
-                  <Button asChild size="sm" variant={mode === 'user' ? 'secondary' : 'ghost'} className="h-7 px-3">
-                    <Link href={dashHref('user', showClosed)}>User</Link>
+                  <Button asChild size="sm" variant={mode === 'mine' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                    <Link href={dashHref('mine', showClosed)}>Mine</Link>
                   </Button>
-                  {hasStaff && (
-                    <Button asChild size="sm" variant={mode === 'staff' ? 'secondary' : 'ghost'} className="h-7 px-3">
-                      <Link href={dashHref('staff', showClosed)}>Staff</Link>
-                    </Button>
-                  )}
+                  <Button asChild size="sm" variant={mode === 'team' ? 'secondary' : 'ghost'} className="h-7 px-3">
+                    <Link href={dashHref('team', showClosed)}>Team</Link>
+                  </Button>
                   {isAdmin && (
                     <Button asChild size="sm" variant={mode === 'admin' ? 'secondary' : 'ghost'} className="h-7 px-3">
                       <Link href={dashHref('admin', showClosed)}>Admin</Link>
@@ -240,18 +244,20 @@ export default async function DashboardPage({
             <Card>
               <CardHeader>
                 <CardTitle>
-                  {mode === 'user'
+                  {mode === 'mine'
                     ? 'No tickets yet'
-                    : mode === 'staff'
-                      ? 'Nothing in your staff queue'
+                    : mode === 'team'
+                      ? 'Nothing in your team queue'
                       : 'Nothing in your admin queue'}
                 </CardTitle>
                 <CardDescription>
-                  {mode === 'user'
+                  {mode === 'mine'
                     ? 'When you open a ticket here, or get added to one by staff, it shows up in this list.'
-                    : mode === 'staff'
-                      ? 'No open tickets in the categories you staff right now — the ones you opened or were added to live under User.'
-                      : 'Every open ticket in your admin teams is currently one you opened or were added to — nothing left in the residual admin view.'}
+                    : mode === 'team'
+                      ? hasTeam
+                        ? 'No open tickets in the categories you hold a staff role for right now — the ones you opened or were added to live under Mine.'
+                        : 'You don’t hold a staff role in any category yet, so there’s nothing in your team queue. Tickets you opened or were added to live under Mine; everything in your teams lives under Admin.'
+                      : 'Every open ticket in your admin teams is one you opened, were added to, or staff directly — nothing left in the residual admin view.'}
                 </CardDescription>
               </CardHeader>
             </Card>
