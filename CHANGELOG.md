@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.4] — 2026-06-06 — My tickets: a true Staff tier alongside User and Admin
+
+### Added
+- **A "Staff" view on `/dashboard`, distinct from Admin.** The My-tickets toggle now has three tiers instead of two:
+  - **User** — tickets you opened or were added to (unchanged).
+  - **Staff** — tickets you can reach *because of your team*: those in categories whose `staff_role_ids` intersect a Discord role you hold, across teams you're a *member* of (not an admin). This is the same staff tier `resolveTicketAccess` already grants on the ticket page, now surfaced as its own cross-team queue.
+  - **Admin** — every ticket in a team you administer. This is what the old "Staff" toggle actually showed; it has been **renamed to Admin** to free up "Staff" for the role-based tier above.
+
+  The three buckets are disjoint — Staff and Admin both exclude tickets you opened or were added to, so each ticket lands under exactly one tab. The toggle only offers tiers you actually have: a member who staffs a category sees **User · Staff**, a Manage-Server admin sees **User · Admin**, someone with both sees all three, and a plain end user sees no toggle at all.
+
+### Changed
+- **New `listMyStaffCategoryIds` in `src/server/permissions.ts`** resolves the categories you staff from the cached `business_members.discord_roles_snapshot`, falling back to a single live bot read per team that has staff-gated categories but no snapshot yet. It's `React.cache`-wrapped so the dashboard's tab-visibility check and the staff query share one resolution per request.
+
 ## [0.7.3] — 2026-06-06 — Fix: ship CHANGELOG.md in the Docker build context
 
 ### Fixed
@@ -738,4 +751,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.3 · 6ba1014`
+`v0.7.4 · 16f2b1a`

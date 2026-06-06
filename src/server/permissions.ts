@@ -1,6 +1,6 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import { auth, type DiscordGuildSnapshot } from './auth'
 import { db } from '@/db/client'
 import {
@@ -92,6 +92,91 @@ async function isSudo(userId: string): Promise<boolean> {
     .limit(1)
   return !!row?.isSudo
 }
+
+// The set of `ticket_categories.id` the signed-in user staffs **because of
+// their team** — i.e. categories whose `staff_role_ids` intersect a Discord
+// role the user holds in that team's guild, short of full admin. This is the
+// "staff" tier from `resolveTicketAccess`, computed across every team the user
+// is a *member* of. Admin/owner teams are intentionally excluded: the admin
+// view already surfaces their entire queue, so folding them in here would only
+// duplicate rows.
+//
+// Roles come from the cached `business_members.discordRolesSnapshot` (written
+// by `touchMember` on every team-page hit) and fall back to one live bot read
+// per team that has staff-gated categories but no snapshot yet. Cached
+// per-request so the dashboard's tab-visibility check and the staff query
+// share one resolution.
+export const listMyStaffCategoryIds = cache(async function listMyStaffCategoryIds(): Promise<string[]> {
+  const session = await auth()
+  if (!session?.user?.id) return []
+
+  const mine = await listMyBusinesses()
+  const memberBiz = mine.filter((b) => b.level === 'member').map((b) => b.business)
+  if (memberBiz.length === 0) return []
+
+  const bizIds = memberBiz.map((b) => b.id)
+  // Only categories that actually gate staff by role can grant staff access —
+  // an empty `staff_role_ids` inherits admin-only, which a member never clears.
+  const cats = await db
+    .select({
+      id: ticketCategories.id,
+      businessId: ticketCategories.businessId,
+      staffRoleIds: ticketCategories.staffRoleIds,
+    })
+    .from(ticketCategories)
+    .where(and(inArray(ticketCategories.businessId, bizIds), ne(ticketCategories.staffRoleIds, '')))
+  if (cats.length === 0) return []
+
+  // Roles per team: prefer the cached snapshot; resolve a `null` (no snapshot
+  // yet) lazily below via a live bot read. An empty array is a real answer
+  // ("in the guild, holds no roles") and must NOT trigger a refetch.
+  const snaps = await db
+    .select({
+      businessId: businessMembers.businessId,
+      snapshot: businessMembers.discordRolesSnapshot,
+    })
+    .from(businessMembers)
+    .where(
+      and(
+        eq(businessMembers.userId, session.user.id),
+        inArray(businessMembers.businessId, bizIds),
+      ),
+    )
+  const rolesByBiz = new Map<string, string[]>()
+  for (const s of snaps) {
+    try {
+      rolesByBiz.set(s.businessId, JSON.parse(s.snapshot) as string[])
+    } catch {
+      rolesByBiz.set(s.businessId, [])
+    }
+  }
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  const bizById = new Map(memberBiz.map((b) => [b.id, b]))
+  const out: string[] = []
+  for (const cat of cats) {
+    let roles = rolesByBiz.get(cat.businessId)
+    if (!roles && botToken) {
+      const b = bizById.get(cat.businessId)
+      if (b) {
+        try {
+          const { fetchGuildMemberAsBot } = await import('@/lib/discord')
+          const member = await fetchGuildMemberAsBot(botToken, b.discordGuildId, session.user.discordId)
+          roles = member?.roles ?? []
+        } catch {
+          // Bot not in the guild / Discord hiccup — treat as no roles.
+          roles = []
+        }
+        // Memoize so multiple categories in the same team reuse the read.
+        rolesByBiz.set(cat.businessId, roles)
+      }
+    }
+    if (!roles) continue
+    const staffIds = parseCsv(cat.staffRoleIds)
+    if (staffIds.some((r) => roles!.includes(r))) out.push(cat.id)
+  }
+  return out
+})
 
 // Full resolution: looks up the user's roles in this business's guild via
 // the bot's permissions, then matches against `business.adminRoleIds`.
