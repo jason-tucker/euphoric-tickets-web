@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { TicketIcon } from 'lucide-react'
 import { auth, signOut } from '@/server/auth'
-import { listMyBusinesses } from '@/server/permissions'
+import { ticketsConsoleScope, type ConsoleScope } from '@/server/tickets'
 import { currentUserIsSudo } from '@/server/sudo'
-import { BusinessSwitcher } from './business-switcher'
+import { MainNav } from './main-nav'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -14,17 +14,26 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: string }) {
+// One consolidated header for the whole app: brand, the primary Overview ·
+// Tickets · Settings tabs, then Sudo / Help / account on the right. The old
+// per-team "switch view" dropdown is gone — picking a team is now a filter
+// inside the Tickets console, not a navigation mode.
+export async function TopNav() {
   const session = await auth()
-  // listMyBusinesses + currentUserIsSudo are independent DB lookups — run
-  // them concurrently. TopNav renders on every page so the saved round-trip
-  // is felt site-wide.
-  const [myBusinesses, isSudo] = session?.user
-    ? await Promise.all([listMyBusinesses(), currentUserIsSudo()])
-    : [[] as Awaited<ReturnType<typeof listMyBusinesses>>, false]
-  const active = myBusinesses.find((b) => b.business.slug === activeBusinessSlug)
-  const activeBusiness = active?.business
-  const isActiveAdmin = active && (active.level === 'admin' || active.level === 'owner')
+  // Scope (admin/staff reach) + sudo are independent lookups; both ride on the
+  // request-cached listMyBusinesses / sudo lookups, so this stays one round-trip
+  // even though TopNav renders on every page.
+  let scope: ConsoleScope = { canUse: false, isAdminAnywhere: false, adminTeams: [] }
+  let isSudo = false
+  if (session?.user) {
+    const [s, su] = await Promise.all([ticketsConsoleScope(), currentUserIsSudo()])
+    scope = s
+    isSudo = su
+  }
+
+  // Smart Settings target: one team → straight to its settings; several → the hub.
+  const settingsHref =
+    scope.adminTeams.length === 1 ? `/b/${scope.adminTeams[0].slug}/settings` : '/settings/teams'
 
   async function logout() {
     'use server'
@@ -42,21 +51,20 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center gap-2">
-        <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+        <Link href="/dashboard" className="flex shrink-0 items-center gap-2 font-semibold">
           <TicketIcon className="h-5 w-5 text-primary" />
-          <span className="hidden sm:inline">Euphoric Tickets</span>
+          <span className="hidden md:inline">Euphoric Tickets</span>
         </Link>
-        <div className="ml-1">
-          <BusinessSwitcher
-            current={activeBusiness ? { slug: activeBusiness.slug, name: activeBusiness.name } : null}
-            businesses={myBusinesses.map(({ business, level }) => ({
-              slug: business.slug,
-              name: business.name,
-              level,
-            }))}
+
+        {session?.user && (
+          <MainNav
+            showTickets={scope.canUse}
+            showSettings={scope.isAdminAnywhere}
+            settingsHref={settingsHref}
           />
-        </div>
-        <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        )}
+
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
           {isSudo && (
             <Link
               href="/admin"
@@ -93,34 +101,12 @@ export async function TopNav({ activeBusinessSlug }: { activeBusinessSlug?: stri
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard">My tickets</Link>
-                </DropdownMenuItem>
-                {(isSudo || myBusinesses.some((b) => b.level === 'admin' || b.level === 'owner')) && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/tickets">All tickets</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
                   <Link href="/t/new">Open a ticket</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings/notifications">Notifications</Link>
                 </DropdownMenuItem>
-                {activeBusiness && isActiveAdmin && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                      {activeBusiness.name}
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem asChild>
-                      <Link href={`/b/${activeBusiness.slug}/tickets`}>Ticket queue</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href={`/b/${activeBusiness.slug}/settings`}>Team settings</Link>
-                    </DropdownMenuItem>
-                  </>
-                )}
-                {(isSudo || myBusinesses.some((b) => b.level === 'admin' || b.level === 'owner')) && (
+                {scope.isAdminAnywhere && (
                   <DropdownMenuItem asChild>
                     <Link href="/teams">All teams</Link>
                   </DropdownMenuItem>
