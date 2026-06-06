@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
 import NextTopLoader from 'nextjs-toploader'
 import { VersionWatcher } from '@/components/app/version-watcher'
+import { SiteFooter } from '@/components/app/site-footer'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-svh bg-background text-foreground">
+      <body className="flex min-h-svh flex-col bg-background text-foreground">
         {/* Top progress bar — appears on every route navigation and stays
             visible while server actions / pages are pending. Auto-hooks
             into the App Router; we just render it once at the root. */}
@@ -30,7 +31,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           showSpinner={false}
           shadow={false}
         />
-        {children}
+        {/* Page content grows to fill the viewport so the footer stays pinned
+            to the bottom on short pages. */}
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
         <VersionWatcher />
         <Toaster theme="dark" position="bottom-right" richColors />
       </body>
