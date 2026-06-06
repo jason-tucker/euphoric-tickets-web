@@ -95,28 +95,39 @@ async function isSudo(userId: string): Promise<boolean> {
 
 // The set of `ticket_categories.id` the signed-in user staffs **because of
 // their team** — i.e. categories whose `staff_role_ids` intersect a Discord
-// role the user holds in that team's guild, short of full admin. This is the
-// "staff" tier from `resolveTicketAccess`, computed across every team the user
-// is a *member* of. Admin/owner teams are intentionally excluded: the admin
-// view already surfaces their entire queue, so folding them in here would only
-// duplicate rows.
+// role the user actually holds in that team's guild. This is the "staff" tier
+// from `resolveTicketAccess`; the dashboard's **Team** tab is built from it.
+//
+// Scope is the user's REAL Discord guild membership (the OAuth `guilds`
+// snapshot), not `listMyBusinesses` — which expands to every business for sudo
+// users. A team-role only means something for a guild you're genuinely in, and
+// anchoring here also bounds the live-role fallback to the user's own guild
+// count instead of every team in the system. Admin teams are included: an admin
+// may also personally hold a staff role in one of their own categories, and
+// that's exactly the Team tier for them (the dashboard keeps Team and Admin
+// disjoint by subtracting these category IDs from the Admin query).
 //
 // Roles come from the cached `business_members.discordRolesSnapshot` (written
 // by `touchMember` on every team-page hit) and fall back to one live bot read
 // per team that has staff-gated categories but no snapshot yet. Cached
-// per-request so the dashboard's tab-visibility check and the staff query
+// per-request so the dashboard's tab-visibility check and the Team query
 // share one resolution.
 export const listMyStaffCategoryIds = cache(async function listMyStaffCategoryIds(): Promise<string[]> {
   const session = await auth()
   if (!session?.user?.id) return []
 
-  const mine = await listMyBusinesses()
-  const memberBiz = mine.filter((b) => b.level === 'member').map((b) => b.business)
-  if (memberBiz.length === 0) return []
+  const guilds = session.guilds ?? []
+  if (guilds.length === 0) return []
+  const guildIds = guilds.map((g) => g.id)
+  const biz = await db
+    .select()
+    .from(businesses)
+    .where(inArray(businesses.discordGuildId, guildIds))
+  if (biz.length === 0) return []
 
-  const bizIds = memberBiz.map((b) => b.id)
+  const bizIds = biz.map((b) => b.id)
   // Only categories that actually gate staff by role can grant staff access —
-  // an empty `staff_role_ids` inherits admin-only, which a member never clears.
+  // an empty `staff_role_ids` inherits admin-only, which a staff role can't clear.
   const cats = await db
     .select({
       id: ticketCategories.id,
@@ -152,7 +163,7 @@ export const listMyStaffCategoryIds = cache(async function listMyStaffCategoryId
   }
 
   const botToken = process.env.DISCORD_BOT_TOKEN
-  const bizById = new Map(memberBiz.map((b) => [b.id, b]))
+  const bizById = new Map(biz.map((b) => [b.id, b]))
   const out: string[] = []
   for (const cat of cats) {
     let roles = rolesByBiz.get(cat.businessId)

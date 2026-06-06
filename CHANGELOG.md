@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.6] — 2026-06-06 — My tickets: relabel to Mine › Team › Admin; admins get all three
+
+### Changed
+- **The "My tickets" toggle is now `Mine › Team › Admin`** — a disjoint "why can I see this ticket?" split where each ticket lands in exactly **one** tab:
+  - **Mine** — you opened it or were added to it.
+  - **Team** — you're not on it, but you hold a staff role in its category.
+  - **Admin** — you're not on it and don't staff its category, but you administer the team.
+
+  The Admin query now **subtracts the categories you personally staff** (keeping `NULL`-category tickets), so Team and Admin no longer double-count a ticket.
+- **Admins always see all three toggles.** Before, the Team tab (formerly "Staff") only showed if you held a staff role in a team you were *merely a member* of — so a Manage-Server admin saw only User/Admin. Now admin implies the full `Mine / Team / Admin` set; the Team tab shows an explanatory empty state when you hold no staff role of your own.
+- **Team categories are resolved from your real Discord guild list** (the OAuth `guilds` snapshot) instead of `listMyBusinesses` — which expands to *every* team for sudo users. This includes categories you staff inside teams you also administer, and bounds the live-role fallback to your own guild count.
+- `?mode=` query values changed `staff` → `team`; `mine` is the default (no param).
+
 ## [0.7.5] — 2026-06-06 — Add a pull-request CI gate (typecheck + build)
 
 ### Added
@@ -756,4 +769,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.5 · 99177a3`
+`v0.7.6 · 2e06ac5`
