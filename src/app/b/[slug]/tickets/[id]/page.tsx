@@ -97,9 +97,6 @@ export default async function TicketDetailPage({
 
   // All independent queries fire in parallel — was 5-7 sequential round-trips.
   const openerQ = db.select().from(users).where(eq(users.id, t.openerUserId)).limit(1)
-  const clientBusinessQ = t.clientBusinessId
-    ? db.select().from(businesses).where(eq(businesses.id, t.clientBusinessId)).limit(1)
-    : Promise.resolve([])
   const assigneeQ = t.assigneeUserId
     ? db.select().from(users).where(eq(users.id, t.assigneeUserId)).limit(1)
     : Promise.resolve([])
@@ -165,7 +162,6 @@ export default async function TicketDetailPage({
 
   const [
     openerRow,
-    clientBusinessRow,
     assigneeRow,
     staff,
     allMessages,
@@ -173,9 +169,8 @@ export default async function TicketDetailPage({
     parentRow,
     categories,
     auditRows,
-  ] = await Promise.all([openerQ, clientBusinessQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ, categoriesQ, auditQ])
+  ] = await Promise.all([openerQ, assigneeQ, staffQ, messagesQ, subTicketsQ, parentQ, categoriesQ, auditQ])
   const opener = openerRow[0]
-  const clientBusiness = clientBusinessRow[0] ?? null
   const assignee = assigneeRow[0] ?? null
   const parentTicket = parentRow[0] ?? null
 
@@ -329,14 +324,6 @@ export default async function TicketDetailPage({
               Sub-ticket of{' '}
               <Link href={`/b/${slug}/tickets/${parentTicket.id}`} className="font-medium hover:underline">
                 #{parentTicket.id} — {parentTicket.subject}
-              </Link>
-            </p>
-          )}
-          {clientBusiness && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              For client{' '}
-              <Link href={`/b/${clientBusiness.slug}`} className="font-medium hover:underline">
-                {clientBusiness.name}
               </Link>
             </p>
           )}

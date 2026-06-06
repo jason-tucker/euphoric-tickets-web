@@ -37,13 +37,13 @@ A web frontend for the `euphoric-tickets` Discord bot. Multi-tenant: any Discord
   - A "Ticket Master" role — member roles in that guild ∩ `business.admin_role_ids` → `admin`
   - Otherwise → `member` (can only see their own tickets in that business)
 - Permission resolution lives in `src/server/permissions.ts` — every protected route/server action calls `requireBusinessAccess(slug, level)`. The Manage-Server / owner bits come straight from the OAuth guild snapshot; the role-level Ticket Master check needs the bot token and runs only in `resolveBusinessAccess`.
-- **Businesses are auto-provisioned by the bot.** The `euphoric-tickets` bot creates a `host` business row for any guild it joins (and backfills existing guilds on startup), so a guild generally has a row by the time anyone logs in here. The web's `/admin` create form is still there for manual/edge cases.
+- **Businesses are auto-provisioned by the bot.** The `euphoric-tickets` bot creates a business row (a team) for any guild it joins (and backfills existing guilds on startup), so a guild generally has a row by the time anyone logs in here. The web's `/admin` create form is still there for manual/edge cases.
 
 ### Multi-business
 
 A user can belong to several businesses. The top-nav has a business switcher. URLs are scoped to `/b/<slug>/...`. Admin and end-user views live side-by-side; admin role is what unlocks `/b/<slug>/tickets` and `/b/<slug>/settings`. End users always hit `/dashboard` for the cross-business "my tickets" view.
 
-**Admin vs Sudo.** Per-guild **admin** (Manage Server / Administrator / a Ticket Master role) manages a single team via its own `/b/<slug>` pages. Bot-owner **sudo** (the `users.is_sudo` flag) gets the `/admin/*` "Sudo" area — team/client CRUD (`/admin`), the bot dashboard with **bot name** + **force-leave server** controls (`/admin/bot`), and bot errors (`/admin/errors`). The nav surfaces this as a **Sudo** tab.
+**Admin vs Sudo.** Per-guild **admin** (Manage Server / Administrator / a Ticket Master role) manages a single team via its own `/b/<slug>` pages. Bot-owner **sudo** (the `users.is_sudo` flag) gets the `/admin/*` "Sudo" area — team CRUD (`/admin`), the bot dashboard with **bot name** + **force-leave server** controls (`/admin/bot`), and bot errors (`/admin/errors`). The nav surfaces this as a **Sudo** tab.
 
 ---
 

@@ -40,17 +40,6 @@ export const businesses = pgTable('businesses', {
   // Bot scheduled job consumes this (issue: euphoric-tickets#5).
   deleteClosedAfterDays: integer('delete_closed_after_days'),
 
-  // 'business' or 'client' — affects UI nouns. See euphoric-tickets-web#9.
-  terminology: text('terminology', { enum: ['business', 'client'] }).notNull().default('business'),
-
-  // Structural distinction (web#12).
-  //   host   = vendor that operates the ticket system (e.g. EuphoricFM).
-  //   client = visitor org whose members come in and open tickets at a host
-  //            (e.g. Echo Studios working with EuphoricFM).
-  // Client businesses must have parent_business_id pointing at a host.
-  kind: text('kind', { enum: ['host', 'client'] }).notNull().default('host'),
-  parentBusinessId: uuid('parent_business_id'),
-
   // Which ticket system this team runs. 'euphoric' (default) = native tickets
   // via panels + web. 'tickettool' = the team is run by the third-party
   // TicketTool bot; euphoric disables its own ticket-opening and instead

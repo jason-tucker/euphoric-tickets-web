@@ -26,9 +26,8 @@ Public URLs: `https://tickets.euphoric.fm` (cloudflared tunnel) and
 
 ## Overview
 
-A **team** is one tenant. Multiple teams can share a single Discord guild, and a
-team can be flagged as a *client* — a visitor org whose members open tickets at a
-host team. Everyone signs in with Discord; what they can do is decided per-team
+A **team** is one tenant. Multiple teams can share a single Discord guild.
+Everyone signs in with Discord; what they can do is decided per-team
 and per-ticket.
 
 - **End users** — sign in, open a ticket (pick a team + category + subject),

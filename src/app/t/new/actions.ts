@@ -5,8 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { businesses, ticketCategories, tickets, ticketMessages } from '@/db/schema'
-import { listMyBusinesses, resolveBusinessAccess, requireSession } from '@/server/permissions'
+import { ticketCategories, tickets, ticketMessages } from '@/db/schema'
+import { resolveBusinessAccess, requireSession } from '@/server/permissions'
 import {
   createChannelWebhook,
   createTicketChannel,
@@ -25,10 +25,6 @@ const schema = z.object({
   // category's `kind` column (set in team-settings), not picked per-ticket.
   // Sub-tickets still force `normal` regardless of the parent category.
   parentTicketId: z.string().regex(/^\d+$/).optional().or(z.literal('')),
-  // If submitting from a client-kind business slug, the form posts the
-  // selected business id here; the action ensures the ticket lands on the
-  // right host (the client's parent) with client_business_id set.
-  asClientBusinessId: z.string().uuid().optional().or(z.literal('')),
 })
 
 // Tiny per-process dedupe: same opener + business + subject within 5s →
@@ -61,7 +57,6 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     subject: String(formData.get('subject') ?? ''),
     body: String(formData.get('body') ?? ''),
     parentTicketId: String(formData.get('parentTicketId') ?? '') || undefined,
-    asClientBusinessId: String(formData.get('asClientBusinessId') ?? '') || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -72,37 +67,8 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     throw new Error('This team uses TicketTool — open a ticket from its panel in Discord.')
   }
 
-  // Resolve the HOST that will operate this ticket vs the CLIENT it's for.
-  // If the form was submitted from a client-kind business, the ticket
-  // actually belongs to that client's parent host with client_business_id
-  // pointing back at the client. Validates that the user belongs to the
-  // client they're claiming to open on behalf of.
-  let hostBusiness = access.business
-  let clientBusinessId: string | null = null
-  if (access.business.kind === 'client' && access.business.parentBusinessId) {
-    const [host] = await db
-      .select()
-      .from(businesses)
-      .where(eq(businesses.id, access.business.parentBusinessId))
-      .limit(1)
-    if (!host) throw new Error('This client has no parent host configured.')
-    hostBusiness = host
-    clientBusinessId = access.business.id
-  } else if (parsed.data.asClientBusinessId) {
-    // User explicitly tagged a client business — allowed when they're a
-    // member of that client and the host they're posting from is its parent.
-    const [client] = await db
-      .select()
-      .from(businesses)
-      .where(eq(businesses.id, parsed.data.asClientBusinessId))
-      .limit(1)
-    if (client && client.kind === 'client' && client.parentBusinessId === hostBusiness.id) {
-      const my = await listMyBusinesses()
-      if (my.some((b) => b.business.id === client.id)) {
-        clientBusinessId = client.id
-      }
-    }
-  }
+  // The team that will operate this ticket.
+  const hostBusiness = access.business
 
   // Dedupe rapid resubmits before doing any DB writes / Discord calls.
   const key = dedupeKey(session.user.id, hostBusiness.id, parsed.data.subject)
@@ -111,8 +77,7 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     redirect(`/b/${hostBusiness.slug}/tickets/${recent.ticketId}`)
   }
 
-  // Categories belong to the HOST that operates them — same regardless of
-  // whether the opener is the host's own staff or a client's member.
+  // Categories belong to the team that operates them.
   // Staff-only destinations are NEVER selectable here — they only exist as
   // move-into targets in the staff change-category flow.
   let category: typeof ticketCategories.$inferSelect | null = null
@@ -144,7 +109,6 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     .insert(tickets)
     .values({
       businessId: hostBusiness.id,
-      clientBusinessId,
       openerUserId: session.user.id,
       categoryId: category?.id ?? null,
       subject: parsed.data.subject,
@@ -225,12 +189,6 @@ export async function openTicketAction(formData: FormData): Promise<void> {
         globalAvatarUrl: avatarUrl(session.user.discordId, session.user.avatarHash ?? null, 64),
       })
 
-      // Mention the client business in the header so the host can spot
-      // which incoming org this ticket belongs to without clicking through.
-      const clientLabel = clientBusinessId
-        ? ` _(via client: ${access.business.kind === 'client' ? access.business.name : 'unknown'})_`
-        : ''
-
       const posted = await postWebhook({
         webhookUrl: webhook.url,
         username: identity.username,
@@ -238,7 +196,6 @@ export async function openTicketAction(formData: FormData): Promise<void> {
         content:
           `🎫 **#${row.id}** — *${parsed.data.subject}*` +
           (category ? ` _(${category.label})_` : '') +
-          clientLabel +
           `\n\n${parsed.data.body.slice(0, 1700)}`,
       })
 
@@ -280,8 +237,5 @@ export async function openTicketAction(formData: FormData): Promise<void> {
 
   revalidatePath('/dashboard')
   revalidatePath(`/b/${hostBusiness.slug}`)
-  // Always redirect to the HOST's ticket detail (the canonical operating
-  // surface). Client-side views read host-scoped URLs but filter by
-  // client_business_id.
   redirect(`/b/${hostBusiness.slug}/tickets/${row.id}`)
 }
