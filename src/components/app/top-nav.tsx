@@ -31,9 +31,11 @@ export async function TopNav() {
     isSudo = su
   }
 
-  // Smart Settings target: one team → straight to its settings; several → the hub.
-  const settingsHref =
-    scope.adminTeams.length === 1 ? `/b/${scope.adminTeams[0].slug}/settings` : '/settings/teams'
+  // Settings opens a team's settings page directly; its own dropdown switches
+  // between teams, so there's no separate hub step.
+  const settingsHref = scope.adminTeams[0]
+    ? `/b/${scope.adminTeams[0].slug}/settings`
+    : '/settings/teams'
 
   async function logout() {
     'use server'

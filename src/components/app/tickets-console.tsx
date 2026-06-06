@@ -906,8 +906,17 @@ function TeamFilter({
                     </span>
                     <span className="truncate">{t.name}</span>
                   </span>
-                  <span className="shrink-0 rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
-                    {t.staff ? 'staff' : 'admin'}
+                  <span className="flex shrink-0 items-center gap-1">
+                    {t.staff && (
+                      <span className="rounded bg-primary/15 px-1 text-[9px] uppercase tracking-wider text-primary">
+                        Staff
+                      </span>
+                    )}
+                    {t.admin && (
+                      <span className="rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                        Admin
+                      </span>
+                    )}
                   </span>
                 </CommandItem>
               )

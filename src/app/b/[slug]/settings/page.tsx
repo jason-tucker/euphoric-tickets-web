@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import { Trash2 } from 'lucide-react'
 import { requireBusinessAccess } from '@/server/permissions'
+import { ticketsConsoleScope } from '@/server/tickets'
 import { env } from '@/lib/env'
 import { db } from '@/db/client'
 import { ticketCategories } from '@/db/schema'
@@ -11,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { DiscordPicker } from '@/components/app/discord-picker'
+import { SettingsTeamPicker } from '@/components/app/settings-team-picker'
 import {
   addCategoryAction,
   deleteCategoryAction,
@@ -21,6 +23,8 @@ import {
 export default async function BusinessSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const { business } = await requireBusinessAccess(slug, 'admin')
+  // Every team this user can configure — drives the switcher dropdown.
+  const { adminTeams } = await ticketsConsoleScope()
 
   const cats = await db
     .select()
@@ -30,8 +34,15 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
 
   return (
     <main className="container max-w-2xl space-y-6 py-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Settings — {business.name}</h1>
+      <div className="space-y-1">
+        <h1 className="flex flex-wrap items-center gap-x-2 text-2xl font-semibold">
+          <span>Settings</span>
+          <span className="text-muted-foreground">—</span>
+          <SettingsTeamPicker
+            teams={adminTeams.map((t) => ({ slug: t.slug, name: t.name }))}
+            current={slug}
+          />
+        </h1>
         <p className="text-sm text-muted-foreground">
           Connect this team to Discord. Roles, webhook, and categories live here.
         </p>
