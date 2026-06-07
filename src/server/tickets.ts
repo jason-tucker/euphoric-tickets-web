@@ -9,10 +9,17 @@
 //   - the user opened it (in any team they belong to).
 // Sudo users administer every team, so they see everything.
 
-import { and, desc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm'
+import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '@/db/client'
-import { businesses, ticketCategories, ticketMessages, tickets, users } from '@/db/schema'
+import {
+  businesses,
+  ticketCategories,
+  ticketExternalMembers,
+  ticketMessages,
+  tickets,
+  users,
+} from '@/db/schema'
 import { auth } from './auth'
 import { listMyBusinesses, listMyStaffCategoryIds } from './permissions'
 
@@ -42,6 +49,10 @@ export type ConsoleTicket = {
   assigneeId: string | null
   assigneeName: string | null
   assigneeImage: string | null
+  // True when the viewer reaches this ticket WITHOUT relying on admin access —
+  // they opened it, were added to it, or staff its category. Drives the
+  // console's "Admin view" toggle (off → only these).
+  personalScope: boolean
 }
 
 export type ConsoleTeam = { id: string; name: string; slug: string; admin: boolean; staff: boolean }
@@ -173,6 +184,25 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
     for (const a of agg) msgTimes.set(a.ticketId, { first: a.firstAt, last: a.lastAt })
   }
 
+  // "Personal scope" = a ticket the viewer reaches WITHOUT relying on admin:
+  // they opened it, were added to it, or hold a staff role in its category. The
+  // console's default view (Admin view off) shows only these; admin-only tickets
+  // appear only when Admin view is on.
+  const staffedCatSet = new Set(staffCatIds)
+  const addedTicketIds = new Set<number>()
+  if (ids.length) {
+    const addedRows = await db
+      .select({ ticketId: ticketExternalMembers.ticketId })
+      .from(ticketExternalMembers)
+      .where(
+        and(
+          eq(ticketExternalMembers.userId, session.user.id),
+          inArray(ticketExternalMembers.ticketId, ids),
+        ),
+      )
+    for (const r of addedRows) addedTicketIds.add(r.ticketId)
+  }
+
   // Opener/assignee identities should match what shows inside a Discord ticket
   // — the per-guild server nickname + server avatar, not the global account.
   // resolveGuildIdentities is cached ~5 min per (guild,user), so the live
@@ -229,49 +259,23 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       assigneeId: r.assigneeId,
       assigneeName: assigneeIdent?.name ?? r.assigneeName,
       assigneeImage: assigneeIdent?.image ?? r.assigneeImage,
+      personalScope:
+        r.openerId === session.user.id ||
+        addedTicketIds.has(r.id) ||
+        (r.categoryId != null && staffedCatSet.has(r.categoryId)),
     }
   })
 
-  // Which teams the viewer actually *staffs* (holds a Discord staff role in one
-  // of its ticket categories) vs only administers. Staff is the *primary* reason
-  // for access; admin is the fallback for categories you'd otherwise never reach
-  // — so a team you both admin AND staff must read as "staff" (shown by default),
-  // not "admin" (hidden by default).
-  //
-  // This deliberately uses the viewer's LIVE guild roles, not the cached
-  // business_members snapshot: resolveBusinessAccess stores an empty role list
-  // for admins and sudo users (it never fetches their roles), so the snapshot
-  // would falsely report "no staff role" and mislabel every such team as admin.
-  // fetchGuildMemberRoles is cached ~5 min per (guild,user).
+  // Teams the viewer staffs (holds a real staff role in one of its categories),
+  // derived from the live-role-resolved staffed-category set (listMyStaffCategoryIds)
+  // → their teams. Drives the team's Staff/Admin badges in the console.
   const staffTeamIds = new Set<string>()
-  if (botToken && allIds.length) {
-    const staffCats = await db
-      .select({ businessId: ticketCategories.businessId, staffRoleIds: ticketCategories.staffRoleIds })
+  if (staffCatIds.length) {
+    const staffCatRows = await db
+      .select({ businessId: ticketCategories.businessId })
       .from(ticketCategories)
-      .where(and(inArray(ticketCategories.businessId, allIds), ne(ticketCategories.staffRoleIds, '')))
-    if (staffCats.length) {
-      const guildByBiz = new Map(my.map((b) => [b.business.id, b.business.discordGuildId]))
-      const guildsNeeded = new Set<string>()
-      for (const c of staffCats) {
-        const g = guildByBiz.get(c.businessId)
-        if (g) guildsNeeded.add(g)
-      }
-      const { fetchGuildMemberRoles } = await import('@/lib/discord')
-      const rolesByGuild = new Map<string, string[]>()
-      await Promise.all(
-        [...guildsNeeded].map(async (g) => {
-          const r = await fetchGuildMemberRoles(botToken, g, session.user.discordId)
-          if (r) rolesByGuild.set(g, r)
-        }),
-      )
-      for (const c of staffCats) {
-        const g = guildByBiz.get(c.businessId)
-        const userRoles = g ? rolesByGuild.get(g) : undefined
-        if (!userRoles) continue
-        const staffIds = c.staffRoleIds.split(',').map((s) => s.trim()).filter(Boolean)
-        if (staffIds.some((r) => userRoles.includes(r))) staffTeamIds.add(c.businessId)
-      }
-    }
+      .where(inArray(ticketCategories.id, staffCatIds))
+    for (const c of staffCatRows) staffTeamIds.add(c.businessId)
   }
 
   // The team facet is *every* team the user can see — not just teams that

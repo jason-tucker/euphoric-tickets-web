@@ -107,11 +107,12 @@ async function isSudo(userId: string): Promise<boolean> {
 // that's exactly the Team tier for them (the dashboard keeps Team and Admin
 // disjoint by subtracting these category IDs from the Admin query).
 //
-// Roles come from the cached `business_members.discordRolesSnapshot` (written
-// by `touchMember` on every team-page hit) and fall back to one live bot read
-// per team that has staff-gated categories but no snapshot yet. Cached
-// per-request so the dashboard's tab-visibility check and the Team query
-// share one resolution.
+// Roles are read LIVE from Discord per guild (cached ~5 min by
+// `fetchGuildMemberRoles`), not from the `business_members` snapshot — that
+// snapshot is empty for admins/owners/sudo (their roles are never fetched once
+// Manage-Server/Administrator grants access), so it would wrongly report "no
+// staff role" and leave their Team tab / the console's staff scope empty.
+// Cached per-request too.
 export const listMyStaffCategoryIds = cache(async function listMyStaffCategoryIds(): Promise<string[]> {
   const session = await auth()
   if (!session?.user?.id) return []
@@ -138,53 +139,30 @@ export const listMyStaffCategoryIds = cache(async function listMyStaffCategoryId
     .where(and(inArray(ticketCategories.businessId, bizIds), ne(ticketCategories.staffRoleIds, '')))
   if (cats.length === 0) return []
 
-  // Roles per team: prefer the cached snapshot; resolve a `null` (no snapshot
-  // yet) lazily below via a live bot read. An empty array is a real answer
-  // ("in the guild, holds no roles") and must NOT trigger a refetch.
-  const snaps = await db
-    .select({
-      businessId: businessMembers.businessId,
-      snapshot: businessMembers.discordRolesSnapshot,
-    })
-    .from(businessMembers)
-    .where(
-      and(
-        eq(businessMembers.userId, session.user.id),
-        inArray(businessMembers.businessId, bizIds),
-      ),
-    )
-  const rolesByBiz = new Map<string, string[]>()
-  for (const s of snaps) {
-    try {
-      rolesByBiz.set(s.businessId, JSON.parse(s.snapshot) as string[])
-    } catch {
-      rolesByBiz.set(s.businessId, [])
-    }
-  }
-
+  // Resolve the user's CURRENT roles per guild via the bot (cached ~5 min). We
+  // do NOT use the business_members snapshot here — it's empty for admins/sudo.
   const botToken = process.env.DISCORD_BOT_TOKEN
+  if (!botToken) return []
+  const { fetchGuildMemberRoles } = await import('@/lib/discord')
+
   const bizById = new Map(biz.map((b) => [b.id, b]))
+  const neededBizIds = [...new Set(cats.map((c) => c.businessId))]
+  const rolesByBiz = new Map<string, string[]>()
+  await Promise.all(
+    neededBizIds.map(async (bid) => {
+      const b = bizById.get(bid)
+      if (!b) return
+      const roles = await fetchGuildMemberRoles(botToken, b.discordGuildId, session.user.discordId)
+      if (roles) rolesByBiz.set(bid, roles)
+    }),
+  )
+
   const out: string[] = []
   for (const cat of cats) {
-    let roles = rolesByBiz.get(cat.businessId)
-    if (!roles && botToken) {
-      const b = bizById.get(cat.businessId)
-      if (b) {
-        try {
-          const { fetchGuildMemberAsBot } = await import('@/lib/discord')
-          const member = await fetchGuildMemberAsBot(botToken, b.discordGuildId, session.user.discordId)
-          roles = member?.roles ?? []
-        } catch {
-          // Bot not in the guild / Discord hiccup — treat as no roles.
-          roles = []
-        }
-        // Memoize so multiple categories in the same team reuse the read.
-        rolesByBiz.set(cat.businessId, roles)
-      }
-    }
+    const roles = rolesByBiz.get(cat.businessId)
     if (!roles) continue
     const staffIds = parseCsv(cat.staffRoleIds)
-    if (staffIds.some((r) => roles!.includes(r))) out.push(cat.id)
+    if (staffIds.some((r) => roles.includes(r))) out.push(cat.id)
   }
   return out
 })
