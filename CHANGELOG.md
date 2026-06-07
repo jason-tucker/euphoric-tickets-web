@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.5] — 2026-06-06 — "Admin view" is now a ticket-level toggle; staff detection fixed for admins
+
+### Fixed
+- **The dashboard "Team" tab was empty for admins/owners/sudo even on tickets they staff.** `listMyStaffCategoryIds` (which drives the Team tier) read the cached `business_members` role snapshot, and that snapshot is **empty for admins/owners/sudo** — their Discord roles are never fetched once Manage-Server/Administrator grants access. It now reads **live guild roles** (cached ~5 min), so your staffed categories resolve correctly and the Team tab shows their tickets. (The console's per-ticket scope is derived from the same fixed function.)
+
+### Changed
+- **The team filter's "Hide admin-only teams" toggle is replaced by a ticket-level "Admin view" toggle** in the console toolbar — this is what it should have been all along. **Off by default**, you see the console *as if you weren't an admin*: only tickets you **opened, were added to, or staff** (hold a staff role in the category). **Turn Admin view on** to additionally see every ticket in the teams you administer (the admin "fallback" access). Previously the toggle hid whole *teams*, which wrongly removed your staff tickets on a team where you were both admin and staff.
+- The team multi-select now simply lists **all** your teams (each still tagged **Staff** / **Admin** by role); it no longer hides or filters teams itself — scope is the Admin-view toggle's job.
+
 ## [0.8.4] — 2026-06-06 — One header everywhere; Settings team switcher; Team Admin/Staff badges
 
 ### Changed
