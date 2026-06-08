@@ -1,12 +1,12 @@
 # Changelog
 
-## [0.8.7] — 2026-06-08 — Tickets console: status & team dropdowns, date-range filters
+## [0.8.7] — 2026-06-08 — Tickets console: column-row status & team dropdowns, date-range filters
 
 ### Changed
-- **Status is now a dropdown instead of a row of chips.** The board header's status buttons (Active / Open / In Progress / … / Closed / All) collapse into a single **Status** dropdown that sits next to the **Team** dropdown — each option still shows its live count, and the trigger highlights when you've moved off the default (Active). The team filter is unchanged (already a dropdown). "Clear filters" moved to the result-count line.
+- **Status and team filters now live in the grid's per-column filter row, not the board header.** The status chip row is gone: the **Status** column filter is a single-select dropdown with live counts (default Active), and the **Team** column filter is the multi-select (with Staff / Admin tags) moved down out of the toolbar — both sit alongside the existing **Category** dropdown, right under their column headers. "Clear filters" moved to the result-count line.
 
 ### Added
-- **Date-range filters on the Opened and Last activity columns.** Each column's filter cell is now a date-range popover (From / To, either bound optional). Both **default to blank, so everything shows** until you pick a date; they ride with their columns, so Last activity is always available and Opened appears on wide screens (matching the existing per-column filter behaviour).
+- **Date-range filters on the Opened and Last activity columns.** Each column's filter cell is a date-range popover (From / To, either bound optional). Both **default to blank, so everything shows** until you pick a date. The filters ride with their columns: Last activity is always visible; Team, Category and Opened appear at their existing breakpoints.
 
 ## [0.8.6] — 2026-06-08 — Tickets console: filters live on the board
 

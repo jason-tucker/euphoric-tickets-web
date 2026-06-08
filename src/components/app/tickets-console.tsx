@@ -19,13 +19,11 @@ import {
   Check,
   ExternalLink,
   Search,
-  Building2,
   Rows3,
   Rows2,
   RefreshCw,
   AlertTriangle,
   ShieldCheck,
-  ListFilter,
   CalendarRange,
   X,
 } from 'lucide-react'
@@ -423,6 +421,8 @@ export function TicketsConsole({
         return <ColInput value={colFilters.id} onChange={(v) => setCol({ id: v })} placeholder="#" numeric />
       case 'subject':
         return <ColInput value={colFilters.subject} onChange={(v) => setCol({ subject: v })} placeholder="Filter…" />
+      case 'team':
+        return <TeamFilter teams={teams} selected={selectedTeams} onChange={setSelectedTeams} />
       case 'category':
         return (
           <OptionFilter
@@ -432,6 +432,8 @@ export function TicketsConsole({
             onChange={(v) => setCol({ categories: v })}
           />
         )
+      case 'status':
+        return <StatusFilter value={status} onChange={setStatus} counts={statusCounts} />
       case 'opener':
         return <ColInput value={colFilters.opener} onChange={(v) => setCol({ opener: v })} placeholder="Filter…" />
       case 'assignee':
@@ -461,9 +463,9 @@ export function TicketsConsole({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      {/* Board header — the board owns its filters now: search, the team / status /
-          admin / assignee dropdowns and the live result count are all pinned
-          here, above the scrolling grid below. */}
+      {/* Board header — search, the admin-view + assignee toggles, and the live
+          result count. The per-column filter row in the grid below owns the team,
+          status, category, opened / last-activity and free-text filters. */}
       <div className="space-y-3 border-b p-3">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
@@ -478,10 +480,6 @@ export function TicketsConsole({
               aria-label="Search tickets"
             />
           </div>
-
-          <TeamFilter teams={teams} selected={selectedTeams} onChange={setSelectedTeams} />
-
-          <StatusFilter value={status} onChange={setStatus} counts={statusCounts} />
 
           <AdminViewToggle value={adminView} onChange={setAdminView} />
 
@@ -873,18 +871,12 @@ function TeamFilter({
         <button
           type="button"
           className={cn(
-            'inline-flex h-9 items-center gap-2 rounded-md border bg-card px-2.5 text-sm hover:bg-accent',
+            'inline-flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border bg-background px-2 text-xs text-muted-foreground hover:bg-accent',
             selected.length > 0 && 'border-primary/40 text-foreground',
           )}
         >
-          <Building2 className="h-4 w-4 text-muted-foreground" />
-          <span className="max-w-[12rem] truncate">{label}</span>
-          {selected.length > 0 && (
-            <span className="rounded bg-primary/15 px-1 text-[10px] font-medium text-primary tabular-nums">
-              {selected.length}
-            </span>
-          )}
-          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+          <span className="truncate">{label}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start">
@@ -1019,16 +1011,12 @@ function StatusFilter({
         <button
           type="button"
           className={cn(
-            'inline-flex h-9 items-center gap-2 rounded-md border bg-card px-2.5 text-sm hover:bg-accent',
+            'inline-flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border bg-background px-2 text-xs text-muted-foreground hover:bg-accent',
             value !== 'active' && 'border-primary/40 text-foreground',
           )}
         >
-          <ListFilter className="h-4 w-4 text-muted-foreground" />
-          <span className="max-w-[9rem] truncate">{current.label}</span>
-          <span className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
-            {counts[current.key] ?? 0}
-          </span>
-          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+          <span className="truncate">{current.label}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-52 p-1">
