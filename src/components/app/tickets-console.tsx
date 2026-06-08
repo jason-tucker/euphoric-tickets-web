@@ -411,267 +411,270 @@ export function TicketsConsole({
   }
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search everything…"
-            className="h-9 pl-8"
-            aria-label="Search tickets"
-          />
+    <div className="overflow-hidden rounded-lg border bg-card">
+      {/* Board header — the board owns its filters now: search, the team / admin /
+          assignee filters, the status chips and the live result count are all
+          pinned here, above the scrolling grid below. */}
+      <div className="space-y-3 border-b p-3">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search everything…"
+              className="h-9 pl-8"
+              aria-label="Search tickets"
+            />
+          </div>
+
+          <TeamFilter teams={teams} selected={selectedTeams} onChange={setSelectedTeams} />
+
+          <AdminViewToggle value={adminView} onChange={setAdminView} />
+
+          <AssigneeFilter value={assignee} onChange={setAssignee} hasMe={!!meId} />
+
+          <div className="ml-auto flex items-center gap-2">
+            <DensityToggle value={density} onChange={setDensity} />
+            <button
+              type="button"
+              onClick={refetch}
+              title="Refresh now"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+            </button>
+            <span
+              className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+              title={live ? 'Live — updates stream in automatically' : 'Reconnecting — polling for updates'}
+            >
+              <span
+                className={cn(
+                  'h-2 w-2 rounded-full',
+                  live ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
+                )}
+              />
+              {live ? 'Live' : 'Polling'}
+            </span>
+          </div>
         </div>
 
-        <TeamFilter teams={teams} selected={selectedTeams} onChange={setSelectedTeams} />
+        {/* Status filter chips with live counts */}
+        <div className="flex flex-wrap items-center gap-1">
+          {STATUS_TABS.map((tab) => {
+            const activeTab = status === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setStatus(tab.key)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors',
+                  activeTab ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent',
+                )}
+              >
+                {tab.label}
+                <span
+                  className={cn(
+                    'rounded px-1 text-[10px] font-medium tabular-nums',
+                    activeTab ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {statusCounts[tab.key] ?? 0}
+                </span>
+              </button>
+            )
+          })}
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+              Clear
+            </button>
+          )}
+        </div>
 
-        <AdminViewToggle value={adminView} onChange={setAdminView} />
-
-        <AssigneeFilter value={assignee} onChange={setAssignee} hasMe={!!meId} />
-
-        <div className="ml-auto flex items-center gap-2">
-          <DensityToggle value={density} onChange={setDensity} />
-          <button
-            type="button"
-            onClick={refetch}
-            title="Refresh now"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
-          </button>
-          <span
-            className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
-            title={live ? 'Live — updates stream in automatically' : 'Reconnecting — polling for updates'}
-          >
-            <span
-              className={cn(
-                'h-2 w-2 rounded-full',
-                live ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
-              )}
-            />
-            {live ? 'Live' : 'Polling'}
+        {/* Result summary */}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            Showing <span className="font-medium text-foreground tabular-nums">{rows.length}</span> of{' '}
+            <span className="tabular-nums">{data.tickets.length}</span>{' '}
+            {data.tickets.length === 1 ? 'ticket' : 'tickets'} · {teamsInView}{' '}
+            {teamsInView === 1 ? 'team' : 'teams'}
           </span>
         </div>
       </div>
 
-      {/* Status filter chips with live counts */}
-      <div className="flex flex-wrap items-center gap-1">
-        {STATUS_TABS.map((tab) => {
-          const activeTab = status === tab.key
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setStatus(tab.key)}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors',
-                activeTab ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent',
-              )}
-            >
-              {tab.label}
-              <span
-                className={cn(
-                  'rounded px-1 text-[10px] font-medium tabular-nums',
-                  activeTab ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {statusCounts[tab.key] ?? 0}
-              </span>
-            </button>
-          )
-        })}
-        {filtersActive && (
-          <button
-            type="button"
-            onClick={clearAll}
-            className="ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Result summary */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          Showing <span className="font-medium text-foreground tabular-nums">{rows.length}</span> of{' '}
-          <span className="tabular-nums">{data.tickets.length}</span>{' '}
-          {data.tickets.length === 1 ? 'ticket' : 'tickets'} · {teamsInView}{' '}
-          {teamsInView === 1 ? 'team' : 'teams'}
-        </span>
-      </div>
-
       {/* The grid */}
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="max-h-[calc(100vh-17rem)] overflow-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-card">
-              <tr className="border-b">
-                {COLUMNS.map((col) => {
-                  const isActive = sort.key === col.key
-                  return (
-                    <th
-                      key={col.key}
+      <div className="max-h-[calc(100vh-18rem)] overflow-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead className="sticky top-0 z-10 bg-card">
+            <tr className="border-b">
+              {COLUMNS.map((col) => {
+                const isActive = sort.key === col.key
+                return (
+                  <th
+                    key={col.key}
+                    className={cn(
+                      'h-10 select-none px-3 text-left align-middle text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
+                      col.numeric && 'text-right',
+                      col.thClass,
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col.key)}
                       className={cn(
-                        'h-10 select-none px-3 text-left align-middle text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
-                        col.numeric && 'text-right',
-                        col.thClass,
+                        'inline-flex items-center gap-1 hover:text-foreground',
+                        col.numeric && 'flex-row-reverse',
+                        isActive && 'text-foreground',
                       )}
                     >
-                      <button
-                        type="button"
-                        onClick={() => toggleSort(col.key)}
-                        className={cn(
-                          'inline-flex items-center gap-1 hover:text-foreground',
-                          col.numeric && 'flex-row-reverse',
-                          isActive && 'text-foreground',
-                        )}
-                      >
-                        {col.label}
-                        {isActive ? (
-                          sort.dir === 'desc' ? (
-                            <ArrowDown className="h-3 w-3" />
-                          ) : (
-                            <ArrowUp className="h-3 w-3" />
-                          )
+                      {col.label}
+                      {isActive ? (
+                        sort.dir === 'desc' ? (
+                          <ArrowDown className="h-3 w-3" />
                         ) : (
-                          <ChevronsUpDown className="h-3 w-3 opacity-30" />
-                        )}
-                      </button>
-                    </th>
-                  )
-                })}
-                <th className="w-10 px-2" aria-label="Open in Discord" />
-              </tr>
-              {/* Live per-column filter row */}
-              <tr className="border-b bg-card">
-                {COLUMNS.map((col) => (
-                  <th key={col.key} className={cn('px-2 pb-1.5 align-top font-normal', col.thClass)}>
-                    {renderColFilter(col.key)}
+                          <ArrowUp className="h-3 w-3" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="h-3 w-3 opacity-30" />
+                      )}
+                    </button>
                   </th>
-                ))}
-                <th className="px-2" />
+                )
+              })}
+              <th className="w-10 px-2" aria-label="Open in Discord" />
+            </tr>
+            {/* Live per-column filter row */}
+            <tr className="border-b bg-card">
+              {COLUMNS.map((col) => (
+                <th key={col.key} className={cn('px-2 pb-1.5 align-top font-normal', col.thClass)}>
+                  {renderColFilter(col.key)}
+                </th>
+              ))}
+              <th className="px-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={COLUMNS.length + 1} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  {data.tickets.length === 0 ? (
+                    'No tickets in your teams yet.'
+                  ) : !adminView ? (
+                    <>
+                      Showing only tickets you staff, opened, or were added to. Turn on{' '}
+                      <span className="font-medium text-foreground">Admin view</span> to see every ticket in the teams
+                      you administer.
+                    </>
+                  ) : (
+                    'No tickets match these filters.'
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={COLUMNS.length + 1} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                    {data.tickets.length === 0 ? (
-                      'No tickets in your teams yet.'
-                    ) : !adminView ? (
-                      <>
-                        Showing only tickets you staff, opened, or were added to. Turn on{' '}
-                        <span className="font-medium text-foreground">Admin view</span> to see every ticket in the teams
-                        you administer.
-                      </>
-                    ) : (
-                      'No tickets match these filters.'
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((t) => {
-                  const href = `/b/${t.teamSlug}/tickets/${t.id}`
-                  const discordUrl =
-                    t.discordChannelId && t.discordGuildId
-                      ? `https://discord.com/channels/${t.discordGuildId}/${t.discordChannelId}`
-                      : null
-                  const cat = displayCategory(t)
-                  return (
-                    <tr
-                      key={`${t.teamSlug}-${t.id}`}
-                      onClick={() => router.push(href)}
-                      className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/40"
-                    >
-                      <td className={cn('px-3 text-right font-mono text-xs text-muted-foreground', cellPad)}>
-                        {t.id}
-                      </td>
-                      <td className={cn('max-w-[36ch] px-3', cellPad)}>
-                        <div className="flex items-center gap-1.5">
-                          {t.needsAttention && (
-                            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Needs attention" />
-                          )}
-                          <Link
-                            href={href}
-                            onClick={(e) => e.stopPropagation()}
-                            className="truncate font-medium hover:underline"
-                          >
-                            {displaySubject(t)}
-                          </Link>
-                          {t.externalSource === 'tickettool' && (
-                            <span className="shrink-0 rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
-                              TT
-                            </span>
-                          )}
-                        </div>
-                        {/* Team shows under the subject on small screens where the Team column is hidden. */}
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground md:hidden">{t.teamName}</div>
-                      </td>
-                      <td className={cn('hidden px-3 text-sm text-muted-foreground md:table-cell', cellPad)}>
-                        <span className="truncate">{t.teamName}</span>
-                      </td>
-                      <td className={cn('hidden px-3 text-sm text-muted-foreground lg:table-cell', cellPad)}>
-                        {cat ? (
-                          <span className="inline-flex items-center gap-1">
-                            {t.categoryEmoji && <span>{t.categoryEmoji}</span>}
-                            <span className="truncate">{cat}</span>
+            ) : (
+              rows.map((t) => {
+                const href = `/b/${t.teamSlug}/tickets/${t.id}`
+                const discordUrl =
+                  t.discordChannelId && t.discordGuildId
+                    ? `https://discord.com/channels/${t.discordGuildId}/${t.discordChannelId}`
+                    : null
+                const cat = displayCategory(t)
+                return (
+                  <tr
+                    key={`${t.teamSlug}-${t.id}`}
+                    onClick={() => router.push(href)}
+                    className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/40"
+                  >
+                    <td className={cn('px-3 text-right font-mono text-xs text-muted-foreground', cellPad)}>
+                      {t.id}
+                    </td>
+                    <td className={cn('max-w-[36ch] px-3', cellPad)}>
+                      <div className="flex items-center gap-1.5">
+                        {t.needsAttention && (
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Needs attention" />
+                        )}
+                        <Link
+                          href={href}
+                          onClick={(e) => e.stopPropagation()}
+                          className="truncate font-medium hover:underline"
+                        >
+                          {displaySubject(t)}
+                        </Link>
+                        {t.externalSource === 'tickettool' && (
+                          <span className="shrink-0 rounded bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                            TT
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground/50">—</span>
                         )}
-                      </td>
-                      <td className={cn('px-3', cellPad)}>
-                        <StatusBadge status={t.status} />
-                      </td>
-                      <td className={cn('hidden px-3 sm:table-cell', cellPad)}>
-                        <UserCell name={t.openerName} image={t.openerImage} />
-                      </td>
-                      <td className={cn('hidden px-3 xl:table-cell', cellPad)}>
-                        {t.assigneeId ? (
-                          <UserCell name={t.assigneeName} image={t.assigneeImage} />
-                        ) : (
-                          <span className="text-xs text-muted-foreground/50">Unassigned</span>
-                        )}
-                      </td>
-                      <td
-                        className={cn('hidden px-3 text-xs text-muted-foreground 2xl:table-cell', cellPad)}
-                        title={new Date(t.openedAt).toLocaleString()}
-                      >
-                        {relativeTime(t.openedAt)}
-                      </td>
-                      <td
-                        className={cn('px-3 text-xs text-muted-foreground', cellPad)}
-                        title={new Date(t.lastActivityAt).toLocaleString()}
-                      >
-                        {relativeTime(t.lastActivityAt)}
-                      </td>
-                      <td className={cn('px-2', cellPad)}>
-                        {discordUrl && (
-                          <a
-                            href={discordUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            title="Open in Discord"
-                            aria-label="Open in Discord"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      </div>
+                      {/* Team shows under the subject on small screens where the Team column is hidden. */}
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground md:hidden">{t.teamName}</div>
+                    </td>
+                    <td className={cn('hidden px-3 text-sm text-muted-foreground md:table-cell', cellPad)}>
+                      <span className="truncate">{t.teamName}</span>
+                    </td>
+                    <td className={cn('hidden px-3 text-sm text-muted-foreground lg:table-cell', cellPad)}>
+                      {cat ? (
+                        <span className="inline-flex items-center gap-1">
+                          {t.categoryEmoji && <span>{t.categoryEmoji}</span>}
+                          <span className="truncate">{cat}</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
+                    </td>
+                    <td className={cn('px-3', cellPad)}>
+                      <StatusBadge status={t.status} />
+                    </td>
+                    <td className={cn('hidden px-3 sm:table-cell', cellPad)}>
+                      <UserCell name={t.openerName} image={t.openerImage} />
+                    </td>
+                    <td className={cn('hidden px-3 xl:table-cell', cellPad)}>
+                      {t.assigneeId ? (
+                        <UserCell name={t.assigneeName} image={t.assigneeImage} />
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">Unassigned</span>
+                      )}
+                    </td>
+                    <td
+                      className={cn('hidden px-3 text-xs text-muted-foreground 2xl:table-cell', cellPad)}
+                      title={new Date(t.openedAt).toLocaleString()}
+                    >
+                      {relativeTime(t.openedAt)}
+                    </td>
+                    <td
+                      className={cn('px-3 text-xs text-muted-foreground', cellPad)}
+                      title={new Date(t.lastActivityAt).toLocaleString()}
+                    >
+                      {relativeTime(t.lastActivityAt)}
+                    </td>
+                    <td className={cn('px-2', cellPad)}>
+                      {discordUrl && (
+                        <a
+                          href={discordUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Open in Discord"
+                          aria-label="Open in Discord"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   )

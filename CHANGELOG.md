@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.8.6] — 2026-06-08 — Tickets console: filters live on the board
+
+### Changed
+- **The Tickets console toolbar is now part of the board, not floating above it.** Search, the team / Admin-view / assignee filters, the status-chip row, and the live result count moved *inside* the board's card as a pinned header above the grid — so the board owns its own filters. The grid scrolls beneath a header that stays put; nothing about what each filter does changed, and the team/category dropdowns still render in a portal so the card's clipping doesn't affect them.
+
 ## [0.8.5] — 2026-06-06 — "Admin view" is now a ticket-level toggle; staff detection fixed for admins
 
 ### Fixed
@@ -833,4 +838,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.7.6 · 2e06ac5`
+`v0.8.6 · 7f8b246`
