@@ -455,7 +455,7 @@ export function TicketsConsole({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="flex min-h-0 flex-1 flex-col bg-card">
       {/* Board header — the admin-view + assignee toggles and the live result
           count. The per-column filter row in the grid below owns the team,
           status, category, opened / last-activity and the free-text (id /
@@ -514,8 +514,9 @@ export function TicketsConsole({
         </div>
       </div>
 
-      {/* The grid */}
-      <div className="max-h-[calc(100vh-18rem)] overflow-auto">
+      {/* The grid — fills the remaining height under the pinned toolbar and
+          scrolls on its own (sticky thead stays put). */}
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-card">
             <tr className="border-b">

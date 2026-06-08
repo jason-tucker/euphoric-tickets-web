@@ -26,14 +26,11 @@ export default async function TicketsPage({
   return (
     <>
       <TopNav />
-      <main className="mx-auto w-full max-w-[96rem] space-y-4 px-4 py-6 sm:px-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Tickets</h1>
-          <p className="text-sm text-muted-foreground">
-            Every ticket across your teams — sort any column, filter by team, and it stays live as
-            things change.
-          </p>
-        </div>
+      {/* Full-bleed, full-height app shell — the console spans the whole browser
+          (edge to edge, no centered max-width, no card box) and fills the
+          viewport below the 3.5rem header, ConnectWise-Manage style. The grid
+          scrolls internally; only the toolbar header stays pinned. */}
+      <main className="flex h-[calc(100svh-3.5rem)] flex-col">
         <TicketsConsole initial={data} meId={session.user.id} initialTeamSlug={sp.team} />
       </main>
     </>

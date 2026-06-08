@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.8.10] — 2026-06-08 — Mobile: the Tickets console fits a phone again
+## [0.8.11] — 2026-06-08 — Tickets console: full-bleed, full-height app shell
+
+### Changed
+- **The Tickets console now spans the whole browser instead of sitting in a centered card.** The page dropped its `max-w-[96rem]` centered column, its surrounding `rounded-lg border bg-card` box, and the page padding, so the grid runs edge-to-edge and fills the viewport below the header — a ConnectWise-Manage-style app shell. The toolbar (Admin view / assignee / density / live) stays pinned at the top and the grid scrolls beneath it, sizing to the available height (`flex` fill) rather than the old fixed `max-h-[calc(100vh-18rem)]`.
+
+### Removed
+- **The "Tickets" page heading and its "Every ticket across your teams…" subtitle are gone.** They cost a band of vertical space above the grid; the nav already makes clear where you are, so the console now starts right under the header.
 
 ### Fixed
 - **The Tickets console no longer scrolls sideways on a phone (~360px, the in-game CEF iframe width).** The dense grid kept its fixed-width **#**, **Status** (`w-28`) and **Last activity** (`w-32`) columns plus the Discord-link column at every size, so on a narrow screen they ate the row and squeezed the Subject, forcing a horizontal scroll. Below `sm` the grid now trims to **Subject · Status · Last activity** (team still shows under the subject), hides the **#** and Discord-link columns, and drops the Status/Last-activity fixed widths so the table reflows to fit. Every other column still returns at its existing breakpoint, and nothing changes on tablet/desktop.
@@ -866,4 +872,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.8.7 · 6de938f`
+`v0.8.11 · bd4b2fa`
