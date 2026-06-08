@@ -118,16 +118,21 @@ type Column = {
   thClass?: string
   numeric?: boolean
 }
+// thClass carries the responsive hide + width per column; the matching <td>s
+// mirror it. On a phone (<sm) we keep only Subject · Status · Last activity and
+// drop the fixed Status/Last widths so the grid reflows to fit ~360px instead of
+// scrolling sideways (the # and Discord-link columns hide; team shows under the
+// subject, the rest return at their breakpoints).
 const COLUMNS: Column[] = [
-  { key: 'id', label: '#', thClass: 'w-14', numeric: true },
+  { key: 'id', label: '#', thClass: 'hidden w-14 sm:table-cell', numeric: true },
   { key: 'subject', label: 'Subject' },
   { key: 'team', label: 'Team', thClass: 'hidden md:table-cell' },
   { key: 'category', label: 'Category', thClass: 'hidden lg:table-cell' },
-  { key: 'status', label: 'Status', thClass: 'w-28' },
+  { key: 'status', label: 'Status', thClass: 'sm:w-28' },
   { key: 'opener', label: 'Opener', thClass: 'hidden sm:table-cell' },
   { key: 'assignee', label: 'Assignee', thClass: 'hidden xl:table-cell' },
   { key: 'opened', label: 'Opened', thClass: 'hidden 2xl:table-cell w-28' },
-  { key: 'last', label: 'Last activity', thClass: 'w-32' },
+  { key: 'last', label: 'Last activity', thClass: 'sm:w-32' },
 ]
 
 type ColFilters = {
@@ -548,7 +553,7 @@ export function TicketsConsole({
                   </th>
                 )
               })}
-              <th className="w-10 px-2" aria-label="Open in Discord" />
+              <th className="hidden w-10 px-2 sm:table-cell" aria-label="Open in Discord" />
             </tr>
             {/* Live per-column filter row */}
             <tr className="border-b bg-card">
@@ -557,7 +562,7 @@ export function TicketsConsole({
                   {renderColFilter(col.key)}
                 </th>
               ))}
-              <th className="px-2" />
+              <th className="hidden px-2 sm:table-cell" />
             </tr>
           </thead>
           <tbody>
@@ -591,7 +596,7 @@ export function TicketsConsole({
                     onClick={() => router.push(href)}
                     className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/40"
                   >
-                    <td className={cn('px-3 text-right font-mono text-xs text-muted-foreground', cellPad)}>
+                    <td className={cn('hidden px-3 text-right font-mono text-xs text-muted-foreground sm:table-cell', cellPad)}>
                       {t.id}
                     </td>
                     <td className={cn('max-w-[36ch] px-3', cellPad)}>
@@ -653,7 +658,7 @@ export function TicketsConsole({
                     >
                       {relativeTime(t.lastActivityAt)}
                     </td>
-                    <td className={cn('px-2', cellPad)}>
+                    <td className={cn('hidden px-2 sm:table-cell', cellPad)}>
                       {discordUrl && (
                         <a
                           href={discordUrl}

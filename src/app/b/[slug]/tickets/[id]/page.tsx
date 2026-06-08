@@ -311,7 +311,7 @@ export default async function TicketDetailPage({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Hash className="h-3 w-3" />
             <span className="font-mono">{t.id}</span>
             {t.kind === 'project' && (
@@ -523,7 +523,7 @@ export default async function TicketDetailPage({
             mergeConversation(messages, auditRows).map((entry) => entry.kind === 'event' ? (
               <div key={`event-${entry.id}`} className="my-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="h-px flex-1 bg-border" aria-hidden />
-                <span className={`rounded-full px-2 py-0.5 ${eventTone(entry.action, entry.metadata as Record<string, unknown>)}`}>
+                <span className={`min-w-0 break-words rounded-full px-2 py-0.5 text-center ${eventTone(entry.action, entry.metadata as Record<string, unknown>)}`}>
                   {renderAuditLine(entry, gName)}{' · '}{relativeTime(entry.createdAt)}
                 </span>
                 <span className="h-px flex-1 bg-border" aria-hidden />
