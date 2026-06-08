@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.7] — 2026-06-08 — Tickets console: status & team dropdowns, date-range filters
+
+### Changed
+- **Status is now a dropdown instead of a row of chips.** The board header's status buttons (Active / Open / In Progress / … / Closed / All) collapse into a single **Status** dropdown that sits next to the **Team** dropdown — each option still shows its live count, and the trigger highlights when you've moved off the default (Active). The team filter is unchanged (already a dropdown). "Clear filters" moved to the result-count line.
+
+### Added
+- **Date-range filters on the Opened and Last activity columns.** Each column's filter cell is now a date-range popover (From / To, either bound optional). Both **default to blank, so everything shows** until you pick a date; they ride with their columns, so Last activity is always available and Opened appears on wide screens (matching the existing per-column filter behaviour).
+
 ## [0.8.6] — 2026-06-08 — Tickets console: filters live on the board
 
 ### Changed
@@ -838,4 +846,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.8.6 · 7f8b246`
+`v0.8.7 · 6de938f`

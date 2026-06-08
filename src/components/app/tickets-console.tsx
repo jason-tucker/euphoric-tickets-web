@@ -25,6 +25,8 @@ import {
   RefreshCw,
   AlertTriangle,
   ShieldCheck,
+  ListFilter,
+  CalendarRange,
   X,
 } from 'lucide-react'
 import type { ConsoleTeam, ConsoleTicket, TicketsConsoleData } from '@/server/tickets'
@@ -82,6 +84,18 @@ function statusMatches(s: string, filter: string): boolean {
   return s === filter
 }
 
+// Inclusive [from, to] date-range test for an ISO timestamp. Bounds come from a
+// native date input ('YYYY-MM-DD') or are '' for an open end. Blank/blank is
+// always true, so an untouched range never filters anything out.
+function inDateRange(iso: string, from: string, to: string): boolean {
+  if (!from && !to) return true
+  const ts = Date.parse(iso)
+  if (Number.isNaN(ts)) return false
+  if (from && ts < Date.parse(`${from}T00:00:00`)) return false
+  if (to && ts > Date.parse(`${to}T23:59:59.999`)) return false
+  return true
+}
+
 function initials(name: string | null): string {
   if (!name) return '?'
   return name
@@ -126,8 +140,22 @@ type ColFilters = {
   opener: string
   assignee: string
   categories: string[]
+  openedFrom: string
+  openedTo: string
+  lastFrom: string
+  lastTo: string
 }
-const EMPTY_COL_FILTERS: ColFilters = { id: '', subject: '', opener: '', assignee: '', categories: [] }
+const EMPTY_COL_FILTERS: ColFilters = {
+  id: '',
+  subject: '',
+  opener: '',
+  assignee: '',
+  categories: [],
+  openedFrom: '',
+  openedTo: '',
+  lastFrom: '',
+  lastTo: '',
+}
 
 export function TicketsConsole({
   initial,
@@ -329,6 +357,8 @@ export function TicketsConsole({
       if (fOpener && !(t.openerName ?? '').toLowerCase().includes(fOpener)) return false
       if (fAssignee && !(t.assigneeName ?? '').toLowerCase().includes(fAssignee)) return false
       if (cf.categories.length && (!cat || !cf.categories.includes(cat))) return false
+      if (!inDateRange(t.openedAt, cf.openedFrom, cf.openedTo)) return false
+      if (!inDateRange(t.lastActivityAt, cf.lastFrom, cf.lastTo)) return false
       return true
     })
   }, [data.tickets, selectedTeams, adminView, assignee, meId, query, colFilters])
@@ -372,7 +402,8 @@ export function TicketsConsole({
 
   const colFiltersActive =
     !!(colFilters.id || colFilters.subject || colFilters.opener || colFilters.assignee) ||
-    colFilters.categories.length > 0
+    colFilters.categories.length > 0 ||
+    !!(colFilters.openedFrom || colFilters.openedTo || colFilters.lastFrom || colFilters.lastTo)
   const filtersActive =
     selectedTeams.length > 0 || status !== 'active' || assignee !== 'all' || query.trim() !== '' || colFiltersActive
   const clearAll = () => {
@@ -405,6 +436,24 @@ export function TicketsConsole({
         return <ColInput value={colFilters.opener} onChange={(v) => setCol({ opener: v })} placeholder="Filter…" />
       case 'assignee':
         return <ColInput value={colFilters.assignee} onChange={(v) => setCol({ assignee: v })} placeholder="Filter…" />
+      case 'opened':
+        return (
+          <DateRangeFilter
+            label="Opened"
+            from={colFilters.openedFrom}
+            to={colFilters.openedTo}
+            onChange={(from, to) => setCol({ openedFrom: from, openedTo: to })}
+          />
+        )
+      case 'last':
+        return (
+          <DateRangeFilter
+            label="Activity"
+            from={colFilters.lastFrom}
+            to={colFilters.lastTo}
+            onChange={(from, to) => setCol({ lastFrom: from, lastTo: to })}
+          />
+        )
       default:
         return null
     }
@@ -412,9 +461,9 @@ export function TicketsConsole({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      {/* Board header — the board owns its filters now: search, the team / admin /
-          assignee filters, the status chips and the live result count are all
-          pinned here, above the scrolling grid below. */}
+      {/* Board header — the board owns its filters now: search, the team / status /
+          admin / assignee dropdowns and the live result count are all pinned
+          here, above the scrolling grid below. */}
       <div className="space-y-3 border-b p-3">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
@@ -431,6 +480,8 @@ export function TicketsConsole({
           </div>
 
           <TeamFilter teams={teams} selected={selectedTeams} onChange={setSelectedTeams} />
+
+          <StatusFilter value={status} onChange={setStatus} counts={statusCounts} />
 
           <AdminViewToggle value={adminView} onChange={setAdminView} />
 
@@ -461,52 +512,24 @@ export function TicketsConsole({
           </div>
         </div>
 
-        {/* Status filter chips with live counts */}
-        <div className="flex flex-wrap items-center gap-1">
-          {STATUS_TABS.map((tab) => {
-            const activeTab = status === tab.key
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setStatus(tab.key)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors',
-                  activeTab ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent',
-                )}
-              >
-                {tab.label}
-                <span
-                  className={cn(
-                    'rounded px-1 text-[10px] font-medium tabular-nums',
-                    activeTab ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-                  )}
-                >
-                  {statusCounts[tab.key] ?? 0}
-                </span>
-              </button>
-            )
-          })}
-          {filtersActive && (
-            <button
-              type="button"
-              onClick={clearAll}
-              className="ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-              Clear
-            </button>
-          )}
-        </div>
-
-        {/* Result summary */}
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        {/* Result summary + clear-all */}
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
             Showing <span className="font-medium text-foreground tabular-nums">{rows.length}</span> of{' '}
             <span className="tabular-nums">{data.tickets.length}</span>{' '}
             {data.tickets.length === 1 ? 'ticket' : 'tickets'} · {teamsInView}{' '}
             {teamsInView === 1 ? 'team' : 'teams'}
           </span>
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="inline-flex shrink-0 items-center gap-1 hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+              Clear filters
+            </button>
+          )}
         </div>
       </div>
 
@@ -974,5 +997,134 @@ function DensityToggle({ value, onChange }: { value: Density; onChange: (v: Dens
     >
       {value === 'comfortable' ? <Rows2 className="h-4 w-4" /> : <Rows3 className="h-4 w-4" />}
     </button>
+  )
+}
+
+// Single-select status dropdown — replaces the old chip row. Lists every status
+// bucket with its live count; "Active" is the default and shows un-highlighted.
+function StatusFilter({
+  value,
+  onChange,
+  counts,
+}: {
+  value: string
+  onChange: (v: string) => void
+  counts: Record<string, number>
+}) {
+  const [open, setOpen] = useState(false)
+  const current = STATUS_TABS.find((s) => s.key === value) ?? STATUS_TABS[0]
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex h-9 items-center gap-2 rounded-md border bg-card px-2.5 text-sm hover:bg-accent',
+            value !== 'active' && 'border-primary/40 text-foreground',
+          )}
+        >
+          <ListFilter className="h-4 w-4 text-muted-foreground" />
+          <span className="max-w-[9rem] truncate">{current.label}</span>
+          <span className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
+            {counts[current.key] ?? 0}
+          </span>
+          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-52 p-1">
+        {STATUS_TABS.map((s) => {
+          const active = s.key === value
+          return (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => {
+                onChange(s.key)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent',
+                active && 'bg-accent',
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <Check className={cn('h-3.5 w-3.5', active ? 'opacity-100' : 'opacity-0')} />
+                {s.label}
+              </span>
+              <span className="text-[10px] text-muted-foreground tabular-nums">{counts[s.key] ?? 0}</span>
+            </button>
+          )
+        })}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// Per-column date-range filter (Opened, Last activity). Two native date inputs
+// in a popover; either bound may be left blank for an open end, and blank/blank
+// means "no filter" — the default, so everything shows until you pick a date.
+function DateRangeFilter({
+  label,
+  from,
+  to,
+  onChange,
+}: {
+  label: string
+  from: string
+  to: string
+  onChange: (from: string, to: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const active = !!(from || to)
+  const summary = active ? `${from || '…'} → ${to || '…'}` : label
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border bg-background px-2 text-xs text-muted-foreground hover:bg-accent',
+            active && 'border-primary/40 text-foreground',
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-1">
+            <CalendarRange className="h-3 w-3 shrink-0 opacity-60" />
+            <span className="truncate">{summary}</span>
+          </span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 space-y-2 p-2">
+        <label className="block space-y-1">
+          <span className="text-[11px] font-medium text-muted-foreground">From</span>
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => onChange(e.target.value, to)}
+            className="h-8 w-full rounded border border-input bg-background px-2 text-xs outline-none focus:border-primary/50"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-[11px] font-medium text-muted-foreground">To</span>
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => onChange(from, e.target.value)}
+            className="h-8 w-full rounded border border-input bg-background px-2 text-xs outline-none focus:border-primary/50"
+          />
+        </label>
+        {active && (
+          <button
+            type="button"
+            onClick={() => onChange('', '')}
+            className="w-full rounded-sm border px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            Clear
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
