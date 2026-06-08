@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.10] — 2026-06-08 — Mobile: the Tickets console fits a phone again
+
+### Fixed
+- **The Tickets console no longer scrolls sideways on a phone (~360px, the in-game CEF iframe width).** The dense grid kept its fixed-width **#**, **Status** (`w-28`) and **Last activity** (`w-32`) columns plus the Discord-link column at every size, so on a narrow screen they ate the row and squeezed the Subject, forcing a horizontal scroll. Below `sm` the grid now trims to **Subject · Status · Last activity** (team still shows under the subject), hides the **#** and Discord-link columns, and drops the Status/Last-activity fixed widths so the table reflows to fit. Every other column still returns at its existing breakpoint, and nothing changes on tablet/desktop.
+- **Ticket detail: long status lines no longer overflow the width on a phone.** The inline lifecycle pill (e.g. "X assigned the ticket to <long name>") could push past the viewport on a narrow screen; it now shrinks and wraps. The ticket meta line (#id · project · opened-by) wraps too.
+
 ## [0.8.9] — 2026-06-08 — Tickets console: drop the global search box
 
 ### Removed
