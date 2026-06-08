@@ -57,11 +57,16 @@ async function postStatus(ticket: Pick<Ticket, 'discordChannelId'>, text: string
   await postChannelStatus({ botToken, channelId: ticket.discordChannelId, text })
 }
 
-// Resolves a users.id (uuid) to a `<@discordId>` mention, or null if the user
-// has no Discord id on file.
-async function mentionForUserId(userId: string): Promise<string | null> {
-  const [u] = await db.select({ discordId: users.discordId }).from(users).where(eq(users.id, userId)).limit(1)
-  return u?.discordId ? `<@${u.discordId}>` : null
+// Resolves a users.id (uuid) to the assignee's Discord identity (id + display
+// name). Used so the assign audit can render the SAME name shown in the
+// conversation (guild nickname → stored name) instead of a raw `<@id>`.
+async function assigneeIdentity(userId: string): Promise<{ discordId: string | null; name: string | null }> {
+  const [u] = await db
+    .select({ discordId: users.discordId, name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  return { discordId: u?.discordId ?? null, name: u?.name ?? null }
 }
 
 // P2: shared loader for every ticket-detail server action. Looks up the
@@ -291,14 +296,25 @@ export async function assignTicket(
       .update(tickets)
       .set({ status: 'in_progress', assigneeUserId: raw, lastActivityAt: sql`now()` })
       .where(eq(tickets.id, ticketId))
-    const target = (await mentionForUserId(raw)) ?? 'a staff member'
+    const assignee = await assigneeIdentity(raw)
+    // Discord footer keeps the `<@id>` mention — Discord renders it as the
+    // member's in-channel display name. The web audit reads the resolved
+    // id + name (below) so it shows that same name, not a raw mention.
+    const target = assignee.discordId ? `<@${assignee.discordId}>` : 'a staff member'
     await postStatus(ctx.ticket, `Ticket assigned to ${target} by ${actor}`)
     await writeAudit({
       businessId: ctx.business.id,
       ticketId,
       actorUserId: ctx.session.user.id,
       action: 'assigned',
-      metadata: { assigneeUserId: raw, assigneeMention: target },
+      metadata: {
+        assigneeUserId: raw,
+        assigneeDiscordId: assignee.discordId,
+        assigneeName: assignee.name,
+        // Kept for backward-compat with older readers; the page prefers the
+        // resolved id + name above.
+        assigneeMention: target,
+      },
     })
   }
   revalidatePath(`/b/${slug}/tickets/${ticketId}`)

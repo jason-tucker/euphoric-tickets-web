@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.8] — 2026-06-08 — Ticket detail: assignee names in the log, title-pencil rename, tidier toolbar
+
+### Fixed
+- **The "assigned" status line in the log/conversation now shows the assignee's name, not a raw `<@id>`.** Previously an assign read like `Jason Tucker assigned the ticket to <@117501528641634310>` — the actor resolved but the assignee stayed a bare mention. The `assigned` audit now stores the assignee's Discord id + name, and the renderer resolves it through the same guild-identity lookup (`gName`) used for every message author and every other event — so it shows the **same name that appears in the conversation** (server nickname → stored name). Older rows are handled too: the snowflake is parsed out of the legacy `<@id>` mention and resolved, falling back to the raw mention only when nothing resolves.
+
+### Changed
+- **Native (non-TicketTool) tickets now rename from a pencil button next to the title** instead of a name field in the action toolbar. Click the pencil, edit the title inline, Save. TicketTool tickets — whose channel the bot doesn't own — keep their rename control in the toolbar.
+- **The assignee no longer gets its own toolbar chip when you can reassign.** For staff on an open native ticket the assignment now rides on the **Assign** dropdown itself, which reads **"Assigned to &lt;name&gt;"** (and plain "Assign" when unassigned) — one control instead of a chip plus a button, so the toolbar stops wrapping to a second row. The standalone "assigned to &lt;name&gt;" chip is kept only where there's no Assign dropdown (closed, non-staff, or TicketTool tickets).
+
 ## [0.8.7] — 2026-06-08 — Tickets console: column-row status & team dropdowns, date-range filters
 
 ### Changed
