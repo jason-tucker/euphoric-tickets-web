@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.8.9] — 2026-06-08 — Tickets console: drop the global search box
+
+### Removed
+- **The "Search everything…" box at the top of the Tickets console is gone.** The per-column filter row now covers every field it searched — **#id**, **subject**, **opener**, and **assignee** free-text filters, plus the **team**, **status**, **category**, and **Opened / Last activity** date-range filters — so the global search was redundant. Filtering each column is more precise than one fuzzy box, and the board header is now just the Admin-view + assignee toggles and the live result count. "Clear filters" still resets everything.
+
 ## [0.8.8] — 2026-06-08 — Ticket detail: assignee names in the log, title-pencil rename, tidier toolbar
 
 ### Fixed

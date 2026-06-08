@@ -2,8 +2,8 @@
 
 // The cross-team tickets console — a dense, ConnectWise-Manage-style data grid.
 // Everything here is client-side: sorting, the multi-team filter, the per-column
-// filter row, status/assignee/search all run in memory off one dataset, so once
-// you're on the page there are no navigations, no URL changes and no spinners.
+// filter row, and the status/assignee filters all run in memory off one dataset,
+// so once you're on the page there are no navigations, no URL changes and no spinners.
 // The dataset stays live via an SSE nudge (`/api/tickets/stream`) that triggers a
 // silent background refetch of `/api/tickets/list`, with a 20s poll + tab-focus
 // refetch as a fallback. View preferences persist to localStorage.
@@ -18,7 +18,6 @@ import {
   ChevronDown,
   Check,
   ExternalLink,
-  Search,
   Rows3,
   Rows2,
   RefreshCw,
@@ -30,7 +29,6 @@ import {
 import type { ConsoleTeam, ConsoleTicket, TicketsConsoleData } from '@/server/tickets'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { StatusBadge } from '@/components/app/status-badge'
-import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { relativeTime } from '@/lib/format'
@@ -172,7 +170,6 @@ export function TicketsConsole({
   const [adminView, setAdminView] = useState(false)
   const [status, setStatus] = useState<string>('active')
   const [assignee, setAssignee] = useState<Assignee>('all')
-  const [query, setQuery] = useState('')
   const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_COL_FILTERS)
   const [sort, setSort] = useState<{ key: SortKey; dir: Dir }>({ key: 'last', dir: 'desc' })
   const [density, setDensity] = useState<Density>('comfortable')
@@ -329,7 +326,6 @@ export function TicketsConsole({
   // you flip between statuses.
   const baseFiltered = useMemo(() => {
     const allowedTeams = selectedTeams.length ? new Set(selectedTeams) : null
-    const q = query.trim().toLowerCase()
     const cf = colFilters
     const fId = cf.id.trim()
     const fSubject = cf.subject.trim().toLowerCase()
@@ -343,13 +339,6 @@ export function TicketsConsole({
       if (assignee === 'unassigned' && t.assigneeId) return false
       const subj = displaySubject(t)
       const cat = displayCategory(t)
-      if (
-        q &&
-        !`${t.id} ${subj} ${t.openerName ?? ''} ${t.assigneeName ?? ''} ${t.teamName} ${cat ?? ''}`
-          .toLowerCase()
-          .includes(q)
-      )
-        return false
       if (fId && !String(t.id).includes(fId)) return false
       if (fSubject && !subj.toLowerCase().includes(fSubject)) return false
       if (fOpener && !(t.openerName ?? '').toLowerCase().includes(fOpener)) return false
@@ -359,7 +348,7 @@ export function TicketsConsole({
       if (!inDateRange(t.lastActivityAt, cf.lastFrom, cf.lastTo)) return false
       return true
     })
-  }, [data.tickets, selectedTeams, adminView, assignee, meId, query, colFilters])
+  }, [data.tickets, selectedTeams, adminView, assignee, meId, colFilters])
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -403,12 +392,11 @@ export function TicketsConsole({
     colFilters.categories.length > 0 ||
     !!(colFilters.openedFrom || colFilters.openedTo || colFilters.lastFrom || colFilters.lastTo)
   const filtersActive =
-    selectedTeams.length > 0 || status !== 'active' || assignee !== 'all' || query.trim() !== '' || colFiltersActive
+    selectedTeams.length > 0 || status !== 'active' || assignee !== 'all' || colFiltersActive
   const clearAll = () => {
     setSelectedTeams([])
     setStatus('active')
     setAssignee('all')
-    setQuery('')
     setColFilters(EMPTY_COL_FILTERS)
   }
 
@@ -463,24 +451,14 @@ export function TicketsConsole({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      {/* Board header — search, the admin-view + assignee toggles, and the live
-          result count. The per-column filter row in the grid below owns the team,
-          status, category, opened / last-activity and free-text filters. */}
+      {/* Board header — the admin-view + assignee toggles and the live result
+          count. The per-column filter row in the grid below owns the team,
+          status, category, opened / last-activity and the free-text (id /
+          subject / opener / assignee) filters — together these cover every
+          field, so the old global "search everything" box was removed. */}
       <div className="space-y-3 border-b p-3">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search everything…"
-              className="h-9 pl-8"
-              aria-label="Search tickets"
-            />
-          </div>
-
           <AdminViewToggle value={adminView} onChange={setAdminView} />
 
           <AssigneeFilter value={assignee} onChange={setAssignee} hasMe={!!meId} />
