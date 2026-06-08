@@ -5,6 +5,7 @@ import { ArrowLeft, Crown, ExternalLink, Hash, Server, UserPlus, X } from 'lucid
 import { DiscordPicker } from '@/components/app/discord-picker'
 import { LiveRefresh } from '@/components/app/live-refresh'
 import { TicketActionMenu } from '@/components/app/ticket-action-menu'
+import { TitleEditor } from '@/components/app/title-editor'
 import { DiscordMarkdown } from '@/components/app/discord-markdown'
 import { fetchChannelOverwrites, fetchGuildRoles } from '@/lib/discord'
 import { StatusBadge } from '@/components/app/status-badge'
@@ -240,6 +241,9 @@ export default async function TicketDetailPage({
     // The target of member_added/removed/owner_changed events — so the inline
     // status line can show their in-server nickname instead of a raw snowflake.
     ...auditRows.map((a) => (a.metadata as Record<string, unknown> | null)?.discordUserId as string | undefined),
+    // The assignee on each `assigned` event — so historical assignees resolve
+    // to their nickname too (new rows store the id; old rows parse the mention).
+    ...auditRows.map((a) => assigneeDiscordIdFromMeta(a.metadata as Record<string, unknown> | null)),
     ...peopleIds,
   ].filter((x): x is string => !!x)
   const { resolveGuildIdentities } = await import('@/lib/discord')
@@ -318,7 +322,10 @@ export default async function TicketDetailPage({
             <span>·</span>
             <span>opened {relativeTime(t.openedAt)} by {gName(opener?.discordId, opener?.name) ?? '?'}</span>
           </div>
-          <h1 className="mt-1 break-words text-2xl font-semibold">{t.subject}</h1>
+          {/* Native tickets rename via the pencil here (we own the channel);
+              TicketTool tickets keep their rename in the toolbar. */}
+          <TitleEditor subject={t.subject} canRename={canRename && !isExternal} action={rename} />
+
           {parentTicket && (
             <p className="mt-1 text-xs text-muted-foreground">
               Sub-ticket of{' '}
@@ -354,7 +361,11 @@ export default async function TicketDetailPage({
               TicketTool
             </span>
           )}
-          {assignee && (
+          {/* Who it's assigned to. When the Assign dropdown is shown (staff, open,
+              native) the assignment rides on the dropdown's label instead, so we
+              don't double up and wrap the toolbar — keep this chip only for the
+              read-only cases (closed / non-staff / TicketTool). */}
+          {assignee && !canAssign && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               assigned to {gName(assignee.discordId, assignee.name) ?? '?'}
             </span>
@@ -383,7 +394,7 @@ export default async function TicketDetailPage({
           )}
           {canAssign && (
             <TicketActionMenu
-              triggerLabel="Assign"
+              triggerLabel={assignee ? `Assigned to ${gName(assignee.discordId, assignee.name) ?? '?'}` : 'Assign'}
               variant="secondary"
               name="assigneeId"
               currentValue={t.assigneeUserId ?? ''}
@@ -407,7 +418,9 @@ export default async function TicketDetailPage({
               }))}
             />
           )}
-          {canRename && (
+          {/* Native rename lives on the title pencil now; only TicketTool tickets
+              (whose channel we don't own) keep the toolbar rename form. */}
+          {canRename && isExternal && (
             <form action={rename} className="flex flex-wrap items-center gap-1">
               <input
                 name="name"
@@ -864,6 +877,17 @@ function eventTone(action: string, meta?: Record<string, unknown>): string {
   return NEUTRAL
 }
 
+// The assignee's Discord id from an `assigned` audit row. New rows store
+// `assigneeDiscordId`; older rows only kept the raw `<@id>` mention, so fall
+// back to parsing the snowflake out of it — that way the page resolves the
+// assignee to the same guild nickname shown in the conversation.
+function assigneeDiscordIdFromMeta(meta: Record<string, unknown> | null | undefined): string | undefined {
+  if (!meta) return undefined
+  if (typeof meta.assigneeDiscordId === 'string') return meta.assigneeDiscordId
+  if (typeof meta.assigneeMention === 'string') return meta.assigneeMention.match(/^<@!?(\d+)>$/)?.[1] ?? undefined
+  return undefined
+}
+
 function renderAuditLine(
   entry: RawAudit | EventEntry,
   gName: (discordId: string | null | undefined, fallback: string | null | undefined) => string | null | undefined,
@@ -879,8 +903,16 @@ function renderAuditLine(
       return <><strong>{actor}</strong> unclaimed the ticket.</>
     case 'status_changed':
       return <><strong>{actor}</strong> set status to <em>{String(meta.to ?? '?')}</em>.</>
-    case 'assigned':
-      return <><strong>{actor}</strong> assigned the ticket{meta.assigneeMention ? <> to <em>{String(meta.assigneeMention)}</em></> : null}.</>
+    case 'assigned': {
+      // Resolve to the same guild identity used in the conversation. New rows
+      // carry assigneeDiscordId + assigneeName; older rows only have the raw
+      // `<@id>` mention (parsed above) — fall back to it only if nothing resolves.
+      const did = assigneeDiscordIdFromMeta(meta)
+      const who =
+        gName(did, (meta.assigneeName as string | undefined) ?? null) ??
+        (meta.assigneeMention ? String(meta.assigneeMention) : null)
+      return <><strong>{actor}</strong> assigned the ticket{who ? <> to <em>{who}</em></> : null}.</>
+    }
     case 'unassigned':
       return <><strong>{actor}</strong> unassigned the ticket.</>
     case 'category_changed':
