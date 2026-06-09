@@ -72,6 +72,7 @@ const USER_LINES = [
   'Still broken on my end.',
   'Could you escalate this?',
   'Works now — thank you!',
+  'Turns out the cause was ||a stale cookie|| — clearing it fixed everything.',
 ]
 const STAFF_LINES = [
   'Thanks for reaching out — looking into it now.',
@@ -84,6 +85,7 @@ const STAFF_LINES = [
   'That should be working now.',
   'We rolled the change back.',
   'I’ve refunded the duplicate charge.',
+  'Quick tip (spoiler): ||turn it off and on again|| — then sign back in.',
 ]
 
 function uname(userId: string | null): { name: string | null; image: string | null; discordId: string | null } {

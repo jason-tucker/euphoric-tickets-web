@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.3] — 2026-06-09 — Markdown: real spoilers, emoji/gif + image embeds, cleaner mentions
+
+### Changed
+- **`DiscordMarkdown` (used by the ticket view and the demo) renders Discord syntax more faithfully.** Shared by the web UI and `/demo`, so both match.
+  - **Spoilers `||text||`** are now a proper click-to-reveal block (a solid bar that hides the text until clicked / Enter), instead of just dimmed text.
+  - **Custom and animated emoji** `<:name:id>` / `<a:name:id>` render as the actual emoji image from the Discord CDN — animated ones as **gifs** — instead of `:name:` text.
+  - **Image/gif URLs** are embedded inline (capped height) like Discord, instead of showing as a bare link.
+  - **Mentions** render as clean pills — `@user` / `@role` / `#channel` (raw id kept in the tooltip) — plus `@everyone` / `@here` — instead of dumping the raw snowflake.
+- The demo conversation now includes a couple of spoiler examples so the behavior is visible.
+
 ## [0.9.2] — 2026-06-09 — Demo: clickable console rows + spread-out ticket times
 
 ### Fixed
