@@ -1,0 +1,44 @@
+name: Security
+
+# Dependency vulnerability scan. Kept separate from the required CI check so a
+# newly-disclosed advisory in a dependency surfaces (and emails the weekly
+# run) without hard-blocking unrelated PRs. Uses `pnpm audit` so it needs no
+# GitHub Advanced Security (works on private repos); enable CodeQL default
+# setup in the repo's Security settings for SAST on top of this.
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '37 6 * * 1' # Mondays 06:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Report all advisories (informational), then fail only on high/critical
+      # so the signal is actionable rather than noisy.
+      - name: Audit (report)
+        run: pnpm audit || true
+
+      - name: Audit (gate on high/critical)
+        run: pnpm audit --audit-level=high
