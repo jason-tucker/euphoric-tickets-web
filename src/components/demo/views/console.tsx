@@ -24,5 +24,5 @@ export function DemoConsole({
   // Re-seed the console (which holds `initial` in state) once the persisted
   // overlay loads, and whenever the visitor's edit count changes.
   const sig = `${hydrated ? 1 : 0}:${overlay.newTickets.length}:${Object.keys(overlay.ticketPatches).length}`
-  return <TicketsConsole key={sig} initial={merged} meId={meId} initialTeamSlug={initialTeamSlug} live={false} />
+  return <TicketsConsole key={sig} initial={merged} meId={meId} initialTeamSlug={initialTeamSlug} live={false} basePath="/demo" />
 }

@@ -163,6 +163,7 @@ export function TicketsConsole({
   meId,
   initialTeamSlug,
   live: liveEnabled = true,
+  basePath = '',
 }: {
   initial: TicketsConsoleData
   meId: string
@@ -171,6 +172,9 @@ export function TicketsConsole({
   // refetch — and render `initial` statically. Defaults to true so production is
   // unchanged.
   live?: boolean
+  // Prefix for ticket links/navigation (the demo passes "/demo" so rows open the
+  // demo ticket page instead of the real auth-gated route). Defaults to "".
+  basePath?: string
 }) {
   const router = useRouter()
   const [data, setData] = useState<TicketsConsoleData>(initial)
@@ -600,7 +604,7 @@ export function TicketsConsole({
               </tr>
             ) : (
               rows.map((t) => {
-                const href = `/b/${t.teamSlug}/tickets/${t.id}`
+                const href = `${basePath}/b/${t.teamSlug}/tickets/${t.id}`
                 const discordUrl =
                   t.discordChannelId && t.discordGuildId
                     ? `https://discord.com/channels/${t.discordGuildId}/${t.discordChannelId}`

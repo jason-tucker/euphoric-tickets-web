@@ -1,9 +1,10 @@
 // Date algorithm for the demo. Each ticket carries a FIXED structural offset
-// chosen at generation time (date-independent); we PROJECT it against the
-// current date on every request. Fixed offset + advancing "now" ⇒ the whole
-// corpus slides forward one day each day, and the "today" cluster is always
-// genuinely today — so there's fresh data every day without ever mutating
-// anything.
+// expressed in milliseconds-ago (date-independent); we PROJECT it against the
+// current time on every request. Anchoring to `now` means the corpus slides
+// forward continuously — always genuinely fresh data — and, because the offsets
+// carry millisecond precision, every ticket gets a DISTINCT timestamp, so
+// nothing piles up at a single instant (the old absolute-time clamp made
+// hundreds of tickets share `now`, which then sorted into per-team blocks).
 
 import type { Rng } from './rng'
 
@@ -12,9 +13,9 @@ export const MIN_MS = 60_000
 
 // ~3 years of spread for the oldest tickets.
 export const SPREAD_DAYS = 365 * 3
+const MAX_WINDOW_MIN = 30 * 1440 + 720 // active window cap (~30 days)
 
-// Local-server-tz day key (YYYY-MM-DD) — only used to memoize cheap per-request
-// work, never baked into the structural dataset.
+// Local-server-tz day key (YYYY-MM-DD). Handy for cheap per-day memoization.
 export function todayKey(now: Date = new Date()): string {
   const y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, '0')
@@ -22,46 +23,45 @@ export function todayKey(now: Date = new Date()): string {
   return `${y}-${m}-${d}`
 }
 
-export function startOfToday(now: Date = new Date()): number {
-  const d = new Date(now)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
-}
-
-// The fixed, structural offset for one ticket. Never changes; only the
-// projection moves.
+// Fixed structural offset for one ticket. `openedAgoMs` = how long before now it
+// opened; `activeMs` = how long after opening the last activity was (0 ≤ activeMs
+// < openedAgoMs), so opened ≤ last < now after projection.
 export type TicketOffset = {
-  openDaysAgo: number // whole days before today the ticket opened (0 = today cluster)
-  openMinute: number // minute-of-day jitter [0, 1439]
-  activityMins: number // minutes from open to last activity (≥ 0)
+  openedAgoMs: number
+  activeMs: number
 }
 
-// Build a ticket's fixed offset. `todayCluster` forces openDaysAgo = 0 so a slice
-// of every team is always "today". The spread is biased toward recent (pow 2.2)
-// so the last ~3 years are covered, denser near now.
+// `todayCluster` lands the ticket within the last ~16h (reads as "today/fresh");
+// otherwise it's spread over the last ~3 years, biased toward recent (pow 2.2).
+// Minute base + a seconds jitter keep every opening on a distinct millisecond.
 export function makeOffset(rng: Rng, todayCluster: boolean): TicketOffset {
+  let opensAgoMin: number
   if (todayCluster) {
-    return { openDaysAgo: 0, openMinute: rng.int(0, 1439), activityMins: rng.int(0, 600) }
+    opensAgoMin = rng.int(5, 16 * 60)
+  } else {
+    const days = Math.max(1, Math.floor(Math.pow(rng.float(), 2.2) * SPREAD_DAYS))
+    opensAgoMin = days * 1440 + rng.int(0, 1439)
   }
-  const openDaysAgo = Math.max(1, Math.floor(Math.pow(rng.float(), 2.2) * SPREAD_DAYS))
-  const openMinute = rng.int(0, 1439)
-  // Activity window grows with age but stays bounded so "last activity" varies.
-  const windowDays = Math.min(openDaysAgo, rng.int(0, 30))
-  const activityMins = rng.int(0, windowDays * 1440 + 720)
-  return { openDaysAgo, openMinute, activityMins }
+  const openedAgoMs = opensAgoMin * MIN_MS + rng.int(0, 59) * 1000
+
+  // Active window: time from open to last activity, bounded and strictly less
+  // than the ticket's age (so an old ticket doesn't show activity "just now",
+  // and last activity always lands before now).
+  const windowMin = rng.int(0, Math.min(opensAgoMin - 1, MAX_WINDOW_MIN))
+  const activeMs = windowMin * MIN_MS + rng.int(0, 59) * 1000
+
+  return { openedAgoMs, activeMs }
 }
 
-// Projected open time, clamped to strictly before now.
+// Whole days since opening — derived from the fixed offset (drives the status mix).
+export function openDaysAgo(off: TicketOffset): number {
+  return Math.floor(off.openedAgoMs / DAY_MS)
+}
+
 export function projectOpenedAt(off: TicketOffset, now: Date = new Date()): Date {
-  const base = startOfToday(now)
-  const t = base - off.openDaysAgo * DAY_MS + off.openMinute * MIN_MS
-  return new Date(Math.min(t, now.getTime() - MIN_MS))
+  return new Date(now.getTime() - off.openedAgoMs)
 }
 
-// Projected last-activity time: open + activity window, clamped to now and never
-// before open.
 export function projectLastActivityAt(off: TicketOffset, now: Date = new Date()): Date {
-  const opened = projectOpenedAt(off, now).getTime()
-  const t = Math.min(opened + off.activityMins * MIN_MS, now.getTime())
-  return new Date(Math.max(t, opened))
+  return new Date(now.getTime() - off.openedAgoMs + off.activeMs)
 }

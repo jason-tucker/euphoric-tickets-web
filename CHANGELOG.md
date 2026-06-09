@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.2] — 2026-06-09 — Demo: clickable console rows + spread-out ticket times
+
+### Fixed
+- **Clicking a row in the demo Tickets console now opens the ticket.** The demo reuses the real console, whose rows linked to `/b/<slug>/tickets/<id>` — the real, auth-gated route — so in the demo they went nowhere. `TicketsConsole` now takes an optional `basePath` (default `""`, production unchanged) and the demo passes `"/demo"`, so rows open `/demo/b/<slug>/tickets/<id>`.
+- **Demo tickets no longer all share the same timestamp / clump by team.** Recent tickets had their last-activity time clamped to exactly `now`, so hundreds tied at one instant and the stable sort grouped them by team (looking like "one team opened everything at once"). Ticket times are now fixed "minutes-ago" offsets with per-ticket second-level jitter, anchored to the current time — every ticket gets a distinct timestamp and teams interleave naturally in the console. The console sort also breaks ties by ticket id.
+
 ## [0.9.1] — 2026-06-09 — Fix demo persona switch leaking the internal host
 
 ### Fixed

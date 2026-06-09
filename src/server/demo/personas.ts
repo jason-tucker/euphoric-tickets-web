@@ -182,7 +182,7 @@ export function demoVisibleTickets(persona: DemoPersonaSpec, now: Date, cap = 10
       })
     }
   }
-  cands.sort((a, b) => b.lastMs - a.lastMs)
+  cands.sort((a, b) => b.lastMs - a.lastMs || a.header.id - b.header.id)
   return cands.slice(0, cap).map((c) => projectTicket(ds, c.team, c.header, now, c.personalScope))
 }
 

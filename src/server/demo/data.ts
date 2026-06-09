@@ -10,7 +10,7 @@
 // module is, and must stay, 100% read-only and never imports '@/db/client'.
 
 import { rngFor, Rng } from './rng'
-import { makeOffset, type TicketOffset } from './dates'
+import { makeOffset, openDaysAgo, type TicketOffset } from './dates'
 import type { TicketStatus, TicketKind } from '@/db/schema'
 
 // ─── shapes ──────────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ function buildDataset(): DemoDataset {
       const r = rngFor('ticket', bizId, n)
       const todayCluster = r.bool(0.035) // ~3.5% land "today"
       const offset = makeOffset(r, todayCluster)
-      const status = pickStatus(r, offset.openDaysAgo)
+      const status = pickStatus(r, openDaysAgo(offset))
       const cat = r.pick(openCats)
       const assigned = ASSIGNED_STATUSES.has(status) && r.bool(0.85)
       const header: DemoTicketHeader = {
