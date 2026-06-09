@@ -162,10 +162,15 @@ export function TicketsConsole({
   initial,
   meId,
   initialTeamSlug,
+  live: liveEnabled = true,
 }: {
   initial: TicketsConsoleData
   meId: string
   initialTeamSlug?: string
+  // When false (the demo), skip all network reach — no SSE stream, no poll, no
+  // refetch — and render `initial` statically. Defaults to true so production is
+  // unchanged.
+  live?: boolean
 }) {
   const router = useRouter()
   const [data, setData] = useState<TicketsConsoleData>(initial)
@@ -250,6 +255,9 @@ export function TicketsConsole({
   }, [])
 
   useEffect(() => {
+    // Demo / static mode: no SSE, no poll, no refetch. The data is fixed for the
+    // life of the mount (the demo re-seeds on navigation).
+    if (!liveEnabled) return
     let es: EventSource | null = null
     let pollTimer: ReturnType<typeof setInterval> | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -307,7 +315,7 @@ export function TicketsConsole({
       if (debounce) clearTimeout(debounce)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refetch])
+  }, [refetch, liveEnabled])
 
   const teams = data.teams
 
@@ -470,26 +478,33 @@ export function TicketsConsole({
 
           <div className="ml-auto flex items-center gap-2">
             <DensityToggle value={density} onChange={setDensity} />
-            <button
-              type="button"
-              onClick={refetch}
-              title="Refresh now"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
-            </button>
-            <span
-              className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
-              title={live ? 'Live — updates stream in automatically' : 'Reconnecting — polling for updates'}
-            >
+            {liveEnabled && (
+              <button
+                type="button"
+                onClick={refetch}
+                title="Refresh now"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+              </button>
+            )}
+            {liveEnabled ? (
               <span
-                className={cn(
-                  'h-2 w-2 rounded-full',
-                  live ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
-                )}
-              />
-              {live ? 'Live' : 'Polling'}
-            </span>
+                className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+                title={live ? 'Live — updates stream in automatically' : 'Reconnecting — polling for updates'}
+              >
+                <span className={cn('h-2 w-2 rounded-full', live ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50')} />
+                {live ? 'Live' : 'Polling'}
+              </span>
+            ) : (
+              <span
+                className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+                title="Demo data — sample tickets generated for this preview"
+              >
+                <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+                Demo data
+              </span>
+            )}
           </div>
         </div>
 

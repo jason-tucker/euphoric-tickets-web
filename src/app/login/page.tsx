@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { signIn, auth } from '@/server/auth'
 import { Button } from '@/components/ui/button'
@@ -44,6 +45,11 @@ export default async function LoginPage({
           <p className="text-center text-xs text-muted-foreground">
             We use Discord for sign-in and to know which teams you're a member of.
           </p>
+          <div className="border-t pt-3 text-center">
+            <Link href="/demo" className="text-sm font-medium text-primary hover:underline">
+              Explore the interactive demo — no sign-in →
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </main>
