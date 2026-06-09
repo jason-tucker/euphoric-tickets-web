@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.0] — 2026-06-09 — Public interactive `/demo` of the whole app
+
+### Added
+- **A public, unauthenticated `/demo/*` mirror of the entire app** — dashboard, the cross-team tickets console, ticket detail, per-team overview, team settings, and the sudo bot/errors dashboards — on deterministic synthetic data (**13 demo teams across 4 guilds, 402–1673 tickets each**). A small slice of every team is dated *today* and the rest spread over the last ~3 years, re-anchored to the current date on each load, so the demo always shows fresh data without ever mutating anything.
+- **Four switchable personas** — End user → Staff → Admin → Sudo — via a "Viewing as" switcher (with a tooltip) in the demo header. Visibility tracks the real permission model exactly, so each level looks like a live install. Stored in the `demo_persona` cookie.
+- **The demo is fully interactive, but every change is saved only in the visitor's browser (localStorage).** Replies, claim/unclaim/assign/status/close/reopen, rename, internal notes, opening new tickets, editing team settings + categories, and the bot name all persist across reloads and return visits — and **never touch the database, Discord, or any server mutation**. A "Reset demo" control clears the local sandbox.
+- A "Explore the interactive demo" link on the login page.
+
+### Changed
+- `TicketsConsole` gained an optional `live` prop (default `true`, so production is unchanged); the demo passes `live={false}` to render statically with no SSE/poll/refetch, reusing the real console for full parity.
+
 ## [0.8.11] — 2026-06-08 — Tickets console: full-bleed, full-height app shell
 
 ### Changed

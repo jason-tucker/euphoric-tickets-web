@@ -21,6 +21,9 @@ This site is embedded in the EuphoricFM in-game phone CEF iframe (same constrain
 ### 5. Web → Discord goes via per-user webhook spoof
 When staff replies in the web UI, we POST to the business's configured Discord webhook URL with `username` overridden to the staff member's Discord global name and `avatar_url` overridden to their avatar URL. Never post to Discord as the bot itself from the web layer — that's the bot's job.
 
+### 6. Keep `/demo` in parity (read-only against the real system)
+`/demo/*` is a public, unauthenticated, fully-interactive mirror of the whole app on synthetic data. It is interactive, but **every change is saved only in the visitor's browser (localStorage)** and never touches the DB or Discord. When you add or change a screen/control, mirror it in `/demo` as an overlay-backed version. `src/app/demo/**`, `src/server/demo/**`, and `src/components/demo/**` must **never** import `@/db/client` or any `actions.ts`, and define no `'use server'` actions. See `src/app/demo/CLAUDE.md`.
+
 ---
 
 ## What this app does
@@ -59,6 +62,7 @@ A user can belong to several businesses. The top-nav has a business switcher. UR
 | `/b/[slug]/tickets` | Admin | Full queue, filterable by status + category + assignee |
 | `/b/[slug]/tickets/[id]` | Admin | Reply, claim, close from this view; mirrors the bot's controls |
 | `/b/[slug]/settings` | Admin | Webhook URL, admin role IDs, category list |
+| `/demo/*` | Anonymous | Public, interactive, read-only-against-the-system mirror of the whole app on synthetic data; all edits persist in the visitor's browser only (never DB/Discord). 4 personas via the `demo_persona` cookie |
 | `/api/auth/[...nextauth]` | — | Auth.js handler |
 
 Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
