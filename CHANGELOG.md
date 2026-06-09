@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.1] — 2026-06-09 — Fix demo persona switch leaking the internal host
+
+### Fixed
+- **Switching demo personas no longer sends the browser to `0.0.0.0:3000`.** The `/demo/persona` handler built an *absolute* redirect from `req.url`, whose host behind the reverse proxy is the app's internal bind address (`0.0.0.0:3000`) — so the address bar jumped to that host on every persona switch. It now redirects with a **relative** `Location` (resolved by the browser against the real public URL), strips CR/LF from the `next` param to prevent header injection, and the switcher uses a plain `<a>` for a clean full navigation.
+
 ## [0.9.0] — 2026-06-09 — Public interactive `/demo` of the whole app
 
 ### Added

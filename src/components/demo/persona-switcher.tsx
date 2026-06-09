@@ -5,7 +5,6 @@
 // server action, no DB. The dropdown doubles as the explainer (each persona's
 // blurb), and the trigger carries a tooltip.
 
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Check, ChevronDown, UserCog } from 'lucide-react'
 import { PERSONA_KEYS, PERSONA_META, type PersonaKey } from '@/server/demo/meta'
@@ -44,13 +43,16 @@ export function PersonaSwitcher({ current }: { current: PersonaKey }) {
           const active = key === current
           return (
             <DropdownMenuItem key={key} asChild>
-              <Link href={`/demo/persona?to=${key}&next=${next}`} className="flex items-start gap-2">
+              {/* Plain <a> (not next/link): a full navigation to the GET handler,
+                  which sets the cookie and 303s back via a relative Location so
+                  the browser keeps the correct public host. */}
+              <a href={`/demo/persona?to=${key}&next=${next}`} className="flex items-start gap-2">
                 <Check className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'opacity-100 text-primary' : 'opacity-0'}`} />
                 <span className="flex flex-col">
                   <span className="text-sm font-medium">{meta.label}</span>
                   <span className="text-xs text-muted-foreground">{meta.blurb}</span>
                 </span>
-              </Link>
+              </a>
             </DropdownMenuItem>
           )
         })}
