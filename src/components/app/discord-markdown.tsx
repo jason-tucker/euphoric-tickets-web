@@ -3,16 +3,53 @@
 // P10 (lantern) — a small, dependency-free Discord-markdown renderer. Covers
 // the syntax people actually use in tickets so the reply preview shows what
 // Discord will render: bold, italic, underline, strikethrough, inline + block
-// code, spoilers, blockquotes, headers, subtext, autolinks, and mention/emoji
-// pills. Mentions render as styled `@id` / `#id` pills (name resolution is a
-// later nicety — the raw id still shows what you're tagging).
+// code, click-to-reveal spoilers, blockquotes, headers, subtext, autolinks,
+// inline image/gif embeds, custom + animated emoji (rendered from the Discord
+// CDN), and mention pills.
 
 import * as React from 'react'
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 let keySeq = 0
 function k(): string {
   keySeq = (keySeq + 1) % 1_000_000
   return `m${keySeq}`
+}
+
+// URLs that point straight at an image/gif (optionally with a query string) get
+// embedded inline, like Discord does, instead of rendering as a bare link.
+const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif)(\?[^\s]*)?$/i
+
+// Click-to-reveal spoiler — a solid block that hides its contents until clicked,
+// matching Discord's `||spoiler||`.
+function Spoiler({ children }: { children: React.ReactNode }) {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation()
+        setRevealed(true)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setRevealed(true)
+        }
+      }}
+      title={revealed ? undefined : 'Spoiler — click to reveal'}
+      className={cn(
+        'rounded px-0.5 transition-colors',
+        revealed
+          ? 'bg-foreground/10'
+          : 'cursor-pointer select-none bg-foreground/80 text-transparent hover:bg-foreground/70 [&_*]:invisible',
+      )}
+    >
+      {children}
+    </span>
+  )
 }
 
 // Inline tokenizer — recursive descent over a single line of text.
@@ -54,48 +91,90 @@ function parseInline(text: string): React.ReactNode[] {
         continue
       }
     }
-    // Mentions / channels / roles / custom emoji.
-    const mention = /^<(@!?|@&|#|a?:[\w]+:)(\d+)>/.exec(text.slice(i))
+    // Custom / animated emoji: <:name:id> and <a:name:id> → the actual emoji
+    // image from Discord's CDN (animated ones are gifs).
+    const emoji = /^<(a?):(\w+):(\d+)>/.exec(text.slice(i))
+    if (emoji) {
+      flush()
+      const animated = emoji[1] === 'a'
+      const name = emoji[2]
+      const id = emoji[3]
+      out.push(
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={k()}
+          src={`https://cdn.discordapp.com/emojis/${id}.${animated ? 'gif' : 'png'}`}
+          alt={`:${name}:`}
+          title={`:${name}:`}
+          className="inline-block h-[1.25em] w-[1.25em] align-[-0.2em]"
+          loading="lazy"
+        />,
+      )
+      i += emoji[0].length
+      continue
+    }
+    // Mentions: <@id> / <@!id> (user), <@&id> (role), <#id> (channel). Without a
+    // name source we render a clean pill (the raw id stays in the tooltip).
+    const mention = /^<(@[!&]?|#)(\d+)>/.exec(text.slice(i))
     if (mention) {
       flush()
-      const kind = mention[1]
+      const prefix = mention[1]
       const id = mention[2]
-      let label = `@${id}`
-      let cls = 'bg-primary/15 text-primary'
-      if (kind === '#') {
-        label = `#${id}`
-      } else if (kind === '@&') {
-        label = `@&${id}`
-      } else if (kind.endsWith(':')) {
-        const name = /^a?:([\w]+):$/.exec(kind)?.[1] ?? 'emoji'
-        label = `:${name}:`
-        cls = 'bg-muted text-foreground'
-      }
+      const isChannel = prefix === '#'
+      const label = isChannel ? '#channel' : prefix === '@&' ? '@role' : '@user'
       out.push(
-        <span key={k()} className={`rounded px-1 py-0.5 text-[0.9em] font-medium ${cls}`}>
+        <span
+          key={k()}
+          title={id}
+          className={`rounded px-1 py-0.5 text-[0.9em] font-medium ${isChannel ? 'bg-muted text-foreground' : 'bg-primary/15 text-primary'}`}
+        >
           {label}
         </span>,
       )
       i += mention[0].length
       continue
     }
-    // Autolink.
+    // @everyone / @here.
+    if (text[i] === '@') {
+      const everyone = /^@(everyone|here)\b/.exec(text.slice(i))
+      if (everyone) {
+        flush()
+        out.push(
+          <span key={k()} className="rounded bg-primary/15 px-1 py-0.5 text-[0.9em] font-medium text-primary">
+            @{everyone[1]}
+          </span>,
+        )
+        i += everyone[0].length
+        continue
+      }
+    }
+    // Autolink — embed inline when it's an image/gif, otherwise a text link.
     const link = /^https?:\/\/[^\s<]+/.exec(text.slice(i))
     if (link) {
       flush()
-      out.push(
-        <a key={k()} href={link[0]} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-          {link[0]}
-        </a>,
-      )
-      i += link[0].length
+      const url = link[0]
+      if (IMAGE_RE.test(url)) {
+        out.push(
+          <a key={k()} href={url} target="_blank" rel="noopener noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt="" className="my-1 block max-h-72 max-w-full rounded-md" loading="lazy" />
+          </a>,
+        )
+      } else {
+        out.push(
+          <a key={k()} href={url} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+            {url}
+          </a>,
+        )
+      }
+      i += url.length
       continue
     }
     // Formatting markers (longest first).
     if (tryWrap('**', (n) => <strong key={k()}>{n}</strong>)) continue
     if (tryWrap('__', (n) => <u key={k()}>{n}</u>)) continue
     if (tryWrap('~~', (n) => <s key={k()}>{n}</s>)) continue
-    if (tryWrap('||', (n) => <span key={k()} className="rounded bg-foreground/30 text-foreground/30 hover:text-foreground">{n}</span>)) continue
+    if (tryWrap('||', (n) => <Spoiler>{n}</Spoiler>)) continue
     if (tryWrap('*', (n) => <em key={k()}>{n}</em>)) continue
     if (tryWrap('_', (n) => <em key={k()}>{n}</em>)) continue
 
