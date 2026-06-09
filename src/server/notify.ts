@@ -2,6 +2,7 @@ import 'server-only'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tickets, users, userNotificationPrefs, type NotifyEvent } from '@/db/schema'
+import { assertPublicHttpUrl } from '@/lib/ssrf'
 
 // P13 (lantern) — notification dispatcher. Both the web (reply/open server
 // actions) and the bot (via /api/internal/notify) call this. It reads
@@ -19,6 +20,24 @@ export type NotifyContext = {
 }
 
 const NTFY_BASE = process.env.NTFY_BASE_URL ?? 'https://ntfy.sh'
+// Bound the best-effort network calls so a slow/hung endpoint can't pin the
+// dispatcher (and, for the user-supplied ntfy server, can't be used to stall).
+const NOTIFY_TIMEOUT_MS = 5_000
+
+// Resolve the ntfy base to publish to. A user-supplied custom `server` is
+// SSRF-checked (scheme + resolved-IP) before use; anything unsafe or malformed
+// falls back to the operator-configured default base (trusted config).
+async function resolveNtfyBase(server?: string | null): Promise<string> {
+  if (server) {
+    try {
+      const u = await assertPublicHttpUrl(server)
+      return u.toString().replace(/\/+$/, '')
+    } catch (err) {
+      console.error('[notify] ignoring unsafe custom ntfy server:', err instanceof Error ? err.message : err)
+    }
+  }
+  return NTFY_BASE.replace(/\/+$/, '')
+}
 
 // Best-effort ntfy publish. `server` is the user's optional custom ntfy server;
 // falls back to the configured/default base.
@@ -29,12 +48,13 @@ async function postNtfy(
   clickUrl: string,
   server?: string | null,
 ): Promise<void> {
-  const base = (server && /^https?:\/\//i.test(server) ? server : NTFY_BASE).replace(/\/+$/, '')
+  const base = await resolveNtfyBase(server)
   try {
     await fetch(`${base}/${encodeURIComponent(topic)}`, {
       method: 'POST',
       headers: { Title: title, Click: clickUrl },
       body,
+      signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
     })
   } catch (err) {
     console.error('[notify] ntfy failed', err)
@@ -53,6 +73,7 @@ async function postBotDm(discordUserId: string, content: string): Promise<void> 
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-internal-token': token },
       body: JSON.stringify({ discordUserId, content }),
+      signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
     })
   } catch (err) {
     console.error('[notify] bot DM failed', err)

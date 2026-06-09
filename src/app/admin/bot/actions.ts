@@ -34,6 +34,9 @@ export async function setBotNameAction(formData: FormData): Promise<void> {
 // Force the bot to leave a guild. Bound with the guildId from the form button.
 export async function leaveGuildAction(guildId: string): Promise<void> {
   await requireSudo()
+  if (!/^\d{17,20}$/.test(guildId)) {
+    backWith({ warn: 'Invalid server id.' })
+  }
   const result = await leaveGuild(guildId)
   revalidatePath('/admin/bot')
 

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { userNotificationPrefs, notifyEvents, notifyChannels } from '@/db/schema'
 import { requireSession } from '@/server/permissions'
+import { parseSafeHttpUrl } from '@/lib/ssrf'
 
 const UUID = /^[0-9a-f-]{36}$/i
 
@@ -20,8 +21,10 @@ export async function saveNotificationPrefs(formData: FormData): Promise<void> {
 
   const ntfyTopic = String(formData.get('ntfyTopic') ?? '').trim() || null
   let ntfyServer = String(formData.get('ntfyServer') ?? '').trim() || null
-  // Only accept a sane http(s) URL for a custom server; ignore otherwise.
-  if (ntfyServer && !/^https?:\/\/[^\s]+$/i.test(ntfyServer)) ntfyServer = null
+  // Only accept a public http(s) URL for a custom server; reject internal /
+  // private / metadata hosts (SSRF) and anything malformed. The destination is
+  // re-checked (with DNS resolution) at send time in src/server/notify.ts.
+  if (ntfyServer && !parseSafeHttpUrl(ntfyServer)) ntfyServer = null
 
   let scopes: { bid: string; cid: string }[] = []
   try {

@@ -26,7 +26,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ guildId: string
   const botToken = process.env.DISCORD_BOT_TOKEN
   if (!botToken) return NextResponse.json({ error: 'bot not configured' }, { status: 500 })
 
-  const q = new URL(req.url).searchParams.get('q')?.trim() || undefined
+  // Clamp the free-text search to a sane length before it reaches Discord.
+  const q = new URL(req.url).searchParams.get('q')?.trim().slice(0, 100) || undefined
   const data = await fetchGuildMembers(botToken, guildId, q)
   return NextResponse.json(data)
 }

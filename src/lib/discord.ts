@@ -8,6 +8,16 @@
 
 const DISCORD_API = 'https://discord.com/api/v10'
 
+// Every Discord REST call here runs in the request path of a server action or
+// route handler. Without a timeout a slow/hung Discord response (or a stored
+// per-business webhook URL that stops responding) would pin the Node request
+// indefinitely and tie up the action. Bound every call with an AbortSignal;
+// callers may still pass their own `signal` to override.
+const DISCORD_TIMEOUT_MS = 10_000
+function discordFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, signal: init.signal ?? AbortSignal.timeout(DISCORD_TIMEOUT_MS) })
+}
+
 export type DiscordGuildLite = {
   id: string
   name: string
@@ -28,7 +38,7 @@ export async function fetchGuildMemberAsBot(
   guildId: string,
   userId: string,
 ): Promise<DiscordGuildMember | null> {
-  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/members/${userId}`, {
+  const res = await discordFetch(`${DISCORD_API}/guilds/${guildId}/members/${userId}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -43,7 +53,7 @@ export async function fetchGuildMemberAsBot(
 export async function fetchBotGuilds(
   botToken: string,
 ): Promise<Array<{ id: string; name: string; icon: string | null }>> {
-  const res = await fetch(`${DISCORD_API}/users/@me/guilds`, {
+  const res = await discordFetch(`${DISCORD_API}/users/@me/guilds`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -84,7 +94,7 @@ export async function fetchGuildChannels(
   botToken: string,
   guildId: string,
 ): Promise<DiscordGuildChannel[]> {
-  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/channels`, {
+  const res = await discordFetch(`${DISCORD_API}/guilds/${guildId}/channels`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -97,7 +107,7 @@ export async function fetchGuildRoles(
   botToken: string,
   guildId: string,
 ): Promise<DiscordGuildRole[]> {
-  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/roles`, {
+  const res = await discordFetch(`${DISCORD_API}/guilds/${guildId}/roles`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -117,7 +127,7 @@ export async function fetchGuildMembers(
   const path = query
     ? `/guilds/${guildId}/members/search?query=${encodeURIComponent(query)}&limit=25`
     : `/guilds/${guildId}/members?limit=100`
-  const res = await fetch(`${DISCORD_API}${path}`, {
+  const res = await discordFetch(`${DISCORD_API}${path}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -209,7 +219,7 @@ export async function postWebhook(input: WebhookPostInput): Promise<{ id: string
   if (embeds) body.embeds = embeds
   if (silent) body.flags = 1 << 12 // SUPPRESS_NOTIFICATIONS
 
-  const res = await fetch(url, {
+  const res = await discordFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -258,7 +268,7 @@ export async function createTicketChannel(input: {
     permissionOverwrites.push({ id: openerDiscordId, type: 1, allow: '68608', deny: '0' })
   }
 
-  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/channels`, {
+  const res = await discordFetch(`${DISCORD_API}/guilds/${guildId}/channels`, {
     method: 'POST',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -288,7 +298,7 @@ export async function createChannelWebhook(input: {
 }): Promise<CreatedWebhook> {
   const { botToken, channelId, name = 'Euphoric Tickets' } = input
 
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/webhooks`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/webhooks`, {
     method: 'POST',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -317,7 +327,7 @@ export async function archiveTicketChannel(input: {
 }): Promise<void> {
   const { botToken, channelId, closedCategoryId, prefix = 'closed-' } = input
 
-  const currentRes = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  const currentRes = await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${botToken}` },
   })
   if (!currentRes.ok) return
@@ -328,7 +338,7 @@ export async function archiveTicketChannel(input: {
   const patch: Record<string, unknown> = { name: newName }
   if (closedCategoryId) patch.parent_id = closedCategoryId
 
-  await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -347,7 +357,7 @@ export async function unarchiveTicketChannel(input: {
 }): Promise<void> {
   const { botToken, channelId, parentId, prefix = 'closed-' } = input
 
-  const currentRes = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  const currentRes = await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${botToken}` },
   })
   if (!currentRes.ok) return
@@ -357,7 +367,7 @@ export async function unarchiveTicketChannel(input: {
   const patch: Record<string, unknown> = { name: stripped.slice(0, 90) }
   if (parentId) patch.parent_id = parentId
 
-  await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -371,7 +381,7 @@ export async function renameDiscordChannel(
   channelId: string,
   name: string,
 ): Promise<void> {
-  await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: name.slice(0, 90) }),
@@ -386,7 +396,7 @@ export async function createPrivateThread(input: {
   name: string
 }): Promise<{ id: string }> {
   const { botToken, channelId, name } = input
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/threads`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/threads`, {
     method: 'POST',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -412,7 +422,7 @@ export async function postBotMessageToThread(input: {
   content: string
 }): Promise<{ id: string }> {
   const { botToken, threadId, content } = input
-  const res = await fetch(`${DISCORD_API}/channels/${threadId}/messages`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${threadId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -505,7 +515,7 @@ export async function fetchDiscordUser(
   botToken: string,
   userId: string,
 ): Promise<{ id: string; name: string; image: string | null } | null> {
-  const res = await fetch(`${DISCORD_API}/users/${userId}`, {
+  const res = await discordFetch(`${DISCORD_API}/users/${userId}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -531,7 +541,7 @@ export async function fetchChannelMemberIds(botToken: string, channelId: string)
   const cached = channelMembersCache.get(channelId)
   if (cached && Date.now() - cached.at < CHANNEL_MEMBERS_TTL_MS) return cached.ids
 
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -556,7 +566,7 @@ export async function fetchChannelOverwrites(
   if (cached && Date.now() - cached.at < CHANNEL_MEMBERS_TTL_MS) {
     return { memberIds: cached.memberIds, roleIds: cached.roleIds }
   }
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -573,7 +583,7 @@ export async function fetchChannelOverwrites(
 export async function addChannelMember(botToken: string, channelId: string, userId: string): Promise<void> {
   // ViewChannel|SendMessages|ReadMessageHistory|AttachFiles|EmbedLinks
   const ALLOW = String((1 << 10) | (1 << 11) | (1 << 16) | (1 << 15) | (1 << 14))
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/permissions/${userId}`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/permissions/${userId}`, {
     method: 'PUT',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 1, allow: ALLOW, deny: '0' }),
@@ -583,7 +593,7 @@ export async function addChannelMember(botToken: string, channelId: string, user
 
 // P6: revoke a user's channel overwrite.
 export async function removeChannelMember(botToken: string, channelId: string, userId: string): Promise<void> {
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/permissions/${userId}`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/permissions/${userId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bot ${botToken}` },
   })
@@ -605,7 +615,7 @@ export async function changeTicketChannelCategory(input: {
   const headers = { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' }
 
   if (parentId) {
-    await fetch(`${DISCORD_API}/channels/${channelId}`, {
+    await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
       method: 'PATCH',
       headers,
       body: JSON.stringify({ parent_id: parentId }),
@@ -615,7 +625,7 @@ export async function changeTicketChannelCategory(input: {
   // ViewChannel|SendMessages|ReadMessageHistory|AttachFiles|EmbedLinks
   const ALLOW = String((1 << 10) | (1 << 11) | (1 << 16) | (1 << 15) | (1 << 14))
   for (const roleId of grantRoleIds) {
-    await fetch(`${DISCORD_API}/channels/${channelId}/permissions/${roleId}`, {
+    await discordFetch(`${DISCORD_API}/channels/${channelId}/permissions/${roleId}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ type: 0, allow: ALLOW, deny: '0' }),
@@ -634,7 +644,7 @@ export async function fetchFreshAttachmentUrl(
   messageId: string,
   attachmentId: string,
 ): Promise<string | null> {
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
     headers: { Authorization: `Bot ${botToken}` },
     cache: 'no-store',
   })
@@ -665,7 +675,7 @@ export async function postChannelStatus(input: {
 }): Promise<void> {
   const { botToken, channelId, text } = input
   try {
-    const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
+    const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -689,7 +699,7 @@ export async function deleteDiscordChannel(input: {
   channelId: string
 }): Promise<void> {
   const { botToken, channelId } = input
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bot ${botToken}` },
   })
