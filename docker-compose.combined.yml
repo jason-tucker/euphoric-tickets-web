@@ -89,11 +89,16 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
 
   watchtower:
+    # Mounts the Docker socket (effectively host-root), so deny privilege
+    # escalation. Pin this image to a digest in production — see
+    # DEPLOYMENT_AND_ROLLBACK.md ("supply chain").
     image: nickfedor/watchtower:latest
     restart: unless-stopped
     command: ["--label-enable", "--cleanup", "--interval=60"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
     networks:
       tickets-net: {}
 

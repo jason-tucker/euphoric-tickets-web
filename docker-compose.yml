@@ -21,11 +21,15 @@ services:
     environment:
       # Force the in-container DATABASE_URL onto the compose-managed db
       # service regardless of what the .env says (.env stays usable for
-      # local-dev outside Docker).
-      DATABASE_URL: "postgresql://tickets_web:${POSTGRES_PASSWORD:-tickets_web_dev}@db:5432/tickets_web"
+      # local-dev outside Docker). POSTGRES_PASSWORD is required (no weak
+      # default) — set it in .env to the existing DB password to preserve an
+      # already-initialised volume. See DEPLOYMENT_AND_ROLLBACK.md.
+      DATABASE_URL: "postgresql://tickets_web:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/tickets_web"
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+    security_opt:
+      - no-new-privileges:true
     # Loopback-only on the host. The shared external network is what makes
     # the public Caddy able to reach us.
     ports:
@@ -54,8 +58,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: tickets_web
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tickets_web_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: tickets_web
+    security_opt:
+      - no-new-privileges:true
     # No host port. The bot (euphoric-tickets) joins efm-public-net and
     # reaches this container via the `tickets-db` alias for the unified
     # shared-DB architecture. Reach it from the VPS host with:
