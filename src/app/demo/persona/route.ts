@@ -10,10 +10,17 @@ export function GET(req: Request) {
   const url = new URL(req.url)
   const to = url.searchParams.get('to')
   const nextParam = url.searchParams.get('next') || '/demo'
-  // Only ever redirect within the demo subtree.
-  const dest = nextParam.startsWith('/demo') ? nextParam : '/demo'
+  // Only ever redirect within the demo subtree (guards against open redirects),
+  // and strip any CR/LF so the value can't inject extra response headers.
+  const cleaned = nextParam.replace(/[\r\n]/g, '')
+  const dest = cleaned.startsWith('/demo') ? cleaned : '/demo'
 
-  const res = NextResponse.redirect(new URL(dest, url))
+  // Use a RELATIVE Location header. `NextResponse.redirect` would build an
+  // ABSOLUTE URL from `req.url`, whose host behind the reverse proxy is the
+  // internal bind address (0.0.0.0:3000) — which then leaked into the browser's
+  // address bar. A relative Location is resolved by the browser against the
+  // public URL it actually requested, so the host stays correct.
+  const res = new NextResponse(null, { status: 303, headers: { Location: dest } })
   res.cookies.set(PERSONA_COOKIE, isPersonaKey(to) ? to : 'enduser', {
     path: '/demo',
     sameSite: 'lax',
