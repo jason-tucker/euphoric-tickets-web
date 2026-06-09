@@ -52,8 +52,21 @@ COPY --from=builder /build/src/db/schema /opt/drizzle/schema
 COPY drizzle.docker.config.cjs /opt/drizzle/drizzle.config.cjs
 
 COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x docker-entrypoint.sh
+# Run as the unprivileged `node` user (uid 1000, shipped in the base image)
+# instead of root. The entrypoint pushes the Drizzle schema from /opt/drizzle
+# and runs the Next standalone server from /app, so both trees (and the Next
+# runtime cache dir) must be owned by `node`.
+RUN chmod +x docker-entrypoint.sh \
+ && mkdir -p /app/.next/cache \
+ && chown -R node:node /app /opt/drizzle
 
 EXPOSE 3000
+
+# Container-level liveness check. Busybox `wget` ships in the alpine base;
+# /api/health runs a `select 1` against the database.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:3000/api/health || exit 1
+
+USER node
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

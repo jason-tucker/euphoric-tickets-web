@@ -13,7 +13,10 @@ export function GET(req: Request) {
   // Only ever redirect within the demo subtree (guards against open redirects),
   // and strip any CR/LF so the value can't inject extra response headers.
   const cleaned = nextParam.replace(/[\r\n]/g, '')
-  const dest = cleaned.startsWith('/demo') ? cleaned : '/demo'
+  // Only ever redirect to the demo subtree itself — require a `/demo` or
+  // `/demo/...` path so neighbours like `/demoX`, protocol-relative `//host`,
+  // or `/demo\host` can't slip through the prefix check.
+  const dest = cleaned === '/demo' || cleaned.startsWith('/demo/') ? cleaned : '/demo'
 
   // Use a RELATIVE Location header. `NextResponse.redirect` would build an
   // ABSOLUTE URL from `req.url`, whose host behind the reverse proxy is the

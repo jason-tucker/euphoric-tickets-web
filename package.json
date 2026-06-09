@@ -1,6 +1,6 @@
 {
   "name": "euphoric-tickets-web",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "private": true,
   "description": "Euphoric Tickets — web UI for the Discord-backed ticket bot",
   "scripts": {
@@ -9,6 +9,7 @@
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio"
@@ -29,8 +30,8 @@
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.469.0",
-    "next": "15.1.4",
-    "next-auth": "5.0.0-beta.25",
+    "next": "15.5.19",
+    "next-auth": "5.0.0-beta.30",
     "nextjs-toploader": "^3.9.17",
     "postgres": "^3.4.9",
     "react": "19.0.0",
@@ -47,10 +48,16 @@
     "@types/react-dom": "19.0.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.18.0",
-    "eslint-config-next": "15.1.4",
-    "postcss": "^8.5.0",
+    "eslint-config-next": "15.5.19",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": ">=8.5.10"
+    }
   },
   "packageManager": "pnpm@10.33.2"
 }

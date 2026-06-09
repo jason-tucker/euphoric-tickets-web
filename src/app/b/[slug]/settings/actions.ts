@@ -208,6 +208,13 @@ export async function updateCategoryAction(
 export async function deleteCategoryAction(slug: string, categoryId: string): Promise<void> {
   const { business } = await requireBusinessAccess(slug, 'admin')
 
+  // Defensive: the queries below are already business-scoped, but reject a
+  // malformed id outright (consistent with the UUID checks elsewhere).
+  if (!/^[0-9a-f-]{36}$/i.test(categoryId)) {
+    revalidatePath(`/b/${slug}/settings`)
+    return
+  }
+
   // Tickets reference the category via a RESTRICT FK, so deleting a category
   // that still has tickets throws. Orphan those tickets first (categoryId is
   // nullable). Notification prefs cascade-delete on their own.

@@ -14,21 +14,27 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: this job only needs to read the repo.
+permissions:
+  contents: read
+
 jobs:
   verify:
-    name: Typecheck & build
+    name: Typecheck, test & build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      # Third-party actions are pinned to a commit SHA (tag in the comment) so a
+      # retargeted/compromised tag can't silently change what runs in CI.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       # action-setup reads the pnpm version from package.json's
       # `packageManager` field; it must run before setup-node's pnpm cache.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a # v4.4.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -38,6 +44,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
 
       # Mirrors the Dockerfile build stage: `next build` evaluates server
       # modules, so DATABASE_URL must be set — a placeholder is fine, nothing

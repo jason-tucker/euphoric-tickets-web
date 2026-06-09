@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.10.0] — 2026-06-09 — Security & dependency hardening
+
+### Security
+- **Next.js upgraded `15.1.4 → 15.5.19`**, clearing 26 advisories including two Critical (React-flight RCE; **CVE-2025-29927** middleware authorization bypass) and a High SSRF / App Router XSS / DoS cluster. `pnpm audit` drops from 28 findings to 1 (a build-time-only `esbuild` advisory via `drizzle-kit`, no runtime exposure). `next-auth` bumped to `beta.30` and `postcss` to `≥8.5.10`.
+- **SSRF guard for the user-supplied custom ntfy server.** A user's notification `ntfyServer` URL was POSTed server-side with only an `http(s)` shape check — a blind-SSRF pivot to internal/metadata hosts. New `src/lib/ssrf.ts` rejects private/reserved IP literals, internal hostnames, and DNS names that resolve to private addresses; applied at save time and (with DNS resolution) at send time.
+- **Outbound calls are now time-bounded.** Every Discord REST call (`src/lib/discord.ts`) and notification POST (`src/server/notify.ts`) carries a 5–10s `AbortSignal` timeout so a slow/hung peer can't pin a server action.
+- **Container runs as the non-root `node` user** with a `HEALTHCHECK` (`Dockerfile`).
+- **`/api/internal/notify`** now compares its shared-secret token in constant time (`crypto.timingSafeEqual`) and validates the body with Zod.
+- **Hardening:** clamp the Discord members `?q=` search length; validate `guildId` in `leaveGuildAction` and `categoryId` in `deleteCategoryAction`; tighten the `/demo/persona` redirect to a strict `/demo` path boundary.
+
+### Changed
+- `docker-compose.yml` now **requires `POSTGRES_PASSWORD`** (removed the weak `tickets_web_dev` default) and sets `no-new-privileges` on web/db; `docker-compose.combined.yml` adds `no-new-privileges` to watchtower. **Operator action required** — see `docs/security-review/DEPLOYMENT_AND_ROLLBACK.md`.
+- CI/CD: all GitHub Actions pinned to commit SHAs; `permissions: contents: read` on CI; a `pnpm test` gate; a new `security.yml` running `pnpm audit`.
+
+### Added
+- `vitest` + `src/lib/ssrf.test.ts` (13 cases) covering the SSRF guard.
+- `docs/security-review/` — full review report, threat model, remediation plan, dependency/SBOM notes, deploy/rollback runbook, test results, and AI-safety (N/A) writeups.
+
 ## [0.9.3] — 2026-06-09 — Markdown: real spoilers, emoji/gif + image embeds, cleaner mentions
 
 ### Changed
@@ -904,4 +922,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.8.11 · bd4b2fa`
+`v0.10.0 · a7c6031`
