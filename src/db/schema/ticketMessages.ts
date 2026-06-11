@@ -43,6 +43,10 @@ export const ticketMessages = pgTable(
   },
   (t) => ({
     byTicket: index('ticket_messages_ticket_idx').on(t.ticketId, t.createdAt),
+    // The bot dedupes every relayed Discord message (and the convert/backfill
+    // paths) by discord_message_id. Plain index, NOT unique — uniqueness would
+    // make drizzle-kit push fail if prod ever holds a duplicate row.
+    byDiscordMessage: index('ticket_messages_discord_message_idx').on(t.discordMessageId),
   }),
 )
 
