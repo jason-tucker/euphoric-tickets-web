@@ -75,6 +75,12 @@ export const tickets = pgTable(
     byOpener: index('tickets_opener_idx').on(t.openerUserId),
     byAssignee: index('tickets_assignee_idx').on(t.assigneeUserId),
     byExternalSource: index('tickets_external_source_idx').on(t.externalSource),
+    // The bot resolves channel → ticket on EVERY guild message (messageCreate
+    // relay) and on most interactions; the internal-thread id is OR'd into the
+    // same lookup. Without these every guild message was a sequential scan.
+    byDiscordChannel: index('tickets_discord_channel_idx').on(t.discordChannelId),
+    byInternalThread: index('tickets_internal_thread_idx').on(t.discordInternalThreadId),
+    byParent: index('tickets_parent_idx').on(t.parentTicketId),
   }),
 )
 

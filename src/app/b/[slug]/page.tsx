@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { Plus } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,44 +24,39 @@ export default async function BusinessOverviewPage({
   const { business, level } = resolved
   const isAdmin = level === 'admin' || level === 'owner'
 
-  // Members see only their own tickets in this business. Admins see top-line stats.
-  const [openCount, claimedCount, waitingCount, closedTodayCount] = isAdmin
-    ? await Promise.all([
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(tickets)
-          .where(and(eq(tickets.businessId, business.id), eq(tickets.status, 'open')))
-          .then((r) => Number(r[0]?.n ?? 0)),
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(tickets)
-          .where(and(eq(tickets.businessId, business.id), eq(tickets.status, 'claimed')))
-          .then((r) => Number(r[0]?.n ?? 0)),
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(tickets)
-          .where(and(eq(tickets.businessId, business.id), eq(tickets.status, 'waiting')))
-          .then((r) => Number(r[0]?.n ?? 0)),
-        db
-          .select({ n: sql<number>`count(*)` })
+  // Members see only their own tickets in this business. Admins see top-line
+  // stats — one GROUP BY query instead of a count round-trip per status.
+  const [statRows, myTickets] = await Promise.all([
+    isAdmin
+      ? db
+          .select({ status: tickets.status, n: sql<number>`count(*)` })
           .from(tickets)
           .where(
             and(
               eq(tickets.businessId, business.id),
-              eq(tickets.status, 'closed'),
-              sql`${tickets.closedAt} > now() - interval '24 hours'`,
+              or(
+                inArray(tickets.status, ['open', 'claimed', 'waiting']),
+                and(
+                  eq(tickets.status, 'closed'),
+                  sql`${tickets.closedAt} > now() - interval '24 hours'`,
+                ),
+              ),
             ),
           )
-          .then((r) => Number(r[0]?.n ?? 0)),
-      ])
-    : [0, 0, 0, 0]
-
-  const myTickets = await db
-    .select()
-    .from(tickets)
-    .where(and(eq(tickets.businessId, business.id), eq(tickets.openerUserId, session.user.id)))
-    .orderBy(desc(tickets.lastActivityAt))
-    .limit(10)
+          .groupBy(tickets.status)
+      : Promise.resolve([]),
+    db
+      .select()
+      .from(tickets)
+      .where(and(eq(tickets.businessId, business.id), eq(tickets.openerUserId, session.user.id)))
+      .orderBy(desc(tickets.lastActivityAt))
+      .limit(10),
+  ])
+  const countByStatus = new Map(statRows.map((r) => [r.status, Number(r.n)]))
+  const openCount = countByStatus.get('open') ?? 0
+  const claimedCount = countByStatus.get('claimed') ?? 0
+  const waitingCount = countByStatus.get('waiting') ?? 0
+  const closedTodayCount = countByStatus.get('closed') ?? 0
 
   return (
     <main className="container max-w-6xl space-y-6 py-6">

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.1] — 2026-06-11 — Performance: hot-path DB indexes + single-query overview stats
+
+### Added
+- **Five indexes on the hottest shared-DB lookups** (applied additively by the entrypoint's `drizzle-kit push` — no data is touched). `businesses.discord_guild_id` backs every web login/permission resolution *and* the bot's `getBusinessByGuildId` on nearly every interaction. `tickets.discord_channel_id` + `tickets.discord_internal_thread_id` back the bot's channel→ticket lookup, which runs on **every guild message** (previously a sequential scan). `ticket_messages.discord_message_id` backs the per-message relay/backfill dedupe (plain index, deliberately not unique so `push` can never fail on a pre-existing duplicate row). `tickets.parent_ticket_id` backs the ticket-detail sub-ticket query.
+
+### Changed
+- **`/b/<slug>` overview stats collapse 4 COUNT round-trips into one `GROUP BY status` query**, and that query now runs in parallel with the "my recent tickets" read — the page issues 2 concurrent queries where it issued 5 (4 parallel + 1 serial) before. Same numbers, same UI.
+
+### Paired with
+- **Bot 0.7.2** — mirrors the schema index definitions (the web still owns + pushes the schema) and ships the interaction-latency fixes on its side.
+
 ## [0.10.0] — 2026-06-09 — Security & dependency hardening
 
 ### Security
@@ -922,4 +933,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.10.0 · a7c6031`
+`v0.10.1 · d5ac372`
