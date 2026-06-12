@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const metadata: Metadata = {
@@ -10,11 +10,10 @@ export const metadata: Metadata = {
 // Public help / documentation page. Covers the whole system for every tier.
 export default function HelpPage() {
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-3xl space-y-6 py-6">
         <div>
-          <h1 className="text-3xl font-semibold">Help &amp; how-to</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Help &amp; how-to</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Everything you can do with Euphoric Tickets, on Discord and on the web.
           </p>
@@ -205,7 +204,7 @@ export default function HelpPage() {
           </dl>
         </Section>
       </main>
-    </>
+    </AppChrome>
   )
 }
 

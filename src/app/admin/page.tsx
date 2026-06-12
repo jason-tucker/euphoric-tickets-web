@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { desc } from 'drizzle-orm'
 import { Building2, Info } from 'lucide-react'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { db } from '@/db/client'
 import { businesses } from '@/db/schema'
 import { requireSudo } from '@/server/sudo'
@@ -18,11 +18,10 @@ export default async function AdminPage() {
   const allBusinesses = await db.select().from(businesses).orderBy(desc(businesses.createdAt))
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-3xl space-y-6 py-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">Sudo</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Sudo</h1>
           <p className="text-sm text-muted-foreground">
             Bot-owner only. Create and list every team in the app. Per-guild settings live on each
             team&apos;s own page.
@@ -132,6 +131,6 @@ export default async function AdminPage() {
           )}
         </section>
       </main>
-    </>
+    </AppChrome>
   )
 }

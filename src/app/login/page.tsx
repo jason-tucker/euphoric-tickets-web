@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { TicketIcon } from 'lucide-react'
 import { signIn, auth } from '@/server/auth'
-import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -26,11 +26,11 @@ export default async function LoginPage({
   return (
     <main className="flex min-h-svh items-center justify-center px-4">
       <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-2xl">
-            🎫
+        <CardHeader>
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-md border bg-primary/10">
+            <TicketIcon className="h-5 w-5 text-primary" />
           </div>
-          <CardTitle>Euphoric Tickets</CardTitle>
+          <CardTitle className="tracking-tight">Euphoric Tickets</CardTitle>
           <CardDescription>
             Open and manage support tickets across your teams.
           </CardDescription>

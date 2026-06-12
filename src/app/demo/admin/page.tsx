@@ -16,7 +16,7 @@ export default async function DemoAdminPage() {
   return (
     <main className="container max-w-4xl space-y-6 py-6">
       <div>
-        <h1 className="text-2xl font-semibold">Teams</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Teams</h1>
         <p className="text-sm text-muted-foreground">Every team (business) across all servers. Sudo-only.</p>
       </div>
       <Card>

@@ -2,10 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Color themes ─────────────────────────────────────────────────────────
+   Every theme is a full token set keyed off `data-theme` on <html> (set
+   server-side from the et_appearance cookie, switched live by the picker).
+   All components consume only these tokens, so a theme can never get in the
+   way of function — it just re-skins. `paper` is the one light theme; the
+   root layout drops the `dark` class for it so `dark:` variants resolve. */
 @layer base {
-  :root {
-    /* Default dark theme — the CW-Manage-style dark UI is the primary look.
-       Light scheme is offered via `media (prefers-color-scheme: light)`. */
+  :root,
+  html[data-theme='midnight'] {
+    /* The original CW-Manage-style dark UI — violet on near-black blue. */
     --background: 222 24% 6%;
     --foreground: 210 30% 96%;
     --card: 222 22% 9%;
@@ -28,11 +34,108 @@
     --radius: 0.6rem;
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   }
+
+  html[data-theme='graphite'] {
+    /* Neutral monochrome with a cool blue accent — the IDE look. */
+    --background: 220 8% 7%;
+    --foreground: 220 12% 94%;
+    --card: 220 8% 10%;
+    --card-foreground: 220 12% 94%;
+    --popover: 220 8% 9%;
+    --popover-foreground: 220 12% 94%;
+    --primary: 213 80% 60%;
+    --primary-foreground: 220 10% 6%;
+    --secondary: 220 7% 15%;
+    --secondary-foreground: 220 12% 94%;
+    --muted: 220 7% 16%;
+    --muted-foreground: 220 6% 62%;
+    --accent: 220 7% 15%;
+    --accent-foreground: 220 12% 94%;
+    --destructive: 0 70% 52%;
+    --destructive-foreground: 220 12% 94%;
+    --border: 220 7% 17%;
+    --input: 220 7% 17%;
+    --ring: 213 80% 60%;
+    --radius: 0.45rem;
+  }
+
+  html[data-theme='ocean'] {
+    /* Deep blue with a cyan accent. */
+    --background: 208 38% 7%;
+    --foreground: 200 35% 95%;
+    --card: 208 34% 10%;
+    --card-foreground: 200 35% 95%;
+    --popover: 208 34% 9%;
+    --popover-foreground: 200 35% 95%;
+    --primary: 190 85% 50%;
+    --primary-foreground: 208 38% 7%;
+    --secondary: 208 28% 15%;
+    --secondary-foreground: 200 35% 95%;
+    --muted: 208 26% 17%;
+    --muted-foreground: 205 20% 64%;
+    --accent: 208 28% 15%;
+    --accent-foreground: 200 35% 95%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 200 35% 95%;
+    --border: 208 26% 19%;
+    --input: 208 26% 19%;
+    --ring: 190 85% 50%;
+    --radius: 0.6rem;
+  }
+
+  html[data-theme='forest'] {
+    /* Green-tinted dark with an emerald accent. */
+    --background: 150 12% 7%;
+    --foreground: 140 18% 94%;
+    --card: 150 10% 10%;
+    --card-foreground: 140 18% 94%;
+    --popover: 150 10% 9%;
+    --popover-foreground: 140 18% 94%;
+    --primary: 152 60% 46%;
+    --primary-foreground: 150 12% 6%;
+    --secondary: 150 8% 15%;
+    --secondary-foreground: 140 18% 94%;
+    --muted: 150 8% 16%;
+    --muted-foreground: 145 8% 62%;
+    --accent: 150 8% 15%;
+    --accent-foreground: 140 18% 94%;
+    --destructive: 0 70% 52%;
+    --destructive-foreground: 140 18% 94%;
+    --border: 150 8% 17%;
+    --input: 150 8% 17%;
+    --ring: 152 60% 46%;
+    --radius: 0.5rem;
+  }
+
+  html[data-theme='paper'] {
+    /* The light theme — warm paper white with an indigo accent. */
+    --background: 40 20% 97%;
+    --foreground: 222 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 20% 12%;
+    --primary: 243 58% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 91%;
+    --secondary-foreground: 222 20% 14%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 42%;
+    --accent: 220 14% 91%;
+    --accent-foreground: 222 20% 14%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 85%;
+    --input: 220 13% 82%;
+    --ring: 243 58% 50%;
+    --radius: 0.55rem;
+  }
 }
 
 @layer base {
   * { @apply border-border; }
   html { color-scheme: dark; }
+  html[data-theme='paper'] { color-scheme: light; }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
@@ -54,3 +157,10 @@
 @media (max-width: 640px) {
   code { overflow-wrap: anywhere; }
 }
+
+/* ── Shell layouts ────────────────────────────────────────────────────────
+   The AppShell sets data-shell to the resolved layout for the current page
+   and exposes --shell-top (total sticky-chrome height, demo banner included)
+   so full-height surfaces like the tickets console can size themselves with
+   h-[calc(100svh-var(--shell-top))] under any chrome. Page content keeps its
+   own max-widths in every layout — chrome changes, the work doesn't. */

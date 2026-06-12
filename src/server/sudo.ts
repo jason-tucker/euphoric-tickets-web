@@ -5,10 +5,10 @@ import { db } from '@/db/client'
 import { users } from '@/db/schema'
 import { auth } from './auth'
 
-// Lightweight "is the current user sudo?" check used by the TopNav to
+// Lightweight "is the current user sudo?" check used by the app chrome to
 // decide whether to surface the Admin link. Returns false for anonymous
 // visitors so it's safe to call without an auth guard above it.
-// Per-request cached so TopNav + downstream pages share the lookup.
+// Per-request cached so the chrome + downstream pages share the lookup.
 export const currentUserIsSudo = cache(async function currentUserIsSudo(): Promise<boolean> {
   const session = await auth()
   if (!session?.user?.id) return false

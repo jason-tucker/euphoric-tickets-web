@@ -15,13 +15,20 @@ export function SavedHint({ className }: { className?: string }) {
   )
 }
 
-export function ResetDemoButton({ size = 'sm' }: { size?: 'sm' | 'default' }) {
+export function ResetDemoButton({
+  size = 'sm',
+  className,
+}: {
+  size?: 'sm' | 'default'
+  className?: string
+}) {
   const { reset } = useDemoStore()
   return (
     <Button
       type="button"
       variant="outline"
       size={size}
+      className={className}
       onClick={() => {
         if (confirm('Reset the demo? This clears the changes saved in your browser.')) reset()
       }}

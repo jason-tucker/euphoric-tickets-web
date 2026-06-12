@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { TicketsConsole } from '@/components/app/tickets-console'
 import { requireSession } from '@/server/permissions'
 import { getTicketsConsoleData, ticketsConsoleScope } from '@/server/tickets'
@@ -24,15 +24,16 @@ export default async function TicketsPage({
   const [data, sp] = await Promise.all([getTicketsConsoleData(), searchParams])
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       {/* Full-bleed, full-height app shell — the console spans the whole browser
           (edge to edge, no centered max-width, no card box) and fills the
-          viewport below the 3.5rem header, ConnectWise-Manage style. The grid
-          scrolls internally; only the toolbar header stays pinned. */}
-      <main className="flex h-[calc(100svh-3.5rem)] flex-col">
+          viewport below the chrome, ConnectWise-Manage style. The grid scrolls
+          internally; only the toolbar header stays pinned. --shell-top is the
+          sticky chrome height published by the AppShell for whichever layout
+          (top / sidebar / compact) is active. */}
+      <main className="flex h-[calc(100svh-var(--shell-top,3rem))] flex-col">
         <TicketsConsole initial={data} meId={session.user.id} initialTeamSlug={sp.team} />
       </main>
-    </>
+    </AppChrome>
   )
 }

@@ -1,4 +1,4 @@
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -23,8 +23,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   if (myBusinesses.length === 0) {
     const hasTicketToolTeam = allMyBusinesses.some((b) => b.business.ticketMode === 'tickettool')
     return (
-      <>
-        <TopNav />
+      <AppChrome>
         <main className="container max-w-xl py-6">
           <Card>
             <CardHeader>
@@ -37,7 +36,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
             </CardHeader>
           </Card>
         </main>
-      </>
+      </AppChrome>
     )
   }
 
@@ -60,11 +59,10 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   const cats = allCats.filter((c) => c.businessId === selectedBusiness.id && !c.staffOnly)
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-2xl space-y-4 py-6">
         <div>
-          <h1 className="text-2xl font-semibold">Open a ticket</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Open a ticket</h1>
           <p className="text-sm text-muted-foreground">
             Describe what you need help with — staff will reply in this conversation and in Discord.
           </p>
@@ -134,6 +132,6 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
           </CardContent>
         </Card>
       </main>
-    </>
+    </AppChrome>
   )
 }

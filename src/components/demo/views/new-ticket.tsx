@@ -90,7 +90,7 @@ export function DemoNewTicket({ form, me, preselect }: { form: DemoNewTicketForm
   return (
     <main className="container max-w-xl space-y-6 py-6">
       <div>
-        <h1 className="text-2xl font-semibold">Open a ticket</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Open a ticket</h1>
         <p className="text-sm text-muted-foreground">Pick a team and category, describe the issue, and submit.</p>
       </div>
       <Card>

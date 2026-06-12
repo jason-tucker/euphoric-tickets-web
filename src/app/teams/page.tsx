@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Building2, Briefcase, MessageSquare, Clock } from 'lucide-react'
 import { desc, sql } from 'drizzle-orm'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { db } from '@/db/client'
 import { businesses, tickets } from '@/db/schema'
@@ -42,11 +42,10 @@ export default async function TeamsPage() {
   }
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-5xl space-y-6 py-6">
         <div>
-          <h1 className="text-2xl font-semibold">Teams</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Teams</h1>
           <p className="text-sm text-muted-foreground">
             {isSudo ? 'Every team in the system.' : 'Teams you administer.'}
           </p>
@@ -107,6 +106,6 @@ export default async function TeamsPage() {
           </div>
         )}
       </main>
-    </>
+    </AppChrome>
   )
 }

@@ -63,7 +63,7 @@ export function DemoDashboard({
     <main className="container max-w-6xl space-y-6 py-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">My tickets</h1>
+          <h1 className="text-xl font-semibold tracking-tight">My tickets</h1>
           <p className="text-sm text-muted-foreground">
             {mode === 'mine'
               ? `Tickets you’ve opened across ${scope.businesses.length} ${scope.businesses.length === 1 ? 'team' : 'teams'}.`

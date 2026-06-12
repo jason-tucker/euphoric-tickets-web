@@ -56,7 +56,7 @@ function deriveLevel(b: Business, guilds: DiscordGuildSnapshot[]): AccessLevel |
 //
 // Sudo users see every business as `owner`, regardless of guild membership.
 //
-// Wrapped in React.cache so a single request that hits both TopNav and a
+// Wrapped in React.cache so a single request that hits both the app chrome and a
 // page-level call returns the same DB result (Postgres round-trip once).
 export const listMyBusinesses = cache(async function listMyBusinesses(): Promise<ResolvedBusiness[]> {
   const session = await auth()

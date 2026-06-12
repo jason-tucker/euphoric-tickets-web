@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { desc, sql } from 'drizzle-orm'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -83,11 +83,10 @@ export default async function AdminBotPage({
   )
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-4xl space-y-6 py-6">
         <div>
-          <h1 className="text-2xl font-semibold">Bot dashboard</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Bot dashboard</h1>
           <p className="text-sm text-muted-foreground">
             Sudo-only. System health, plus bot-owner controls (bot name, force-leave servers).
           </p>
@@ -230,6 +229,6 @@ export default async function AdminBotPage({
           </CardContent>
         </Card>
       </main>
-    </>
+    </AppChrome>
   )
 }

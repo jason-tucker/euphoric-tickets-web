@@ -62,7 +62,7 @@ export default async function BusinessOverviewPage({
     <main className="container max-w-6xl space-y-6 py-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">{business.name}</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{business.name}</h1>
           {business.description && (
             <p className="text-sm text-muted-foreground">{business.description}</p>
           )}

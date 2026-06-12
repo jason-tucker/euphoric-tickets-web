@@ -1,9 +1,10 @@
 'use client'
 
 import * as React from 'react'
-// Raw CHANGELOG.md contents, inlined at build time via the `asset/source`
-// webpack rule (next.config.ts). Bundled into the client JS — a few KB.
-import changelog from '../../../CHANGELOG.md'
+// The *user-facing* changelog — a curated list of changes people would
+// actually notice, kept separately from the full engineering CHANGELOG.md.
+// Inlined at build time via the `asset/source` webpack rule (next.config.ts).
+import changelog from '../../../CHANGELOG.user.md'
 import {
   Dialog,
   DialogContent,
@@ -28,8 +29,8 @@ export function ChangelogDialog({ version }: { version: string }) {
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Changelog</DialogTitle>
-          <DialogDescription>What&apos;s changed in Euphoric Tickets.</DialogDescription>
+          <DialogTitle>What&apos;s new</DialogTitle>
+          <DialogDescription>The changes you&apos;d notice in Euphoric Tickets.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[70svh] space-y-1.5 overflow-y-auto pr-1 text-sm leading-relaxed">
           {renderMarkdown(changelog)}

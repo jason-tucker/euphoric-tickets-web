@@ -18,7 +18,7 @@ export default async function DemoTicketsPage({ searchParams }: { searchParams: 
   const sp = await searchParams
 
   return (
-    <main className="flex h-[calc(100svh-6rem)] flex-col">
+    <main className="flex h-[calc(100svh-var(--shell-top,5rem))] flex-col">
       <DemoConsole tickets={tickets} teams={teams} meId={persona.userId} initialTeamSlug={sp.team} />
     </main>
   )

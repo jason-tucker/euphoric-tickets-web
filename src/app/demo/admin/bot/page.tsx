@@ -24,7 +24,7 @@ export default async function DemoBotPage() {
   return (
     <main className="container max-w-4xl space-y-6 py-6">
       <div>
-        <h1 className="text-2xl font-semibold">Bot dashboard</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Bot dashboard</h1>
         <p className="text-sm text-muted-foreground">Sudo-only. System health, plus bot-owner controls.</p>
       </div>
 

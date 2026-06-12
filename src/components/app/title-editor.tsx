@@ -52,7 +52,7 @@ export function TitleEditor({
 
   return (
     <div className="mt-1 flex items-start gap-2">
-      <h1 className="break-words text-2xl font-semibold">{subject}</h1>
+      <h1 className="break-words text-xl font-semibold tracking-tight">{subject}</h1>
       {canRename && (
         <Button
           type="button"

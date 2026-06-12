@@ -35,7 +35,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
   return (
     <main className="container max-w-2xl space-y-6 py-6">
       <div className="space-y-1">
-        <h1 className="flex flex-wrap items-center gap-x-2 text-2xl font-semibold">
+        <h1 className="flex flex-wrap items-center gap-x-2 text-xl font-semibold tracking-tight">
           <span>Settings</span>
           <span className="text-muted-foreground">—</span>
           <SettingsTeamPicker

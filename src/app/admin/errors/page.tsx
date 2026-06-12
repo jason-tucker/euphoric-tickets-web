@@ -1,5 +1,5 @@
 import { desc, eq } from 'drizzle-orm'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { requireSudo } from '@/server/sudo'
@@ -32,11 +32,10 @@ export default async function AdminErrorsPage({
   }
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-5xl space-y-4 py-6">
         <div>
-          <h1 className="text-2xl font-semibold">Bot errors</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Bot errors</h1>
           <p className="text-sm text-muted-foreground">
             Most recent {rows.length}. Rows older than 5 days are swept automatically.
           </p>
@@ -100,6 +99,6 @@ export default async function AdminErrorsPage({
           </CardContent>
         </Card>
       </main>
-    </>
+    </AppChrome>
   )
 }

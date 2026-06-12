@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { and, desc, eq, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm'
 import { Plus, Building2 } from 'lucide-react'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { StatusBadge } from '@/components/app/status-badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -143,12 +143,11 @@ export default async function DashboardPage({
   const adminOf = myBusinesses.filter((b) => b.level === 'admin' || b.level === 'owner')
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-6xl space-y-6 py-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-2">
-            <h1 className="text-2xl font-semibold">My tickets</h1>
+            <h1 className="text-xl font-semibold tracking-tight">My tickets</h1>
             <p className="text-sm text-muted-foreground">
               {mode === 'mine' ? (
                 <>Tickets you&apos;ve opened or been added to across {myBusinesses.length} {myBusinesses.length === 1 ? 'team' : 'teams'}.</>
@@ -290,6 +289,6 @@ export default async function DashboardPage({
           </section>
         )}
       </main>
-    </>
+    </AppChrome>
   )
 }

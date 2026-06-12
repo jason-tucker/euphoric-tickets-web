@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.11.0] — 2026-06-12 — Theme & layout rework: 5 themes × 3 layouts, per-page, tool-first chrome
+
+### Added
+- **Appearance system — 5 color themes × 3 chrome layouts, all interchangeable.** Preferences live in a single `et_appearance` cookie (parsed defensively in `src/lib/appearance.ts`) so SSR paints the chosen look on the first byte — no flash, no client swap.
+  - **Themes:** Midnight (the existing violet dark, still the default), Graphite (neutral mono + blue), Ocean (deep blue + cyan), Forest (green + emerald), and Paper (the one light theme). Each is a full CSS-token set keyed off `data-theme` on `<html>`; Paper also drops the `dark` class so `dark:` variants resolve to their light styles. Sonner + the top loader follow the active theme.
+  - **Layouts:** `top` (classic header + tabs), `sidebar` (nav rail on the left with a slim content header; collapses to the top-bar form below `lg` so the ~360px CEF iframe never meets a rail), and `compact` (one slim 2.5rem toolbar, icon brand, dense tabs).
+  - **Per-page layout overrides.** The pathname maps to a page context (Overview, Tickets console, Ticket view, Settings, Sudo — `pageKeyFromPathname`), and each context can pin its own layout — e.g. Sidebar app-wide but Compact on the console. Resolution: `pages[page] ?? layout`.
+  - **The picker lives in the avatar dropdown** (`AppearancePanel`: swatch row, app-wide layout segment, "This page" segment) — plain buttons, not menu items, so trying themes doesn't close the menu. The demo header gets the same panel behind a standalone palette button (`AppearanceDropdown`).
+- **`CHANGELOG.user.md` — a curated, user-facing "What's new".** The footer-version dialog now renders this file instead of the full engineering changelog, so end users only see changes they'd notice. This file remains the complete record.
+
+### Changed
+- **`TopNav`/`MainNav` are replaced by `AppChrome` (server) + `AppShell` (client).** `AppChrome` resolves session/scope/sudo once and hands plain serializable nav data (`{href, label, icon, activePattern}`) to the shell, which renders whichever layout the prefs pick. Pages now wrap content — `<AppChrome><main>…</main></AppChrome>` — instead of rendering a sibling header; `/b/[slug]/layout.tsx` wraps all its children once.
+- **Full-height surfaces size off the chrome, not a magic number.** The shell publishes `--shell-top` (sticky chrome height, demo banner included), and both Tickets consoles use `h-[calc(100svh-var(--shell-top)))]` — so the grid fills the viewport under any layout.
+- **Tool-first restyle.** Header drops 3.5rem → 3rem (2.5rem compact), page `h1`s go `text-2xl/3xl → text-xl tracking-tight` across the app and the demo mirror, and the login card swaps the 🎫 emoji block for the brand icon.
+- **`/demo` parity.** The demo subtree now uses the same `AppShell` (same layouts, same themes); `DemoTopNav` is deleted. The demo notice is a fixed-height single-line strip (counted into `--shell-top`) with the Reset control inline; the persona switcher and Exit stay in the header.
+
+### Notes
+- The root layout now reads the appearance cookie, which makes every route dynamically rendered — effectively already the case (auth/cookies on all meaningful routes).
+- `business_members`-driven behavior, permissions, and all server actions are untouched — this is chrome + CSS tokens only.
+
 ## [0.10.1] — 2026-06-11 — Performance: hot-path DB indexes + single-query overview stats
 
 ### Added
@@ -933,4 +953,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.10.1 · d5ac372`
+`v0.11.0 · bd2451c`

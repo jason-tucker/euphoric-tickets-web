@@ -22,7 +22,7 @@ export function DemoTeamOverviewView({ data }: { data: DemoTeamOverview }) {
     <main className="container max-w-6xl space-y-6 py-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">{data.team.name}</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{data.team.name}</h1>
           {data.team.description && <p className="text-sm text-muted-foreground">{data.team.description}</p>}
         </div>
         <Button asChild>

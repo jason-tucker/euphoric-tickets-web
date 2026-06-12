@@ -1,5 +1,5 @@
 import { eq, inArray, asc } from 'drizzle-orm'
-import { TopNav } from '@/components/app/top-nav'
+import { AppChrome } from '@/components/app/app-chrome'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,11 +51,10 @@ export default async function NotificationSettingsPage() {
   }
 
   return (
-    <>
-      <TopNav />
+    <AppChrome>
       <main className="container max-w-2xl space-y-6 py-6">
         <div>
-          <h1 className="text-2xl font-semibold">Notifications</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Notifications</h1>
           <p className="text-sm text-muted-foreground">
             Get pinged when tickets happen. Set a global default, then fine-tune per team or category —
             the most specific setting wins.
@@ -134,7 +133,7 @@ export default async function NotificationSettingsPage() {
           <SubmitButton pendingChildren="Saving…">Save notification settings</SubmitButton>
         </form>
       </main>
-    </>
+    </AppChrome>
   )
 }
 

@@ -20,7 +20,7 @@ export default async function DemoErrorsPage({ searchParams }: { searchParams: P
   return (
     <main className="container max-w-5xl space-y-4 py-6">
       <div>
-        <h1 className="text-2xl font-semibold">Bot errors</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Bot errors</h1>
         <p className="text-sm text-muted-foreground">Most recent {rows.length}. Rows older than 5 days are swept automatically.</p>
       </div>
 

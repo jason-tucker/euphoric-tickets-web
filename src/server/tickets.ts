@@ -85,7 +85,7 @@ export async function ticketsConsoleScope(): Promise<ConsoleScope> {
   const isAdminAnywhere = adminTeams.length > 0
 
   // Admins always get the console, so only pay for the (heavier) staff-category
-  // resolution when the user isn't already an admin somewhere. TopNav renders on
+  // resolution when the user isn't already an admin somewhere. the app chrome renders on
   // every page, so skipping this for admins keeps most navigations cheap.
   let canUse = isAdminAnywhere
   if (!isAdminAnywhere) {

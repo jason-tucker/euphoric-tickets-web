@@ -264,7 +264,7 @@ function TitleRow({ subject, canRename, onRename }: { subject: string; canRename
     )
   }
   return (
-    <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
+    <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold tracking-tight">
       <span className="min-w-0 break-words">{subject}</span>
       {canRename && (
         <button type="button" onClick={() => { setValue(subject); setEditing(true) }} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Rename ticket" title="Rename">
