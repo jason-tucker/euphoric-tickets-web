@@ -21,7 +21,9 @@ export type ResolvedBusiness = {
 
 const LEVEL_RANK: Record<AccessLevel, number> = { member: 0, admin: 1, owner: 2 }
 
-function hasAtLeast(actual: AccessLevel, required: AccessLevel): boolean {
+// Exported for unit tests — the rank comparison and the snapshot-bitfield
+// level derivation below are the security-critical pure logic in this module.
+export function hasAtLeast(actual: AccessLevel, required: AccessLevel): boolean {
   return LEVEL_RANK[actual] >= LEVEL_RANK[required]
 }
 
@@ -32,7 +34,7 @@ function parseCsv(input: string): string[] {
 // Derive an access level for a single business from the user's Discord
 // guild snapshot. `null` means the user is not in this business's guild
 // (and so doesn't see the business at all).
-function deriveLevel(b: Business, guilds: DiscordGuildSnapshot[]): AccessLevel | null {
+export function deriveLevel(b: Business, guilds: DiscordGuildSnapshot[]): AccessLevel | null {
   const g = guilds.find((g) => g.id === b.discordGuildId)
   if (!g) return null
 

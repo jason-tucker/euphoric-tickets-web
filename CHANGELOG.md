@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.2] — 2026-06-13 — Tests for the permission core + cloud-session readiness
+
+### Added
+- **Unit tests for the permission core** (`src/server/permissions.test.ts`, 15 cases): `deriveLevel`'s guild-snapshot bitfield handling (ADMINISTRATOR → owner, MANAGE_GUILD → admin, both-bits precedence, >32-bit bitfields arriving as strings, missing permissions string, not-in-guild → null), `hasAtLeast` ranking, and the full `resolveTicketAccess` flag matrix (admin, opener, staff-via-cached-role-snapshot, external ticket member, unrelated member; empty `staff_role_ids` stays admin-only with no staff fallthrough).
+- **Format helper tests** (`src/lib/format.test.ts`, 7 cases): avatar CDN URLs including the default-avatar high-bits index trick and animated-hash `gif` switching; status labels; relative time.
+- **`src/test/dbMock.ts`** — a queue-based fake of the drizzle query builder so server modules are unit-testable without Postgres (each `db.select()` pops the next scripted result set).
+
+### Changed
+- `deriveLevel` and `hasAtLeast` are now exported from `src/server/permissions.ts` for direct testing — no behavior change; everything else in the module keeps its prior visibility.
+- `vitest.config.ts` gains the `@ → src` resolve alias (mirroring tsconfig `paths`) so server modules that import `@/db/client` are testable with per-file mocks.
+- **CLAUDE.md** — the `/home/botuser/projects/claude-all.md` pointer is now explicitly flagged as VPS-only (the file doesn't exist in cloud checkouts) with its essentials inlined; new mandatory rule 6 ("Run the tests — `pnpm test`") documents the suite and the keep-tests-current expectation; the `/demo` parity rule renumbers to 7.
+
 ## [0.10.1] — 2026-06-11 — Performance: hot-path DB indexes + single-query overview stats
 
 ### Added
@@ -933,4 +945,4 @@ Schema-only PR. Drizzle-kit push at next deploy adds the columns. UI/lifecycle c
 - Docker + GHCR build pipeline. `docker-compose.yml` binds to `127.0.0.1:6095` and joins the `efm-public-net` external network so the euphoricfm-website Caddy can reverse-proxy `tickets.euphoric.fm` to the container.
 - Project board #10 created.
 
-`v0.10.1 · d5ac372`
+`v0.10.2 · bd2451c`

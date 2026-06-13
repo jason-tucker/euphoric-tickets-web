@@ -1,6 +1,12 @@
 # euphoric-tickets-web — AI Coding Instructions
 
-See `/home/botuser/projects/claude-all.md` for VPS constraints (no `tsc` on the VPS — CI builds), CI/CD via GHCR + watchtower, and Discord patterns.
+> **Where am I running?** The cross-project conventions file
+> `/home/botuser/projects/claude-all.md` exists **only on the production VPS**
+> — it is not in this repo and not available in Claude Code cloud sessions.
+> The essentials are inlined here: no `tsc`/`next build` on the VPS (CI builds
+> the GHCR image, watchtower deploys it — see Production), and web → Discord
+> always goes through the per-user webhook spoof (rule 5). In a cloud session,
+> `pnpm typecheck` and `pnpm test` are safe and encouraged.
 
 ---
 
@@ -21,7 +27,15 @@ This site is embedded in the EuphoricFM in-game phone CEF iframe (same constrain
 ### 5. Web → Discord goes via per-user webhook spoof
 When staff replies in the web UI, we POST to the business's configured Discord webhook URL with `username` overridden to the staff member's Discord global name and `avatar_url` overridden to their avatar URL. Never post to Discord as the bot itself from the web layer — that's the bot's job.
 
-### 6. Keep `/demo` in parity (read-only against the real system)
+### 6. Run the tests — `pnpm test`
+Unit tests (vitest) live next to the code as `src/**/*.test.ts` (SSRF guard,
+permission derivation, format helpers), with a queue-based drizzle `FakeDb` in
+`src/test/dbMock.ts` for server modules. CI (`.github/workflows/ci.yml`)
+blocks PRs on typecheck + test + build. When you touch a module with a
+`.test.ts` neighbour, update the tests in the same commit; new pure logic
+(permission gates, parsers, validators) should land with tests.
+
+### 7. Keep `/demo` in parity (read-only against the real system)
 `/demo/*` is a public, unauthenticated, fully-interactive mirror of the whole app on synthetic data. It is interactive, but **every change is saved only in the visitor's browser (localStorage)** and never touches the DB or Discord. When you add or change a screen/control, mirror it in `/demo` as an overlay-backed version. `src/app/demo/**`, `src/server/demo/**`, and `src/components/demo/**` must **never** import `@/db/client` or any `actions.ts`, and define no `'use server'` actions. See `src/app/demo/CLAUDE.md`.
 
 ---
