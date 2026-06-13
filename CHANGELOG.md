@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.2] — 2026-06-13 — Docs overhaul: agent usage policy, corrected env vars, bot↔web bridge, schema table
+
+### Changed
+- **`CLAUDE.md` — agent usage policy** inserted verbatim as the `## Agent usage` section: "Always spawn agents to do work. Haiku for lookups. Sonnet for coding. Opus for planning." with full delegation guidelines and the VPS build constraint reminder.
+- **`CLAUDE.md` — corrected Production restart service name** from `web` to `tickets-web` (matches `docker-compose.yml`, renamed in 0.10.0).
+- **`CLAUDE.md` — routes table** updated: `/b/[slug]/tickets` marked as redirect to `/tickets?team=<slug>`; added `/tickets`, `/settings/notifications`, `/help`, `/admin`, `/admin/bot`, `/admin/errors`; noted `/t/[id]` is a convenience redirect to `/b/<slug>/tickets/<id>`.
+- **`CLAUDE.md` — `ticket_messages.source` enum** expanded from `web / discord` to `web / discord / system / internal`; `internal` defined as staff-only note in a private Discord thread.
+- **`CLAUDE.md` — bot→web relay note** updated: removed stale "not yet wired in v0.1.0" text; accurate one-liner referencing `src/app/api/internal/notify/route.ts`.
+- **`CLAUDE.md` — DB schema table** expanded to include `ticket_panels`, `ticket_external_members`, `user_notification_prefs`, `audit_logs`, `bot_errors`; noted `users.isSudo` drives sudo.
+- **`CLAUDE.md` — anti-pattern wording** fixed: "Don't mix … bot's `tickets` DB … intentionally decoupled" → "Don't bypass the Drizzle ORM / `src/server/` service layer … decoupled at the code level even though they share one Postgres database."
+- **`CLAUDE.md` — Local dev env vars** table added covering `DISCORD_BOT_TOKEN`, `INTERNAL_TOKEN`, `BOT_INTERNAL_URL`, `PUBLIC_BASE_URL`; noted these are read via raw `process.env`, not the Zod schema.
+- **`CLAUDE.md` — Bot ↔ Web bridge** section added: describes the two internal endpoints, schema ownership, and cross-links the companion bot repo.
+- **`src/app/demo/CLAUDE.md` — agent usage policy** inserted with the same first line, full delegation guidelines, the `grep` invariant-verification command, and a "Known parity gaps" note listing `/demo/t/[id]`, `/demo/settings/*`, and `/demo/help` as unmirrored screens.
+- **`README.md` — version footer** updated from stale `v0.6.52` to current `v0.10.2`.
+
+v0.10.2 · bd2451c
+
 ## [0.10.1] — 2026-06-11 — Performance: hot-path DB indexes + single-query overview stats
 
 ### Added
