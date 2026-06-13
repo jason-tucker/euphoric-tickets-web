@@ -21,6 +21,30 @@ keep it intact.
   generator never enters the browser bundle). Plain-data constants live in
   `src/server/demo/meta.ts`, which is safe to import from the client.
 
+## Agent usage
+
+Always spawn agents to do work. Haiku for lookups. Sonnet for coding. Opus for planning.
+
+Use agents proactively and match the model to the task — Haiku for lookups/searches/verification, Sonnet for coding and doc edits, Opus for planning and cross-cutting strategy. Run independent work in parallel, give each agent a precise scope and expected output, require repository-evidence citations, never let two agents edit the same file at once, and validate every result before accepting it. The full agent-usage policy and all other mandatory rules (CHANGELOG, project board, semver bump) are inherited from the parent [`../../../CLAUDE.md`](../../../CLAUDE.md); this file only adds the demo-specific invariants.
+
+Before touching `src/app/demo/**`, `src/server/demo/**`, or `src/components/demo/**`, verify the read-only invariants:
+
+```bash
+grep -rn "use server\|@/db/client\|from '@/.*actions'" src/app/demo src/server/demo src/components/demo
+```
+
+Any hit outside this file is a violation. (A value import from `src/server/demo/meta.ts` — plain-data constants only — is the single permitted client import that is not `import type`.)
+
+## Known parity gaps
+
+The following real-app screens do not yet have a `/demo` mirror:
+
+- `/demo/t/[id]` — individual ticket view for the opener (only `/demo/t/new` exists)
+- `/demo/settings/*` — notification preferences and team settings hub
+- `/demo/help` — help and feature explainer page
+
+When adding or updating any of these real screens, mirror them in `/demo` per the parity rule above.
+
 ## How it fits together
 
 - `src/server/demo/` — the read-only base: a seeded, date-independent generator

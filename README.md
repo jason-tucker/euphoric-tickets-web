@@ -285,4 +285,4 @@ and the restic backup/restore drill live in **[`ops/README.md`](ops/README.md)**
 - See `CLAUDE.md` for the full working agreement and `CHANGELOG.md` for the
   per-release history (the system is at the lantern milestone P1–P19).
 
-`euphoric-tickets-web v0.6.52`
+`euphoric-tickets-web v0.10.2`
