@@ -57,8 +57,9 @@ export type DemoScope = {
   isSudo: boolean
   canUseConsole: boolean
   isAdminAnywhere: boolean
-  businesses: { id: string; slug: string; name: string; level: 'member' | 'admin' | 'owner' }[]
+  businesses: { id: string; slug: string; name: string; level: 'member' | 'admin' | 'owner' | 'staff' }[]
   adminTeamIds: string[]
+  staffTeamIds: string[]
   staffCategoryIds: string[]
   settingsHref: string | null
 }
@@ -116,13 +117,21 @@ export function projectTicket(
 // ─── the real-model mirror ───────────────────────────────────────────────
 
 // teams the persona can "see" with a resolved level (mirror of listMyBusinesses).
-export function demoListMyBusinesses(persona: DemoPersonaSpec): { team: DemoTeam; level: 'member' | 'admin' | 'owner' }[] {
+// 'staff' is the new team-wide tier: can see/claim/reply/close all tickets but
+// cannot edit settings or delete channels.
+export function demoListMyBusinesses(persona: DemoPersonaSpec): { team: DemoTeam; level: 'member' | 'admin' | 'owner' | 'staff' }[] {
   const ds = getDemoDataset()
   if (persona.isSudo) return ds.teams.map((team) => ({ team, level: 'owner' as const }))
-  const out: { team: DemoTeam; level: 'member' | 'admin' | 'owner' }[] = []
+  const out: { team: DemoTeam; level: 'member' | 'admin' | 'owner' | 'staff' }[] = []
   for (const team of ds.teams) {
     if (!persona.guildIds.has(team.guildId)) continue
-    out.push({ team, level: persona.adminTeamIds.has(team.business.id) ? 'admin' : 'member' })
+    const bizId = team.business.id
+    const level: 'member' | 'admin' | 'owner' | 'staff' = persona.adminTeamIds.has(bizId)
+      ? 'admin'
+      : persona.staffTeamIds.has(bizId)
+      ? 'staff'
+      : 'member'
+    out.push({ team, level })
   }
   return out
 }
@@ -132,12 +141,18 @@ function adminTeamIdSet(persona: DemoPersonaSpec): Set<string> {
   return persona.adminTeamIds
 }
 
+function staffTeamIdSet(persona: DemoPersonaSpec): Set<string> {
+  if (persona.isSudo) return new Set() // sudo is admin everywhere; staff tier is redundant
+  return persona.staffTeamIds
+}
+
 export function demoScope(persona: DemoPersonaSpec): DemoScope {
   const ds = getDemoDataset()
   const mine = demoListMyBusinesses(persona)
   const adminTeams = mine.filter((m) => m.level === 'admin' || m.level === 'owner')
   const isAdminAnywhere = adminTeams.length > 0
-  const canUseConsole = isAdminAnywhere || persona.staffCategoryIds.size > 0
+  // Console is accessible to admins, category-level staff, AND team-wide staff.
+  const canUseConsole = isAdminAnywhere || persona.staffCategoryIds.size > 0 || persona.staffTeamIds.size > 0
   const businesses = mine
     .map((m) => ({ id: m.team.business.id, slug: m.team.business.slug, name: m.team.business.name, level: m.level }))
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -151,6 +166,7 @@ export function demoScope(persona: DemoPersonaSpec): DemoScope {
     isAdminAnywhere,
     businesses,
     adminTeamIds: [...adminTeamIdSet(persona)],
+    staffTeamIds: [...staffTeamIdSet(persona)],
     staffCategoryIds: [...persona.staffCategoryIds],
     settingsHref: firstAdmin ? `/demo/b/${firstAdmin.team.business.slug}/settings` : null,
   }
@@ -163,6 +179,7 @@ export function demoScope(persona: DemoPersonaSpec): DemoScope {
 export function demoVisibleTickets(persona: DemoPersonaSpec, now: Date, cap = 1000): DemoTicket[] {
   const ds = getDemoDataset()
   const adminIds = adminTeamIdSet(persona)
+  const staffIds = staffTeamIdSet(persona)
   const staffCats = persona.staffCategoryIds
   const visibleTeams = demoListMyBusinesses(persona).map((m) => m.team)
 
@@ -170,15 +187,20 @@ export function demoVisibleTickets(persona: DemoPersonaSpec, now: Date, cap = 10
   const cands: Cand[] = []
   for (const team of visibleTeams) {
     const isAdminTeam = adminIds.has(team.business.id)
+    // Team-wide staff can see ALL tickets in the team (not just their category).
+    const isStaffTeam = staffIds.has(team.business.id)
     for (const header of ds.headersByTeam.get(team.business.id) ?? []) {
       const isOpener = header.openerId === persona.userId
       const isStaffCat = header.categoryId != null && staffCats.has(header.categoryId)
-      if (!isOpener && !isStaffCat && !isAdminTeam) continue
+      if (!isOpener && !isStaffCat && !isAdminTeam && !isStaffTeam) continue
       cands.push({
         team,
         header,
         lastMs: projectLastActivityAt(header.offset, now).getTime(),
-        personalScope: isOpener || isStaffCat,
+        // Team-wide staff (like category-staff) reach these WITHOUT admin, so
+        // they count as personal scope — shown with the console's Admin view off.
+        // Mirrors the real app (staffBizSet → personalScope in getTicketsConsoleData).
+        personalScope: isOpener || isStaffCat || isStaffTeam,
       })
     }
   }
@@ -189,10 +211,12 @@ export function demoVisibleTickets(persona: DemoPersonaSpec, now: Date, cap = 10
 export function demoConsoleTeams(persona: DemoPersonaSpec): DemoConsoleTeam[] {
   const ds = getDemoDataset()
   const adminIds = adminTeamIdSet(persona)
-  const staffTeamIds = new Set<string>()
+  const teamWideStaffIds = staffTeamIdSet(persona)
+  // Category-level staff: derive the team IDs from the staffed category IDs.
+  const catStaffTeamIds = new Set<string>()
   for (const catId of persona.staffCategoryIds) {
     const cat = ds.categoryById.get(catId)
-    if (cat) staffTeamIds.add(cat.businessId)
+    if (cat) catStaffTeamIds.add(cat.businessId)
   }
   return demoListMyBusinesses(persona)
     .map((m) => ({
@@ -200,7 +224,9 @@ export function demoConsoleTeams(persona: DemoPersonaSpec): DemoConsoleTeam[] {
       name: m.team.business.name,
       slug: m.team.business.slug,
       admin: adminIds.has(m.team.business.id),
-      staff: staffTeamIds.has(m.team.business.id),
+      // staff = true for both category-level and team-wide staff — single flag,
+      // matching the real ConsoleTeam (no separate team-wide badge).
+      staff: catStaffTeamIds.has(m.team.business.id) || teamWideStaffIds.has(m.team.business.id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -210,7 +236,9 @@ export function demoConsoleTeams(persona: DemoPersonaSpec): DemoConsoleTeam[] {
 export function demoTicketAccess(persona: DemoPersonaSpec, team: DemoTeam, header: DemoTicketHeader): TicketAccessFlags {
   const isAdmin = persona.isSudo || persona.adminTeamIds.has(team.business.id)
   const isOpener = header.openerId === persona.userId
-  const isStaff = isAdmin || (header.categoryId != null && persona.staffCategoryIds.has(header.categoryId))
+  // isStaff = true for category-level staff OR team-wide staff (new tier).
+  const isTeamWideStaff = persona.staffTeamIds.has(team.business.id)
+  const isStaff = isAdmin || isTeamWideStaff || (header.categoryId != null && persona.staffCategoryIds.has(header.categoryId))
   return {
     isAdmin,
     isStaff,
@@ -219,6 +247,7 @@ export function demoTicketAccess(persona: DemoPersonaSpec, team: DemoTeam, heade
     canReply: isAdmin || isStaff || isOpener,
     canClaim: isAdmin || isStaff,
     canClose: isAdmin || isStaff || isOpener,
+    // Team-wide staff cannot change category or delete channel (matches real spec).
     canChangeCategory: isAdmin,
     canManageMembers: isAdmin || isStaff,
     canDeleteChannel: isAdmin,

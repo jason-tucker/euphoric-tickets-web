@@ -50,6 +50,9 @@ export type DemoBusiness = {
   description: string | null
   discordGuildId: string
   adminRoleIds: string
+  // Role IDs whose members get team-wide "staff" access (see/claim/reply/close
+  // every ticket in the team, but cannot edit settings or delete channels).
+  staffRoleIds: string
   webhookUrl: string | null
   discordFallbackCategoryId: string | null
   discordClosedCategoryId: string | null
@@ -91,6 +94,9 @@ export type DemoPersonaSpec = {
   userId: string
   guildIds: Set<string>
   adminTeamIds: Set<string>
+  // Team-wide staff: can see/claim/reply/close ALL tickets in these teams
+  // (mirrors businesses.staffRoleIds → access level 'staff').
+  staffTeamIds: Set<string>
   staffCategoryIds: Set<string>
   isSudo: boolean
 }
@@ -252,6 +258,8 @@ function buildDataset(): DemoDataset {
         description: `${tdef.name} — a demo team in the ${GUILDS[gi].name} server.`,
         discordGuildId: guildId,
         adminRoleIds: roles.admin.join(','),
+        // One or two staff (Team Member) roles per team.
+        staffRoleIds: roles.staff.slice(0, trng.int(1, 2)).join(','),
         webhookUrl: `https://discord.com/api/webhooks/${trng.snowflake()}/demo-webhook-token-redacted`,
         discordFallbackCategoryId: trng.snowflake(),
         discordClosedCategoryId: trng.snowflake(),
@@ -321,6 +329,7 @@ function buildDataset(): DemoDataset {
       userId: personaUsers.enduser.id,
       guildIds: new Set([guild0]),
       adminTeamIds: new Set(),
+      staffTeamIds: new Set(),
       staffCategoryIds: new Set(),
       isSudo: false,
     },
@@ -329,7 +338,10 @@ function buildDataset(): DemoDataset {
       userId: personaUsers.staff.id,
       guildIds: new Set([guild0, guild1, guilds[2].id]),
       adminTeamIds: new Set(),
-      // Staffs one category each on three teams across three guilds.
+      // Team-wide staff on Aurora Storefront (the first Aurora team) — sees ALL
+      // its tickets via the new staffRoleIds tier.
+      staffTeamIds: new Set([auroraTeams[0].business.id]),
+      // Also staffs one category each on three teams across three guilds.
       staffCategoryIds: new Set([
         firstCat(auroraTeams[3]).id, // Aurora Care
         firstCat(nimbusTeams[0]).id, // Nimbus Hosting
@@ -342,6 +354,9 @@ function buildDataset(): DemoDataset {
       userId: personaUsers.admin.id,
       guildIds: new Set([guild1]),
       adminTeamIds: new Set(nimbusTeams.map((t) => t.business.id)),
+      // Admins have full admin access so staffTeamIds is empty for this persona;
+      // admin supersedes team-wide staff everywhere they administrate.
+      staffTeamIds: new Set(),
       // Admins may also personally staff a category in one of their own teams.
       staffCategoryIds: new Set([firstCat(nimbusTeams[1]).id]),
       isSudo: false,
@@ -351,6 +366,7 @@ function buildDataset(): DemoDataset {
       userId: personaUsers.sudo.id,
       guildIds: new Set(guilds.map((g) => g.id)),
       adminTeamIds: new Set(teams.map((t) => t.business.id)),
+      staffTeamIds: new Set(),
       staffCategoryIds: new Set(),
       isSudo: true,
     },
@@ -408,13 +424,14 @@ function buildDataset(): DemoDataset {
 
       // Assign some tickets to this persona where they staff/admin.
       const staffsHere = team.categories.some((c) => spec.staffCategoryIds.has(c.id))
+      const staffsTeamHere = spec.staffTeamIds.has(team.business.id)
       const adminsHere = spec.adminTeamIds.has(team.business.id)
-      if (staffsHere || adminsHere) {
+      if (staffsHere || staffsTeamHere || adminsHere) {
         const sr = rngFor('attr-assign', spec.key, team.business.id)
         const pool = headers.filter(
           (h) =>
             ASSIGNED_STATUSES.has(h.status) &&
-            (adminsHere || (h.categoryId != null && spec.staffCategoryIds.has(h.categoryId))),
+            (adminsHere || staffsTeamHere || (h.categoryId != null && spec.staffCategoryIds.has(h.categoryId))),
         )
         for (const h of sr.sample(pool, sr.int(10, 30))) h.assigneeId = spec.userId
       }

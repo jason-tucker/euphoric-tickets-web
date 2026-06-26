@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.11.0] — 2026-06-26 — Team-wide staff tier ("Team Member" roles)
+
+### Added
+- **Team-wide `staff` access tier.** Holders of a role listed in `businesses.staff_role_ids` can view, claim, close, reply to, rename, move, and add/remove members on **every ticket in that team** — full team-wide ticket visibility — but cannot edit settings, change categories, or delete Discord channels.
+- **`businesses.staff_role_ids` column** — added to the schema and applied additively by the entrypoint's `drizzle-kit push`; no existing data is modified.
+- **"Team Member roles" field in team settings** (`/b/<slug>/settings`). Uses the same searchable Discord role picker as other role fields. The existing admin-roles field is relabeled "Team Manager roles" to make the distinction clear.
+- **`listMyStaffBusinessIds()`** in `src/server/permissions.ts` — resolves the teams where a user holds a team-wide staff role; feeds the console's scope query, the Staff badge in the team filter, and the `/dashboard` staff-visibility flag.
+- **Demo parity** — `src/app/demo/**`, `src/server/demo/**`, and `src/components/demo/**` updated to surface the team-wide staff tier in the persona switcher and settings panel (localStorage-only, no DB writes).
+
+### Changed
+- **`AccessLevel` is now `member | staff | admin | owner`** (`LEVEL_RANK` reranked: `member=0`, `staff=1`, `admin=2`, `owner=3`). Callers that previously compared only `admin | owner` are unchanged; `requireBusinessAccess(slug, 'staff')` now accepts the new tier.
+- **`resolveBusinessAccess`** resolves admin-then-staff in a single bot member fetch — the ADMINISTRATOR / Manage-Server / `admin_role_ids` checks run first; if none match, the same fetched roles are intersected with `businesses.staff_role_ids` to resolve `staff`, avoiding a second Discord round-trip.
+- **`resolveTicketAccess`** grants `isStaff: true` for the team-wide staff tier across **all categories** in the team — previously `isStaff` required a match against the category's own `staff_role_ids`.
+- **"Admin roles" settings field relabeled "Team Manager roles"** to distinguish it from the new "Team Member roles" field.
+
+### Fixed
+- **A member holding a team "staff role" now sees that team's tickets in the unified `/tickets` console.** Previously they fell through to `member` (neither admin nor category-staff), were excluded from the console scope query, and were bounced to `/dashboard`.
+
+v0.11.0 · 0466f39
+
 ## [0.10.2] — 2026-06-13 — Docs overhaul: agent usage policy, corrected env vars, bot↔web bridge, schema table
 
 ### Changed

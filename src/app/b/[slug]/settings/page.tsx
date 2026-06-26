@@ -70,7 +70,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           <CardHeader>
             <CardTitle className="text-base">Discord</CardTitle>
             <CardDescription>
-              The Discord guild and which roles count as admins of this team.
+              The Discord guild and which roles manage or staff this team.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -86,7 +86,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
               <p className="text-xs text-muted-foreground">Enable Developer Mode in Discord, right-click your server, &quot;Copy Server ID&quot;.</p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="adminRoleIds">Admin / manager roles</Label>
+              <Label htmlFor="adminRoleIds">Team Manager roles</Label>
               <DiscordPicker
                 kind="role"
                 multi
@@ -96,7 +96,21 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                 triggerLabel="Choose admin roles…"
               />
               <p className="text-xs text-muted-foreground">
-                Members with any of these roles get full admin access to this team — including channel deletion and settings edits. Type to filter, click to add, or paste a raw Discord role ID.
+                Managers get full admin access to this team — settings, categories, channel deletion, and every ticket. Type to filter, click to add, or paste a raw Discord role ID.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="staffRoleIds">Team Member roles</Label>
+              <DiscordPicker
+                kind="role"
+                multi
+                guildId={business.discordGuildId}
+                name="staffRoleIds"
+                defaultValue={business.staffRoleIds}
+                triggerLabel="Choose member roles…"
+              />
+              <p className="text-xs text-muted-foreground">
+                Team-wide staff. Members with any of these roles can view, claim, reply on, and close <strong>every</strong> ticket in this team — but can&apos;t edit settings, change categories, or delete channels. For staff limited to one category, use a category&apos;s staff roles below instead.
               </p>
             </div>
             <div className="space-y-1">
