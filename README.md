@@ -169,15 +169,16 @@ nav moves between the teams you belong to.
 
 ### Permission model
 
-Three tiers, resolved per-ticket by `resolveTicketAccess` and per-team by
-`requireBusinessAccess(slug, level)` (`level` ∈ `member | admin | owner`).
+Four tiers, resolved per-ticket by `resolveTicketAccess` and per-team by
+`requireBusinessAccess(slug, level)` (`level` ∈ `member | staff | admin | owner`).
 Resolution is cached per request and reads role snapshots from
 `business_members`, so the hot path avoids live Discord calls.
 
 | Tier | Who | Can |
 |---|---|---|
 | **admin / owner** | guild `ADMINISTRATOR`, a role in `admin_role_ids`, or sudo | everything, incl. **delete channel**, change category, edit settings |
-| **staff** | holds a role in the category's `staff_role_ids` | see / claim / close / reply / add-remove members / internal notes — **not** delete |
+| **team staff ("Team Member")** | holds a role in the team's `staff_role_ids` | see / claim / close / reply / add-remove members / internal notes on **every ticket in the team** — **not** settings/category/delete |
+| **staff** (category-scoped) | holds a role in the **category's** `staff_role_ids` | see / claim / close / reply / add-remove members / internal notes on tickets in **that category** — **not** delete |
 | **opener** | opened the ticket | see + reply + close their own |
 | **external** | added by ID, not in the guild | see + reply on that one ticket (web only) |
 
@@ -285,4 +286,4 @@ and the restic backup/restore drill live in **[`ops/README.md`](ops/README.md)**
 - See `CLAUDE.md` for the full working agreement and `CHANGELOG.md` for the
   per-release history (the system is at the lantern milestone P1–P19).
 
-`euphoric-tickets-web v0.10.2`
+`euphoric-tickets-web v0.11.0`

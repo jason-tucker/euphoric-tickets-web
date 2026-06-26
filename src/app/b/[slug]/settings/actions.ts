@@ -15,6 +15,7 @@ const settingsSchema = z.object({
   description: z.string().max(500).optional(),
   discordGuildId: snowflake,
   adminRoleIds: z.string().regex(/^(\d{17,20})?(,\s*\d{17,20})*$/, 'Comma-separated snowflakes only').optional(),
+  staffRoleIds: z.string().regex(/^(\d{17,20})?(,\s*\d{17,20})*$/, 'Comma-separated snowflakes only').optional(),
   webhookUrl: z
     .string()
     .url()
@@ -43,6 +44,7 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     description: String(formData.get('description') ?? ''),
     discordGuildId: String(formData.get('discordGuildId') ?? ''),
     adminRoleIds: String(formData.get('adminRoleIds') ?? '').trim(),
+    staffRoleIds: String(formData.get('staffRoleIds') ?? '').trim(),
     webhookUrl: String(formData.get('webhookUrl') ?? '').trim(),
     discordFallbackCategoryId: String(formData.get('discordFallbackCategoryId') ?? '').trim(),
     discordClosedCategoryId: String(formData.get('discordClosedCategoryId') ?? '').trim(),
@@ -57,6 +59,7 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
     description: raw.description || undefined,
     webhookUrl: raw.webhookUrl || undefined,
     adminRoleIds: raw.adminRoleIds || undefined,
+    staffRoleIds: raw.staffRoleIds || undefined,
     discordFallbackCategoryId: raw.discordFallbackCategoryId || undefined,
     discordClosedCategoryId: raw.discordClosedCategoryId || undefined,
     deleteClosedAfterDays: raw.deleteClosedAfterDays || undefined,
@@ -72,6 +75,7 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
       description: parsed.data.description ?? null,
       discordGuildId: parsed.data.discordGuildId,
       adminRoleIds: parsed.data.adminRoleIds ?? '',
+      staffRoleIds: parsed.data.staffRoleIds ?? '',
       webhookUrl: parsed.data.webhookUrl ?? null,
       discordFallbackCategoryId: parsed.data.discordFallbackCategoryId ?? null,
       discordClosedCategoryId: parsed.data.discordClosedCategoryId ?? null,

@@ -23,6 +23,7 @@ type BizForm = {
   description: string
   discordGuildId: string
   adminRoleIds: string
+  staffRoleIds: string
   webhookUrl: string
   discordFallbackCategoryId: string
   discordClosedCategoryId: string
@@ -38,6 +39,7 @@ function toForm(b: DemoBusiness): BizForm {
     description: b.description ?? '',
     discordGuildId: b.discordGuildId,
     adminRoleIds: b.adminRoleIds,
+    staffRoleIds: b.staffRoleIds,
     webhookUrl: b.webhookUrl ?? '',
     discordFallbackCategoryId: b.discordFallbackCategoryId ?? '',
     discordClosedCategoryId: b.discordClosedCategoryId ?? '',
@@ -71,6 +73,7 @@ export function DemoSettings({ data, slug }: { data: DemoSettings; slug: string 
       description: form.description || null,
       discordGuildId: form.discordGuildId,
       adminRoleIds: form.adminRoleIds,
+      staffRoleIds: form.staffRoleIds,
       webhookUrl: form.webhookUrl || null,
       discordFallbackCategoryId: form.discordFallbackCategoryId || null,
       discordClosedCategoryId: form.discordClosedCategoryId || null,
@@ -124,11 +127,12 @@ export function DemoSettings({ data, slug }: { data: DemoSettings; slug: string 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Discord</CardTitle>
-          <CardDescription>The guild and which roles count as admins of this team.</CardDescription>
+          <CardDescription>The guild and which roles count as admins or staff of this team.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Field label="Discord guild ID"><Input value={form.discordGuildId} onChange={(e) => set({ discordGuildId: e.target.value })} /></Field>
-          <Field label="Admin / manager role IDs (CSV)"><Input value={form.adminRoleIds} onChange={(e) => set({ adminRoleIds: e.target.value })} /></Field>
+          <Field label="Team Manager roles (CSV role IDs)"><Input value={form.adminRoleIds} onChange={(e) => set({ adminRoleIds: e.target.value })} /></Field>
+          <Field label="Team Member roles (CSV role IDs)"><Input value={form.staffRoleIds} onChange={(e) => set({ staffRoleIds: e.target.value })} /></Field>
           <Field label="Fallback channel category ID"><Input value={form.discordFallbackCategoryId} onChange={(e) => set({ discordFallbackCategoryId: e.target.value })} /></Field>
           <Field label="Closed-tickets category ID"><Input value={form.discordClosedCategoryId} onChange={(e) => set({ discordClosedCategoryId: e.target.value })} /></Field>
           <Field label="Auto-delete closed after (days)"><Input value={form.deleteClosedAfterDays} onChange={(e) => set({ deleteClosedAfterDays: e.target.value.replace(/\D/g, '') })} placeholder="blank = never" /></Field>

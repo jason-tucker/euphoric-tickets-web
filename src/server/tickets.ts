@@ -5,6 +5,7 @@
 //
 // Scope (a ticket is visible if ANY of):
 //   - it lives in a team the user administers (admin/owner), OR
+//   - it lives in a team the user is team-wide **staff** of (business.staff_role_ids), OR
 //   - it lives in a category the user holds a staff role in, OR
 //   - the user opened it (in any team they belong to).
 // Sudo users administer every team, so they see everything.
@@ -21,7 +22,7 @@ import {
   users,
 } from '@/db/schema'
 import { auth } from './auth'
-import { listMyBusinesses, listMyStaffCategoryIds } from './permissions'
+import { listMyBusinesses, listMyStaffBusinessIds, listMyStaffCategoryIds } from './permissions'
 
 // All dates are ISO strings so the SSR-embedded payload and the JSON refetch
 // are byte-identical — the client never has to special-case Date vs string.
@@ -89,8 +90,11 @@ export async function ticketsConsoleScope(): Promise<ConsoleScope> {
   // every page, so skipping this for admins keeps most navigations cheap.
   let canUse = isAdminAnywhere
   if (!isAdminAnywhere) {
-    const staffCatIds = await listMyStaffCategoryIds()
-    canUse = staffCatIds.length > 0
+    const [staffCatIds, staffBizIds] = await Promise.all([
+      listMyStaffCategoryIds(),
+      listMyStaffBusinessIds(),
+    ])
+    canUse = staffCatIds.length > 0 || staffBizIds.length > 0
   }
   return { canUse, isAdminAnywhere, adminTeams }
 }
@@ -106,17 +110,19 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
   const session = await auth()
   if (!session?.user?.id) return EMPTY
 
-  const [my, staffCatIds] = await Promise.all([listMyBusinesses(), listMyStaffCategoryIds()])
+  const [my, staffCatIds, staffBizIds] = await Promise.all([listMyBusinesses(), listMyStaffCategoryIds(), listMyStaffBusinessIds()])
   const allIds = my.map((b) => b.business.id)
   if (allIds.length === 0) return { ...EMPTY, generatedAt: new Date().toISOString() }
 
   const adminIds = my
     .filter((b) => b.level === 'admin' || b.level === 'owner')
     .map((b) => b.business.id)
+  const staffBizSet = new Set(staffBizIds)
 
   // The visibility predicate — admin teams, staffed categories, and own tickets.
   const clauses: SQL[] = []
   if (adminIds.length) clauses.push(inArray(tickets.businessId, adminIds))
+  if (staffBizIds.length) clauses.push(inArray(tickets.businessId, staffBizIds))
   if (staffCatIds.length) clauses.push(inArray(tickets.categoryId, staffCatIds))
   clauses.push(
     and(eq(tickets.openerUserId, session.user.id), inArray(tickets.businessId, allIds)) as SQL,
@@ -262,6 +268,7 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       personalScope:
         r.openerId === session.user.id ||
         addedTicketIds.has(r.id) ||
+        staffBizSet.has(r.teamId) ||
         (r.categoryId != null && staffedCatSet.has(r.categoryId)),
     }
   })
@@ -277,6 +284,7 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       .where(inArray(ticketCategories.id, staffCatIds))
     for (const c of staffCatRows) staffTeamIds.add(c.businessId)
   }
+  for (const bid of staffBizIds) staffTeamIds.add(bid)
 
   // The team facet is *every* team the user can see — not just teams that
   // currently have a ticket — so the multi-select stays stable as you filter.

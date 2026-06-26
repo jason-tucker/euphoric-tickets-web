@@ -12,14 +12,14 @@ import {
   type Business,
 } from '@/db/schema'
 
-export type AccessLevel = 'member' | 'admin' | 'owner'
+export type AccessLevel = 'member' | 'staff' | 'admin' | 'owner'
 
 export type ResolvedBusiness = {
   business: Business
   level: AccessLevel
 }
 
-const LEVEL_RANK: Record<AccessLevel, number> = { member: 0, admin: 1, owner: 2 }
+const LEVEL_RANK: Record<AccessLevel, number> = { member: 0, staff: 1, admin: 2, owner: 3 }
 
 function hasAtLeast(actual: AccessLevel, required: AccessLevel): boolean {
   return LEVEL_RANK[actual] >= LEVEL_RANK[required]
@@ -167,6 +167,45 @@ export const listMyStaffCategoryIds = cache(async function listMyStaffCategoryId
   return out
 })
 
+// Business IDs where the signed-in user holds a team-wide **staff** role — i.e.
+// the guild's `business.staff_role_ids` intersect a Discord role the user
+// actually has in that guild. Business-level counterpart to
+// `listMyStaffCategoryIds`: it grants visibility/handling of EVERY ticket in the
+// team, not just one category. Drives the console scope, the team's Staff badge,
+// and personal-scope marking. Roles are read LIVE per guild (cached ~5 min by
+// fetchGuildMemberRoles), not from the business_members snapshot — that snapshot
+// is empty for admins/owners/sudo and would wrongly report "no staff role".
+export const listMyStaffBusinessIds = cache(async function listMyStaffBusinessIds(): Promise<string[]> {
+  const session = await auth()
+  if (!session?.user?.id) return []
+
+  const guilds = session.guilds ?? []
+  if (guilds.length === 0) return []
+  const guildIds = guilds.map((g) => g.id)
+
+  // Only businesses that actually gate a staff tier by role.
+  const biz = await db
+    .select()
+    .from(businesses)
+    .where(and(inArray(businesses.discordGuildId, guildIds), ne(businesses.staffRoleIds, '')))
+  if (biz.length === 0) return []
+
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  if (!botToken) return []
+  const { fetchGuildMemberRoles } = await import('@/lib/discord')
+
+  const out: string[] = []
+  await Promise.all(
+    biz.map(async (b) => {
+      const roles = await fetchGuildMemberRoles(botToken, b.discordGuildId, session.user.discordId)
+      if (!roles) return
+      const staffIds = parseCsv(b.staffRoleIds)
+      if (staffIds.some((r) => roles.includes(r))) out.push(b.id)
+    }),
+  )
+  return out
+})
+
 // Full resolution: looks up the user's roles in this business's guild via
 // the bot's permissions, then matches against `business.adminRoleIds`.
 // Falls back to `member` if the user is in the guild but role lookup fails.
@@ -204,19 +243,27 @@ export const resolveBusinessAccess = cache(async function resolveBusinessAccess(
   // Manage Server → admin: per-guild settings, panels, and the ticket queue.
   if ((perms & 32n) === 32n) level = 'admin'
 
-  // Role-level "Ticket Master" admin — any role in admin_role_ids. Requires the
-  // bot's view of the member; skip the Discord round-trip when Manage Server
-  // already granted admin. We only do this on protected routes, so one Discord
+  // Role-level tiers, both resolved from the bot's view of the member's roles:
+  //   • any role in admin_role_ids ("Team Manager") → admin
+  //   • else any role in staff_role_ids ("Team Member") → staff: a team-wide
+  //     staff tier that sees/handles every ticket in the team but can't edit
+  //     settings, change categories, or delete channels.
+  // Admin wins over staff. Skip the Discord round-trip when Manage Server
+  // already granted admin or when neither tier is role-gated. One Discord
   // request per gated page view is affordable.
+  const staffRoleIds = parseCsv(b.staffRoleIds)
   const botToken = process.env.DISCORD_BOT_TOKEN
-  if (level !== 'admin' && botToken && adminRoleIds.length > 0) {
+  if (level !== 'admin' && botToken && (adminRoleIds.length > 0 || staffRoleIds.length > 0)) {
     try {
       const { fetchGuildMemberAsBot } = await import('@/lib/discord')
       const member = await fetchGuildMemberAsBot(botToken, b.discordGuildId, session.user.discordId)
       if (member) {
         roleSnapshot = member.roles
-        const isAdmin = member.roles.some((r) => adminRoleIds.includes(r))
-        if (isAdmin) level = 'admin'
+        if (adminRoleIds.length > 0 && member.roles.some((r) => adminRoleIds.includes(r))) {
+          level = 'admin'
+        } else if (staffRoleIds.length > 0 && member.roles.some((r) => staffRoleIds.includes(r))) {
+          level = 'staff'
+        }
       }
     } catch {
       // Bot may not be in the guild yet; fall through as member.
@@ -273,9 +320,10 @@ export async function requireBusinessAccess(slug: string, level: AccessLevel = '
 //   admin     — `level === 'admin' | 'owner'`. Only tier allowed to delete
 //               the underlying Discord channel, change a ticket's category,
 //               or edit settings.
-//   staff     — admin OR holds any role in `ticket_categories.staff_role_ids`
-//               of the ticket's category. Falls back to admin if the column
-//               is empty.
+//   staff     — admin OR holds the team-wide staff tier (business.staff_role_ids
+//               → access level 'staff') OR holds any role in
+//               `ticket_categories.staff_role_ids` of the ticket's category.
+//               Falls back to admin if the per-category column is empty.
 //   opener    — `tickets.opener_user_id === session.user.id`.
 //   member    — none of the above; can't see the ticket.
 export type TicketAccessFlags = {
@@ -321,7 +369,7 @@ export const resolveTicketAccess = cache(async function resolveTicketAccess(opts
     isExternal = !!ext
   }
 
-  let isStaff = isAdmin
+  let isStaff = isAdmin || opts.level === 'staff'
   if (!isStaff && opts.ticket.categoryId) {
     const [cat] = await db
       .select({ staffRoleIds: ticketCategories.staffRoleIds })

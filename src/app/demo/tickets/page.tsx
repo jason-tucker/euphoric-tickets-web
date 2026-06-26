@@ -10,7 +10,7 @@ export default async function DemoTicketsPage({ searchParams }: { searchParams: 
   const persona = getPersona(personaKey)
   const scope = demoScope(persona)
   if (!scope.canUseConsole) {
-    return <PersonaGate title="The Tickets console" need="staff and admins" />
+    return <PersonaGate title="The Tickets console" need="staff (category-level or team-wide) and admins" />
   }
 
   const tickets = demoVisibleTickets(persona, new Date(), 1000)

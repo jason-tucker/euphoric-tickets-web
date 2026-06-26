@@ -16,7 +16,7 @@ export const businessMembers = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    role: text('role', { enum: ['member', 'admin', 'owner'] }).notNull().default('member'),
+    role: text('role', { enum: ['member', 'staff', 'admin', 'owner'] }).notNull().default('member'),
     // Snapshot of the Discord role IDs the user had in this business's guild
     // at last login. Stored as JSON-encoded array of snowflake strings for
     // simplicity (this gets overwritten, never queried by individual role).

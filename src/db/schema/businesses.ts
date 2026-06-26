@@ -22,6 +22,14 @@ export const businesses = pgTable(
     // settings UI can post a single CSV form value).
     adminRoleIds: text('admin_role_ids').notNull().default(''),
 
+    // Comma-separated snowflakes for the team-wide "staff" tier (surfaced as
+    // "Team Member" roles in settings). Anyone holding one of these roles can
+    // view, claim, reply on, and close EVERY ticket in this team — but cannot
+    // edit settings, change categories, or delete channels (that's the
+    // manager/admin tier in adminRoleIds). Distinct from per-category
+    // staff_role_ids on ticket_categories, which scopes staff to one category.
+    staffRoleIds: text('staff_role_ids').notNull().default(''),
+
     // Legacy single-channel webhook — used as a fallback when per-ticket
     // channels can't be created (bot token missing or guild misconfigured).
     // Format: full https://discord.com/api/webhooks/<id>/<token>
