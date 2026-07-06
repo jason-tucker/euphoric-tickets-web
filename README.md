@@ -35,14 +35,23 @@ and per-ticket.
   Discord channel **spoofed as your Discord identity** (name + avatar), so the
   thread reads natively. External users (added to a ticket but not in the guild)
   can still see and reply to that one ticket.
-- **Staff** (a per-category role tier) — see every ticket in their categories;
-  claim / unclaim / assign / close / reopen; reply; add or remove people; post
-  staff-only internal notes; rename; move a ticket to another category.
+- **Staff** — two role tiers, both able to claim / unclaim / assign / close /
+  reopen; reply; add or remove people; post staff-only internal notes; rename;
+  and move a ticket to another category:
+  - a **team-wide "Team Member" role** (`businesses.staff_role_ids`) that
+    reaches **every ticket in the team**, and
+  - a **per-category role** (`ticket_categories.staff_role_ids`) scoped to just
+    that category.
+  Neither tier can edit settings, change a ticket's category, or delete a
+  channel.
 - **Admins** — everything staff can do, plus **delete the Discord channel** of a
   closed ticket, edit team settings + categories, and change a ticket's
   category. The only tier allowed to delete channels.
 - **Sudo** (account-wide) — create/edit teams, a system **bot dashboard**, a
   persistent **error log**, and a cross-team **All tickets** view.
+
+A public, unauthenticated **[`/demo`](#feature-tour)** mirrors the whole app
+on synthetic data for anyone who wants to try it before signing in.
 
 ---
 
@@ -73,8 +82,12 @@ How the two halves fit together:
 - **Inbound Discord → web.** The bot's `messageCreate` relay writes Discord
   messages (and attachments) into `ticket_messages`; the web renders them.
 - **Live refresh.** Postgres `LISTEN/NOTIFY` triggers fire on message inserts
-  and ticket changes → an SSE endpoint here forwards a "refresh" event → the
-  open conversation re-renders in well under a second, no manual reload.
+  and ticket changes → an SSE endpoint forwards a generic "refresh" event
+  (`/api/tickets/[id]/messages/stream` per ticket, `/api/tickets/stream` for
+  the cross-team `/tickets` console) → the client refetches (the conversation,
+  or `/api/tickets/list` for the console, which re-applies the caller's scope
+  server-side) and re-renders in well under a second — no manual reload, and no
+  ticket data ever rides the stream itself.
 - **Internal endpoints.** The bot exposes `POST /api/internal/dm` (for the web
   to DM a user through the bot); the web exposes `POST /api/internal/notify`
   (for the bot to trigger notification fan-out). Both are authed by a shared
@@ -129,7 +142,8 @@ the same Postgres the bot uses if you want both halves talking to one DB.
 | `AUTH_SECRET` | Yes | `openssl rand -base64 32`. |
 | `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET` | Yes | Discord OAuth app credentials. |
 | `AUTH_TRUST_HOST` | Yes | `true` behind Caddy/cloudflared. |
-| `DISCORD_BOT_TOKEN` | Yes | Picker data, channel ops, attachment refresh, member resolution, admin-role checks. |
+| `AUTH_URL` | Dev only | e.g. `http://localhost:3000`. Unset in production — Caddy/cloudflared forwarding + a per-request URL rebuild cover it there. |
+| `DISCORD_BOT_TOKEN` | Yes | Picker data, channel ops, attachment refresh, member resolution, admin-role and team-wide staff-role checks. |
 | `PUBLIC_BASE_URL` | Rec. | Public site URL, used in notification links. |
 | `INTERNAL_TOKEN` | Rec. | Shared secret for the web↔bot internal endpoints (notify / DM). |
 | `BOT_INTERNAL_URL` | Rec. | e.g. `http://euphoric-tickets:8787` — where the bot's DM endpoint lives. |
@@ -145,19 +159,27 @@ the same Postgres the bot uses if you want both halves talking to one DB.
 | Route | Who | Notes |
 |---|---|---|
 | `/login` | anon | one-button Discord OAuth |
+| `/` | any | redirects to `/dashboard` (signed in) or `/login` |
 | `/dashboard` | any user | my tickets across all teams (closed hidden by default; **Show closed** toggle) |
-| `/tickets` | staff/admin | **All tickets** cross-team view (sortable) |
+| `/tickets` | staff/admin | **All tickets** live cross-team console — sortable, per-column filters |
+| `/teams` | admin | rollup card per team you administer (every team, if sudo) — open/project counts + last activity, linking into that team's filtered console |
 | `/t/new` | any user | open a ticket |
+| `/t/[id]` | opener/staff | convenience redirect → resolves the ticket's team and forwards to `/b/<slug>/tickets/<id>` (404s rather than leak the slug if you can't see it) |
 | `/b/[slug]` | member | team overview |
-| `/b/[slug]/tickets` | admin | queue (sort + status filter) |
+| `/b/[slug]/tickets` | admin | **redirects** to `/tickets?team=<slug>` — the per-team filter of the unified console |
 | `/b/[slug]/tickets/[id]` | per-ticket | conversation + controls (soft-auth: external members allowed) |
 | `/b/[slug]/settings` | admin | team + category settings |
 | `/settings/notifications` | any user | ntfy/DM prefs |
+| `/settings/teams` | any user | redirects to your first administered team's settings, or `/dashboard` if you administer none |
+| `/help` | any user | public how-to + command reference, organized by tier |
 | `/admin` | sudo | create/list teams |
 | `/admin/bot` | sudo | health dashboard |
 | `/admin/errors` | sudo | error log |
+| `/demo/*` | anon | public, fully-interactive mirror of the whole app on synthetic data; every edit is saved to the visitor's browser only (localStorage) and never touches the database or Discord — 4 switchable personas via the `demo_persona` cookie |
 | `/api/health` | — | LB health probe (200 iff Postgres reachable) |
 | `/api/version` | — | running build id (drives the "new version, reload" toast) |
+| `/api/tickets/list` | any user | JSON feed backing the live `/tickets` console; re-applies the caller's scope every call |
+| `/api/tickets/stream` | any user | SSE nudge for the console — any ticket/message change anywhere fires a generic `refresh` |
 | `/api/tickets/[id]/messages/stream` | per-ticket | SSE live-refresh |
 | `/api/tickets/[id]/attachment` | per-ticket | 302 → fresh Discord CDN URL |
 | `/api/discord/[guildId]/{channels,roles,members}` | admin | picker data |
@@ -198,8 +220,20 @@ Per-category `allow_role_ids` additionally gate *who can open* a category.
   category**, a **People** card (add/remove members, incl. external-by-ID),
   staff **internal notes**, and a **two-pane reply box with a live
   Discord-formatted preview**. Widens to a two-column layout on 16:9 screens.
-- **Queues** — per-team queue and a cross-team **All tickets** tab, both with
-  clickable column sorting and status filters.
+- **Queues** — a single, live, unified **`/tickets`** console across every team
+  you administer or staff, with clickable column sorting, status/date-range
+  filters, and per-column search; `/b/<slug>/tickets` is just a redirect into
+  it, pre-filtered to that team. `/teams` gives admins (every team, for sudo) a
+  rollup card per team — open/project counts, last activity — linking into the
+  filtered console.
+- **Help** (`/help`) — a public how-to page: opening tickets (Discord + web),
+  the conversation, attachments, notifications, staff/admin actions, TicketTool
+  coexistence, a permission-tier table, and a slash-command reference.
+- **Interactive demo** (`/demo`) — a public, unauthenticated mirror of the
+  whole app on synthetic data, with four switchable personas (End user / Staff
+  / Admin / Sudo). Every edit — replies, claim/close, settings, categories —
+  persists only in the visitor's browser (localStorage) and never touches the
+  database or Discord.
 - **Notifications** (`/settings/notifications`) — opt into **ntfy** push and/or
   **Discord DM** for new-ticket / reply events.
 - **Sudo** — `/admin` (create teams), `/admin/bot` (health dashboard),
@@ -208,13 +242,16 @@ Per-category `allow_role_ids` additionally gate *who can open* a category.
 ### Data model
 
 The schema lives in `src/db/schema/*.ts` (this repo owns it; the bot mirrors
-it). Core tables: **`users`**, **`businesses`** (teams), **`business_members`**
-(membership + cached `discordRolesSnapshot`), **`ticket_categories`**,
-**`tickets`**, **`ticket_messages`** (Discord relay, dedup'd by
-`discord_message_id`), and **`ticket_external_members`** (members added by ID who
-aren't in the guild). Supporting tables: `ticket_panels`,
-`user_notification_prefs`, `audit_logs`, and `bot_errors`. There are **no SQL
-migration files** — `drizzle-kit push` applies the schema.
+it). Core tables: **`users`**, **`businesses`** (teams — including
+`admin_role_ids` and the team-wide `staff_role_ids`), **`business_members`**
+(membership + cached `discordRolesSnapshot`), **`ticket_categories`** (each
+with its own per-category `staff_role_ids`), **`tickets`**, **`ticket_messages`**
+(Discord relay, dedup'd by `discord_message_id`), and **`ticket_external_members`**
+(members added by ID who aren't in the guild). Supporting tables: `ticket_panels`,
+`user_notification_prefs`, `audit_logs`, `bot_errors`, and `app_settings`
+(bot-owner global key/value settings, e.g. the bot's display name, edited on
+`/admin/bot`). There are **no SQL migration files** — `drizzle-kit push`
+applies the schema.
 
 ---
 
@@ -286,4 +323,4 @@ and the restic backup/restore drill live in **[`ops/README.md`](ops/README.md)**
 - See `CLAUDE.md` for the full working agreement and `CHANGELOG.md` for the
   per-release history (the system is at the lantern milestone P1–P19).
 
-`euphoric-tickets-web v0.11.0`
+`euphoric-tickets-web v0.11.1`
