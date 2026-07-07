@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.1] — 2026-07-06 — Docs: README sync with the team-wide staff tier, `/demo`, `/teams`, `/help`, and the unified console
+
+### Fixed
+- **`package.json` had been left at `0.10.2`** since the 0.11.0 PR (team-wide staff tier) added its CHANGELOG section but never bumped the version field — the build footer was one release behind the CHANGELOG. Bumped to `0.11.1` in this doc pass.
+- **README Overview** described staff as a single "per-category role tier," contradicting the Permission model table lower on the same page, which already reflected 0.11.0's new team-wide `staff_role_ids` ("Team Member") tier. Reworded to describe both tiers together.
+- **README routes table** was missing `/teams` (admin rollup of every team you administer), `/settings/teams` (redirect to a team's settings), `/help` (public how-to + command reference), `/demo/*` (the interactive synthetic-data mirror shipped in 0.9.0 but never listed in the README), and the `/api/tickets/list` + `/api/tickets/stream` endpoints backing the live `/tickets` console. `/b/[slug]/tickets` was documented as a queue page; it has redirected to `/tickets?team=<slug>` since the unified console shipped. `/t/[id]` (convenience redirect to `/b/<slug>/tickets/<id>`) was undocumented.
+- **README Data model** section didn't mention `app_settings` (bot-owner global key/value settings surfaced on `/admin/bot`).
+- **README Feature tour** now covers `/teams`, `/help`, and `/demo` — all live features that were previously undocumented in the README (the "Queues" bullet also now describes the unified console + team-rollup split accurately instead of a stale "per-team queue").
+- **README Configuration table** gained the `AUTH_URL` row (present in `.env.example`, previously undocumented).
+
+No application code changed — documentation only.
+
 ## [0.11.0] — 2026-06-26 — Team-wide staff tier ("Team Member" roles)
 
 ### Added
