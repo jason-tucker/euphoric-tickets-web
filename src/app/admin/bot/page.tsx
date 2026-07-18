@@ -22,7 +22,7 @@ export default async function AdminBotPage({
 }: {
   searchParams: Promise<{ ok?: string; warn?: string }>
 }) {
-  await requireSudo()
+  await requireSudo('/admin/bot')
   const sp = await searchParams
 
   // Sudo controls data: persisted bot name + the bot's live guild list.

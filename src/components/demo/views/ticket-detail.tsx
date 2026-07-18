@@ -80,9 +80,12 @@ export function DemoTicketDetail({ base, slug, me }: { base: DemoTicketBase; slu
   return (
     <main className="container max-w-4xl space-y-4 py-6">
       <div className="text-sm text-muted-foreground">
-        <Link href={access.isAdmin || access.isStaff ? '/demo/tickets' : '/demo'} className="inline-flex items-center gap-1 hover:text-foreground">
+        <Link
+          href={access.isAdmin || access.isStaff ? `/demo/tickets?team=${slug}` : '/demo'}
+          className="inline-flex items-center gap-1 hover:text-foreground"
+        >
           <ArrowLeft className="h-3.5 w-3.5" />
-          {access.isAdmin || access.isStaff ? 'All tickets' : 'My tickets'}
+          {access.isAdmin || access.isStaff ? 'All tickets' : 'Overview'}
         </Link>
       </div>
 

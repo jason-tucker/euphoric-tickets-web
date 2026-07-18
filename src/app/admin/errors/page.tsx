@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { desc, eq } from 'drizzle-orm'
 import { TopNav } from '@/components/app/top-nav'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,7 +15,7 @@ export default async function AdminErrorsPage({
 }: {
   searchParams: Promise<{ level?: string }>
 }) {
-  await requireSudo()
+  await requireSudo('/admin/errors')
   const sp = await searchParams
   const level = ['error', 'warn', 'info'].includes(sp.level ?? '') ? sp.level : undefined
 
@@ -47,7 +48,7 @@ export default async function AdminErrorsPage({
             const href = lv === 'all' ? '/admin/errors' : `/admin/errors?level=${lv}`
             const active = (lv === 'all' && !level) || lv === level
             return (
-              <a
+              <Link
                 key={lv}
                 href={href}
                 className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
@@ -55,7 +56,7 @@ export default async function AdminErrorsPage({
                 }`}
               >
                 {lv}
-              </a>
+              </Link>
             )
           })}
         </div>

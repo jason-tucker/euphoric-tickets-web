@@ -21,10 +21,11 @@ export const currentUserIsSudo = cache(async function currentUserIsSudo(): Promi
 })
 
 // Hard guard for /admin routes. Redirects to /login if not signed in,
-// /dashboard if signed in but not sudo.
-export async function requireSudo() {
+// /dashboard if signed in but not sudo. Pass the current path so login
+// returns the visitor to the page they asked for, not always /admin.
+export async function requireSudo(nextPath = '/admin') {
   const session = await auth()
-  if (!session?.user?.id) redirect('/login?next=/admin')
+  if (!session?.user?.id) redirect(`/login?next=${encodeURIComponent(nextPath)}`)
   const [row] = await db
     .select({ isSudo: users.isSudo })
     .from(users)

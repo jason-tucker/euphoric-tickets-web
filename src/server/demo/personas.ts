@@ -294,3 +294,44 @@ export function demoTeamOverview(persona: DemoPersonaSpec, slug: string, now: Da
 
   return { team: base, visible: true, isAdmin, stats: { open, claimed, waiting, closedToday }, myTickets }
 }
+
+export type DemoTeamsRollup = {
+  adminTeams: { slug: string; name: string; open: number; projects: number; lastActivity: string | null }[]
+  memberTeams: { slug: string; name: string; ticketMode: 'euphoric' | 'tickettool' }[]
+}
+
+// Mirror of the /teams page: rollup cards for the persona's admin/owner teams
+// (sudo → every team) + the member/staff-level "communities". Counts come from
+// the base dataset only — overlay-opened tickets aren't folded in, same as
+// demoTeamOverview's stat tiles.
+export function demoTeamsRollup(persona: DemoPersonaSpec, now: Date): DemoTeamsRollup {
+  const ds = getDemoDataset()
+  const mine = demoListMyBusinesses(persona)
+  const adminTeams = mine
+    .filter((m) => m.level === 'admin' || m.level === 'owner')
+    .map((m) => {
+      const headers = ds.headersByTeam.get(m.team.business.id) ?? []
+      let open = 0
+      let projects = 0
+      let lastMs = 0
+      for (const h of headers) {
+        if (h.status !== 'closed') {
+          open++
+          if (h.kind === 'project') projects++
+        }
+        const ms = projectLastActivityAt(h.offset, now).getTime()
+        if (ms > lastMs) lastMs = ms
+      }
+      return {
+        slug: m.team.business.slug,
+        name: m.team.business.name,
+        open,
+        projects,
+        lastActivity: lastMs ? new Date(lastMs).toISOString() : null,
+      }
+    })
+  const memberTeams = mine
+    .filter((m) => m.level === 'member' || m.level === 'staff')
+    .map((m) => ({ slug: m.team.business.slug, name: m.team.business.name, ticketMode: m.team.business.ticketMode }))
+  return { adminTeams, memberTeams }
+}

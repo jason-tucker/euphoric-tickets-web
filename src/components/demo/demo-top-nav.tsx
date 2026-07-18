@@ -28,8 +28,11 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
 export function DemoTopNav({ scope }: { scope: DemoScope }) {
   const pathname = usePathname() || '/demo'
   const isOverview = pathname === '/demo'
-  const isTickets = pathname.startsWith('/demo/tickets') || pathname.startsWith('/demo/b/')
-  const isSettings = pathname.includes('/settings')
+  // Same rules as the real MainNav: Tickets on the console + per-team ticket
+  // views, Settings on team settings only — not on the team overview.
+  const isTickets = pathname.startsWith('/demo/tickets') || /^\/demo\/b\/[^/]+\/tickets/.test(pathname)
+  const isSettings = /^\/demo\/b\/[^/]+\/settings/.test(pathname)
+  const isTeams = pathname.startsWith('/demo/teams')
   const isSudo = pathname.startsWith('/demo/admin')
 
   return (
@@ -40,11 +43,12 @@ export function DemoTopNav({ scope }: { scope: DemoScope }) {
           <span className="hidden md:inline">Euphoric Tickets</span>
         </Link>
 
-        <nav className="flex items-center gap-0.5">
+        <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
           <NavLink href="/demo" active={isOverview}>Overview</NavLink>
           {scope.canUseConsole && (
-            <NavLink href="/demo/tickets" active={isTickets && !isSettings}>Tickets</NavLink>
+            <NavLink href="/demo/tickets" active={isTickets}>Tickets</NavLink>
           )}
+          <NavLink href="/demo/teams" active={isTeams}>Teams</NavLink>
           {scope.isAdminAnywhere && scope.settingsHref && (
             <NavLink href={scope.settingsHref} active={isSettings}>Settings</NavLink>
           )}

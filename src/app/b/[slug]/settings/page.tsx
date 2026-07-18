@@ -13,15 +13,46 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
 import { DiscordPicker } from '@/components/app/discord-picker'
 import { SettingsTeamPicker } from '@/components/app/settings-team-picker'
+import { PanelEditor } from '@/components/app/panel-editor'
+import type { PanelSettings } from '@/components/app/panel-preview'
 import {
   addCategoryAction,
   deleteCategoryAction,
+  postPanelAction,
+  savePanelSettingsAction,
   saveBusinessSettings,
   updateCategoryAction,
 } from './actions'
 
-export default async function BusinessSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
+// businesses.settings.panel is untyped JSONB — field-check each value on read.
+function panelFromSettings(settings: Record<string, unknown>): PanelSettings {
+  const p = settings.panel
+  if (!p || typeof p !== 'object') return {}
+  const o = p as Record<string, unknown>
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+  const style = o.buttonStyle
+  return {
+    accentColor: str(o.accentColor),
+    title: str(o.title),
+    body: str(o.body),
+    imageUrl: str(o.imageUrl),
+    buttonStyle:
+      style === 'primary' || style === 'secondary' || style === 'success' || style === 'danger'
+        ? style
+        : undefined,
+    showCategoryDescriptions: o.showCategoryDescriptions === true ? true : undefined,
+  }
+}
+
+export default async function BusinessSettingsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ ok?: string; warn?: string }>
+}) {
   const { slug } = await params
+  const sp = await searchParams
   const { business } = await requireBusinessAccess(slug, 'admin')
   // Every team this user can configure — drives the switcher dropdown.
   const { adminTeams } = await ticketsConsoleScope()
@@ -47,6 +78,17 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
           Connect this team to Discord. Roles, webhook, and categories live here.
         </p>
       </div>
+
+      {sp.ok && (
+        <div className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
+          {sp.ok}
+        </div>
+      )}
+      {sp.warn && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+          {sp.warn}
+        </div>
+      )}
 
       <form action={saveBusinessSettings.bind(null, slug)} className="space-y-6">
         <Card>
@@ -241,6 +283,46 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
 
         <SubmitButton pendingChildren="Saving…">Save settings</SubmitButton>
       </form>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ticket panel</CardTitle>
+          <CardDescription>
+            How the &quot;Open a Ticket&quot; panel the bot posts in Discord looks. Saving refreshes
+            every posted panel; <code>/panel post</code> and <code>/panel refresh</code> are the
+            Discord-side equivalents.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <form action={savePanelSettingsAction.bind(null, slug)} className="space-y-4">
+            <PanelEditor
+              withFormFields
+              initial={panelFromSettings(business.settings)}
+              categories={cats
+                .filter((c) => !c.staffOnly)
+                .map((c) => ({ key: c.key, label: c.label, emoji: c.emoji, description: c.description }))}
+            />
+            <SubmitButton pendingChildren="Saving…">Save panel</SubmitButton>
+          </form>
+          <form action={postPanelAction.bind(null, slug)} className="space-y-2 border-t pt-4">
+            <Label htmlFor="panelChannelId">Post panel to a channel</Label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <DiscordPicker
+                kind="channel"
+                guildId={business.discordGuildId}
+                name="channelId"
+                triggerLabel="Choose a channel…"
+                className="flex-1"
+              />
+              <SubmitButton variant="secondary" pendingChildren="Posting…">Post panel</SubmitButton>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The channel can be read-only for members — ticket buttons still work; the bot just
+              needs permission to view + send in it.
+            </p>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

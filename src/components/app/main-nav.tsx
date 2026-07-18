@@ -17,7 +17,7 @@ export function MainNav({
 }: {
   showTickets: boolean
   showSettings: boolean
-  settingsHref: string
+  settingsHref: string | null
 }) {
   const pathname = usePathname()
 
@@ -33,17 +33,19 @@ export function MainNav({
       href: '/tickets',
       label: 'Tickets',
       icon: <Table2 className="h-4 w-4" />,
-      active: pathname.startsWith('/tickets'),
+      // The console and the per-team ticket views it links out to
+      // (/b/<slug>/tickets and /b/<slug>/tickets/<id>).
+      active: pathname.startsWith('/tickets') || /^\/b\/[^/]+\/tickets/.test(pathname),
       show: showTickets,
     },
     {
-      href: settingsHref,
+      href: settingsHref ?? '/dashboard',
       label: 'Settings',
       icon: <Settings className="h-4 w-4" />,
-      // Team settings (/b/<slug>/settings) and the settings hub — but NOT the
-      // personal /settings/notifications page.
-      active: pathname.startsWith('/settings/teams') || /^\/b\/[^/]+\/settings/.test(pathname),
-      show: showSettings,
+      // Team settings (/b/<slug>/settings) — but NOT the personal
+      // /settings/notifications page.
+      active: /^\/b\/[^/]+\/settings/.test(pathname),
+      show: showSettings && settingsHref !== null,
     },
   ].filter((i) => i.show)
 

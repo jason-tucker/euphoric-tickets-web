@@ -15,9 +15,17 @@ export default async function DemoAdminPage() {
   const teams = getDemoSudoTeams()
   return (
     <main className="container max-w-4xl space-y-6 py-6">
-      <div>
+      <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Teams</h1>
         <p className="text-sm text-muted-foreground">Every team (business) across all servers. Sudo-only.</p>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <Link href="/demo/admin/bot" className="rounded-md border px-2.5 py-1 hover:bg-accent">
+            Bot dashboard &amp; controls
+          </Link>
+          <Link href="/demo/admin/errors" className="rounded-md border px-2.5 py-1 hover:bg-accent">
+            Bot errors
+          </Link>
+        </div>
       </div>
       <Card>
         <CardHeader>

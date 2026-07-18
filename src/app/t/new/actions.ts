@@ -2,19 +2,22 @@
 
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { ticketCategories, tickets, ticketMessages } from '@/db/schema'
+import { ticketCategories, ticketExternalMembers, tickets, ticketMessages, users } from '@/db/schema'
 import { resolveBusinessAccess, requireSession } from '@/server/permissions'
 import {
   createChannelWebhook,
   createTicketChannel,
+  fetchDiscordUser,
+  fetchGuildMemberIdentity,
   postWebhook,
   resolveWebhookIdentity,
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
 import { writeAudit } from '@/server/audit'
+import { postBotDm } from '@/server/notify'
 
 const schema = z.object({
   businessSlug: z.string().min(1),
@@ -25,6 +28,8 @@ const schema = z.object({
   // category's `kind` column (set in team-settings), not picked per-ticket.
   // Sub-tickets still force `normal` regardless of the parent category.
   parentTicketId: z.string().regex(/^\d+$/).optional().or(z.literal('')),
+  // Admin-only: open on behalf of this Discord user (they become the opener).
+  openAsDiscordId: z.string().regex(/^\d{17,20}$/).optional().or(z.literal('')),
 })
 
 // Tiny per-process dedupe: same opener + business + subject within 5s →
@@ -57,6 +62,7 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     subject: String(formData.get('subject') ?? ''),
     body: String(formData.get('body') ?? ''),
     parentTicketId: String(formData.get('parentTicketId') ?? '') || undefined,
+    openAsDiscordId: String(formData.get('openAsDiscordId') ?? '') || undefined,
   })
   if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
 
@@ -105,11 +111,64 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     parentTicketId = pid
   }
 
+  // Admin-only: open this ticket on behalf of another Discord user — the
+  // target becomes the opener (dashboard + channel access) while the admin
+  // stays the first message's author and the audit actor.
+  const botToken = process.env.DISCORD_BOT_TOKEN
+  let openerUserId = session.user.id
+  let openerDiscordId = session.user.discordId
+  let openerDisplayName: string | null = null
+  let openAsExternal: { userId: string; name: string } | null = null
+  const openAsDiscordId = parsed.data.openAsDiscordId || null
+  if (openAsDiscordId && openAsDiscordId !== session.user.discordId) {
+    if (access.level !== 'admin' && access.level !== 'owner') {
+      throw new Error('Only team admins can open a ticket on behalf of someone else.')
+    }
+    if (!botToken) throw new Error('Bot not configured — cannot look up that user.')
+    // Canonical per-guild identity (nick + guild avatar, 5-min cached) — the
+    // same resolver the console uses, so the open-as user looks identical.
+    const ident = await fetchGuildMemberIdentity(botToken, hostBusiness.discordGuildId, openAsDiscordId).catch(
+      () => null,
+    )
+    if (ident) {
+      const [u] = await db
+        .insert(users)
+        .values({ discordId: openAsDiscordId, name: ident.name, image: ident.image })
+        .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
+        .returning({ id: users.id })
+      openerUserId = u.id
+      openerDiscordId = openAsDiscordId
+      openerDisplayName = ident.name
+    } else {
+      const du = await fetchDiscordUser(botToken, openAsDiscordId)
+      if (!du) throw new Error('No Discord user with that ID.')
+      const [u] = await db
+        .insert(users)
+        .values({ discordId: du.id, name: du.name, image: du.image })
+        .onConflictDoUpdate({ target: users.discordId, set: { updatedAt: sql`now()` } })
+        .returning({ id: users.id })
+      openerUserId = u.id
+      openerDiscordId = openAsDiscordId
+      openAsExternal = { userId: u.id, name: du.name }
+    }
+  }
+  const onBehalf = openerUserId !== session.user.id
+
+  // Self-opens stamp the snapshot too — same cached per-guild identity the
+  // console resolves, so web-opened tickets carry the server name from birth.
+  if (!onBehalf && botToken && hostBusiness.discordGuildId) {
+    const ident = await fetchGuildMemberIdentity(botToken, hostBusiness.discordGuildId, session.user.discordId).catch(
+      () => null,
+    )
+    openerDisplayName = ident?.name ?? null
+  }
+
   const [row] = await db
     .insert(tickets)
     .values({
       businessId: hostBusiness.id,
-      openerUserId: session.user.id,
+      openerUserId,
+      openerDisplayName,
       categoryId: category?.id ?? null,
       subject: parsed.data.subject,
       status: 'open',
@@ -127,7 +186,18 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     ticketId: row.id,
     actorUserId: session.user.id,
     action: 'opened',
-    metadata: { via: 'web', categoryId: category?.id ?? null, parentTicketId },
+    metadata: {
+      via: 'web',
+      categoryId: category?.id ?? null,
+      parentTicketId,
+      ...(onBehalf
+        ? {
+            onBehalfOfDiscordId: openAsDiscordId,
+            // Name snapshot so the audit line survives the target leaving.
+            onBehalfOfName: openerDisplayName ?? openAsExternal?.name ?? null,
+          }
+        : {}),
+    },
   })
 
   // Record successful insert for the dedupe window. Best-effort: also
@@ -147,10 +217,26 @@ export async function openTicketAction(formData: FormData): Promise<void> {
     source: 'web',
   })
 
+  // Out-of-guild open-as target: the external-member row is what puts the
+  // ticket on their /dashboard, and the DM is their only pointer to it.
+  if (openAsExternal) {
+    await db
+      .insert(ticketExternalMembers)
+      .values({ ticketId: row.id, userId: openAsExternal.userId, addedByUserId: session.user.id })
+      .onConflictDoNothing()
+
+    // Best-effort DM with the web link, via the shared bot-bridge helper.
+    const webBase = process.env.PUBLIC_BASE_URL ?? 'https://tickets.euphoric.fm'
+    void postBotDm(
+      openAsDiscordId!,
+      `Ticket #${row.id} — *${parsed.data.subject}* was opened for you in **${hostBusiness.name}**. ` +
+        `View it here (sign in with Discord): ${webBase}/b/${hostBusiness.slug}/tickets/${row.id}`,
+    ).catch(() => {})
+  }
+
   // Per-ticket Discord channel + webhook lives under the HOST's guild
   // (the operator). Best-effort: if the bot token, guild config, or
   // category target isn't set, fall back to the legacy single host webhook.
-  const botToken = process.env.DISCORD_BOT_TOKEN
   const parentCategoryId =
     category?.discordParentCategoryId ?? hostBusiness.discordFallbackCategoryId ?? null
 
@@ -162,8 +248,10 @@ export async function openTicketAction(formData: FormData): Promise<void> {
         guildId: hostBusiness.discordGuildId,
         parentCategoryId,
         name: channelSlug(parsed.data.subject, row.id),
-        topic: `Opened by ${session.user.name ?? session.user.discordId} from the web — #${row.id}`,
-        openerDiscordId: session.user.discordId,
+        topic: onBehalf
+          ? `Opened for ${openerDisplayName ?? openAsExternal?.name ?? openerDiscordId} by ${session.user.name ?? session.user.discordId} from the web — #${row.id}`
+          : `Opened by ${session.user.name ?? session.user.discordId} from the web — #${row.id}`,
+        openerDiscordId,
       })
 
       const webhook = await createChannelWebhook({

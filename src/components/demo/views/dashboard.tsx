@@ -149,20 +149,27 @@ export function DemoDashboard({
           <h2 className="mb-2 mt-8 text-lg font-semibold">You administer</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {adminOf.map((b) => (
-              <Link key={b.id} href={`/demo/tickets`} className="block">
-                <Card className="transition-colors hover:bg-accent/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Building2 className="h-4 w-4 text-muted-foreground" />
+              // Stretched link: the whole card opens the console filtered to
+              // this team; the small Overview link sits above it (z-10).
+              <Card key={b.id} className="relative transition-colors hover:bg-accent/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <Link href={`/demo/tickets?team=${b.slug}`} className="after:absolute after:inset-0">
                       {b.name}
-                    </CardTitle>
-                    <CardDescription className="flex items-center justify-between">
-                      <span>/{b.slug}</span>
+                    </Link>
+                  </CardTitle>
+                  <CardDescription className="flex items-center justify-between">
+                    <span>/{b.slug}</span>
+                    <span className="flex items-center gap-2">
+                      <Link href={`/demo/b/${b.slug}`} className="relative z-10 text-xs hover:text-foreground hover:underline">
+                        Overview
+                      </Link>
                       <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">{b.level}</span>
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              </Link>
+                    </span>
+                  </CardDescription>
+                </CardHeader>
+              </Card>
             ))}
           </div>
         </section>

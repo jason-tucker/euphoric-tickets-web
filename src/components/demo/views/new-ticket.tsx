@@ -23,10 +23,13 @@ export function DemoNewTicket({ form, me, preselect }: { form: DemoNewTicketForm
   const initialTeam = form.teams.find((t) => t.slug === preselect)?.slug ?? form.teams[0]?.slug ?? ''
   const [teamSlug, setTeamSlug] = useState(initialTeam)
   const [categoryKey, setCategoryKey] = useState('')
+  const [openAsId, setOpenAsId] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
 
   const cats = form.categoriesByTeam[teamSlug] ?? []
+  const selectedTeam = form.teams.find((t) => t.slug === teamSlug)
+  const openAsUsers = form.openAsByTeam[teamSlug] ?? []
 
   if (form.teams.length === 0) {
     return (
@@ -44,6 +47,12 @@ export function DemoNewTicket({ form, me, preselect }: { form: DemoNewTicketForm
     const team = form.teams.find((t) => t.slug === teamSlug)
     if (!team || !subject.trim()) return
     const cat = cats.find((c) => c.key === categoryKey)
+    // Admin "open as": the chosen synthetic user becomes the opener; the acting
+    // persona stays the first message's author (mirrors the real action).
+    const openAs = openAsUsers.find((u) => u.id === openAsId)
+    const opener = openAs
+      ? { id: openAs.id, name: openAs.name, image: openAs.image, discordId: openAs.discordId }
+      : me
     const now = new Date().toISOString()
     const id = store.createTicket({
       ticket: {
@@ -63,10 +72,10 @@ export function DemoNewTicket({ form, me, preselect }: { form: DemoNewTicketForm
         categoryId: null,
         categoryLabel: cat?.label ?? null,
         categoryEmoji: cat?.emoji ?? null,
-        openerId: me.id,
-        openerName: me.name,
-        openerImage: me.image,
-        openerDiscordId: me.discordId,
+        openerId: opener.id,
+        openerName: opener.name,
+        openerImage: opener.image,
+        openerDiscordId: opener.discordId,
         assigneeId: null,
         assigneeName: null,
         assigneeImage: null,
@@ -98,10 +107,20 @@ export function DemoNewTicket({ form, me, preselect }: { form: DemoNewTicketForm
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1">
               <Label>Team</Label>
-              <select value={teamSlug} onChange={(e) => { setTeamSlug(e.target.value); setCategoryKey('') }} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
+              <select value={teamSlug} onChange={(e) => { setTeamSlug(e.target.value); setCategoryKey(''); setOpenAsId('') }} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
                 {form.teams.map((t) => <option key={t.slug} value={t.slug}>{t.name}</option>)}
               </select>
             </div>
+            {selectedTeam?.admin && openAsUsers.length > 0 && (
+              <div className="space-y-1">
+                <Label>Open as (admin) — optional</Label>
+                <select value={openAsId} onChange={(e) => setOpenAsId(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
+                  <option value="">— Myself —</option>
+                  {openAsUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <p className="text-xs text-muted-foreground">Open this ticket on behalf of another member; they become the ticket owner.</p>
+              </div>
+            )}
             <div className="space-y-1">
               <Label>Category</Label>
               <select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">

@@ -30,7 +30,7 @@ export function DemoTicketLoader({ base, slug, me, id }: { base: DemoTicketBase 
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>This demo ticket doesn’t exist (or was cleared with “Reset demo”).</p>
-            <Button asChild size="sm" variant="outline"><Link href="/demo">← Back to dashboard</Link></Button>
+            <Button asChild size="sm" variant="outline"><Link href="/demo">← Back to overview</Link></Button>
           </CardContent>
         </Card>
       </main>

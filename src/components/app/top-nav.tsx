@@ -32,10 +32,9 @@ export async function TopNav() {
   }
 
   // Settings opens a team's settings page directly; its own dropdown switches
-  // between teams, so there's no separate hub step.
-  const settingsHref = scope.adminTeams[0]
-    ? `/b/${scope.adminTeams[0].slug}/settings`
-    : '/settings/teams'
+  // between teams, so there's no separate hub step. The tab only renders when
+  // isAdminAnywhere, which implies adminTeams is non-empty.
+  const settingsHref = scope.adminTeams[0] ? `/b/${scope.adminTeams[0].slug}/settings` : null
 
   async function logout() {
     'use server'
@@ -70,7 +69,7 @@ export async function TopNav() {
           {isSudo && (
             <Link
               href="/admin"
-              className="hidden rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-block"
+              className="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               Sudo
             </Link>
@@ -108,11 +107,9 @@ export async function TopNav() {
                 <DropdownMenuItem asChild>
                   <Link href="/settings/notifications">Notifications</Link>
                 </DropdownMenuItem>
-                {scope.isAdminAnywhere && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/teams">All teams</Link>
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem asChild>
+                  <Link href="/teams">Teams</Link>
+                </DropdownMenuItem>
                 {isSudo && (
                   <>
                     <DropdownMenuSeparator />
@@ -120,7 +117,7 @@ export async function TopNav() {
                       Sudo
                     </DropdownMenuLabel>
                     <DropdownMenuItem asChild>
-                      <Link href="/admin">Teams</Link>
+                      <Link href="/admin">Manage teams</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/admin/bot">Bot dashboard</Link>

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { getPersonaKey } from '@/server/demo/cookie'
 import { getPersona } from '@/server/demo/personas'
 import { getDemoBotErrors } from '@/server/demo/extras'
@@ -29,7 +30,7 @@ export default async function DemoErrorsPage({ searchParams }: { searchParams: P
           const href = lv === 'all' ? '/demo/admin/errors' : `/demo/admin/errors?level=${lv}`
           const active = (lv === 'all' && !level) || lv === level
           return (
-            <a key={lv} href={href} className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent'}`}>{lv}</a>
+            <Link key={lv} href={href} className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'hover:bg-accent'}`}>{lv}</Link>
           )
         })}
       </div>

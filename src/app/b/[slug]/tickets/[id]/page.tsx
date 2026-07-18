@@ -85,7 +85,7 @@ export default async function TicketDetailPage({
             </p>
             <p>
               <Button asChild size="sm" variant="outline">
-                <Link href="/dashboard">← Back to dashboard</Link>
+                <Link href="/dashboard">← Back to overview</Link>
               </Button>
             </p>
           </CardContent>
@@ -241,6 +241,8 @@ export default async function TicketDetailPage({
     // The target of member_added/removed/owner_changed events — so the inline
     // status line can show their in-server nickname instead of a raw snowflake.
     ...auditRows.map((a) => (a.metadata as Record<string, unknown> | null)?.discordUserId as string | undefined),
+    // Whoever an `opened` event was on behalf of, so they resolve to a nickname too.
+    ...auditRows.map((a) => (a.metadata as Record<string, unknown> | null)?.onBehalfOfDiscordId as string | undefined),
     // The assignee on each `assigned` event — so historical assignees resolve
     // to their nickname too (new rows store the id; old rows parse the mention).
     ...auditRows.map((a) => assigneeDiscordIdFromMeta(a.metadata as Record<string, unknown> | null)),
@@ -305,7 +307,7 @@ export default async function TicketDetailPage({
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href={(isAdmin || isStaff) ? `/tickets?team=${slug}` : '/dashboard'} className="inline-flex items-center gap-1 hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" />
-          {(isAdmin || isStaff) ? 'All tickets' : 'My tickets'}
+          {(isAdmin || isStaff) ? 'All tickets' : 'Overview'}
         </Link>
       </div>
 
@@ -320,7 +322,7 @@ export default async function TicketDetailPage({
               </span>
             )}
             <span>·</span>
-            <span>opened {relativeTime(t.openedAt)} by {gName(opener?.discordId, opener?.name) ?? '?'}</span>
+            <span>opened {relativeTime(t.openedAt)} by {gName(opener?.discordId, t.openerDisplayName ?? opener?.name) ?? '?'}</span>
           </div>
           {/* Native tickets rename via the pencil here (we own the channel);
               TicketTool tickets keep their rename in the toolbar. */}
@@ -895,8 +897,10 @@ function renderAuditLine(
   const actor = gName(entry.actorDiscordId, entry.actorName) ?? 'Someone'
   const meta = entry.metadata as Record<string, unknown>
   switch (entry.action) {
-    case 'opened':
-      return <><strong>{actor}</strong> opened the ticket{meta.categoryLabel ? <> in <em>{String(meta.categoryLabel)}</em></> : null}.</>
+    case 'opened': {
+      const forWho = gName(meta.onBehalfOfDiscordId as string | undefined, (meta.onBehalfOfName as string | undefined) ?? null)
+      return <><strong>{actor}</strong> opened the ticket{forWho ? <> on behalf of <em>{forWho}</em></> : null}{meta.categoryLabel ? <> in <em>{String(meta.categoryLabel)}</em></> : null}.</>
+    }
     case 'claimed':
       return <><strong>{actor}</strong> claimed the ticket.</>
     case 'unclaimed':
@@ -935,6 +939,8 @@ function renderAuditLine(
       return <><strong>{actor}</strong> reopened the ticket.</>
     case 'channel_deleted':
       return <><strong>{actor}</strong> deleted the Discord channel (transcript kept).</>
+    case 'channel_detached':
+      return <><strong>{actor}</strong> detached the ticket from its Discord channel.</>
     case 'renamed':
       return <><strong>{actor}</strong> renamed the ticket channel.</>
     default:

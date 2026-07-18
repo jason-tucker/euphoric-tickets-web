@@ -5,13 +5,15 @@
 // server. The live Discord pickers from the real page are replaced with plain
 // fields (the demo has no Discord to query).
 
-import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import type { DemoSettings } from '@/server/demo/extras'
 import type { DemoBusiness, DemoCategory } from '@/server/demo/data'
 import { useDemoStore, mergedCategories } from '@/components/demo/store'
 import { SavedHint } from '@/components/demo/bits'
+import { SettingsTeamPicker } from '@/components/app/settings-team-picker'
+import { PanelEditor } from '@/components/app/panel-editor'
+import type { PanelSettings } from '@/components/app/panel-preview'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -56,6 +58,14 @@ export function DemoSettings({ data, slug }: { data: DemoSettings; slug: string 
   const [form, setForm] = useState<BizForm>(() => toForm(merged))
   const [saved, setSaved] = useState(false)
 
+  // Ticket panel editor — the editor pushes its normalized value up on every
+  // edit; Save copies the latest into the overlay.
+  const panelInitial = store.overlay.panelSettings[slug] ?? {}
+  const panelRef = useRef<PanelSettings>(panelInitial)
+  const [panelSaved, setPanelSaved] = useState(false)
+  const [panelChannel, setPanelChannel] = useState('')
+  const [panelPosted, setPanelPosted] = useState(false)
+
   // Re-seed from persisted overlay once it loads on the client.
   useEffect(() => {
     setForm(toForm(merged))
@@ -96,20 +106,17 @@ export function DemoSettings({ data, slug }: { data: DemoSettings; slug: string 
         <h1 className="flex flex-wrap items-center gap-x-2 text-2xl font-semibold">
           <span>Settings</span>
           <span className="text-muted-foreground">—</span>
-          <span>{merged.name}</span>
+          <SettingsTeamPicker
+            teams={data.adminTeams.map((t) => ({
+              slug: t.slug,
+              name: t.slug === slug ? merged.name : t.name,
+            }))}
+            current={slug}
+            basePath="/demo"
+          />
         </h1>
         <p className="text-sm text-muted-foreground">
-          Connect this team to Discord. Roles, webhook, and categories live here.{' '}
-          {data.adminTeams.length > 1 && (
-            <>Other teams:{' '}
-              {data.adminTeams.filter((t) => t.slug !== slug).map((t, i) => (
-                <span key={t.slug}>
-                  {i > 0 && ', '}
-                  <Link href={`/demo/b/${t.slug}/settings`} className="underline">{t.name}</Link>
-                </span>
-              ))}
-            </>
-          )}
+          Connect this team to Discord. Roles, webhook, and categories live here.
         </p>
       </div>
 
@@ -162,6 +169,57 @@ export function DemoSettings({ data, slug }: { data: DemoSettings; slug: string 
         {saved && <span className="text-sm text-emerald-500">Saved in your browser ✓</span>}
       </div>
       <SavedHint />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ticket panel</CardTitle>
+          <CardDescription>
+            How the “Open a Ticket” panel the bot posts in Discord looks. <code>/panel post</code>{' '}
+            and <code>/panel refresh</code> are the Discord-side equivalents.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <PanelEditor
+              key={store.hydrated ? 'hydrated' : 'ssr'}
+              initial={panelInitial}
+              categories={categories
+                .filter((c) => !c.staffOnly)
+                .map((c) => ({ key: c.key, label: c.label, emoji: c.emoji, description: c.description }))}
+              onChange={(p) => {
+                panelRef.current = p
+                setPanelSaved(false)
+              }}
+            />
+            <div className="flex items-center gap-3">
+              <Button onClick={() => { store.setPanelSettings(slug, panelRef.current); setPanelSaved(true) }}>
+                Save panel
+              </Button>
+              {panelSaved && <span className="text-sm text-emerald-500">Saved in your browser ✓</span>}
+            </div>
+          </div>
+          <div className="space-y-2 border-t pt-4">
+            <Field label="Post panel to a channel">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={panelChannel}
+                  onChange={(e) => { setPanelChannel(e.target.value); setPanelPosted(false) }}
+                  placeholder="#support or a channel ID"
+                  className="flex-1"
+                />
+                <Button variant="secondary" onClick={() => setPanelPosted(true)}>Post panel</Button>
+              </div>
+            </Field>
+            {panelPosted && (
+              <p className="text-sm text-emerald-500">Panel posted ✓ (demo — nothing was sent to Discord)</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              The channel can be read-only for members — ticket buttons still work; the bot just
+              needs permission to view + send in it.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

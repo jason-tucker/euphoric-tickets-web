@@ -70,7 +70,7 @@ A web frontend for the `euphoric-tickets` Discord bot. Multi-tenant: any Discord
 
 ### Multi-business
 
-A user can belong to several businesses. The top-nav has a business switcher. URLs are scoped to `/b/<slug>/...`. Admin and end-user views live side-by-side; admin role is what unlocks `/b/<slug>/tickets` and `/b/<slug>/settings`. End users always hit `/dashboard` for the cross-business "my tickets" view.
+A user can belong to several businesses. URLs are scoped to `/b/<slug>/...`; team switching happens via the unified console's team filter (`/tickets?team=<slug>`), the `/teams` page, and the settings team picker — there is no top-nav business switcher. Admin and end-user views live side-by-side; admin role is what unlocks `/b/<slug>/tickets` and `/b/<slug>/settings`. End users always hit `/dashboard` for the cross-business "my tickets" view.
 
 **Admin vs Sudo.** Per-guild **admin** (Manage Server / Administrator / a Ticket Master role) manages a single team via its own `/b/<slug>` pages. Bot-owner **sudo** (the `users.is_sudo` flag) gets the `/admin/*` "Sudo" area — team CRUD (`/admin`), the bot dashboard with **bot name** + **force-leave server** controls (`/admin/bot`), and bot errors (`/admin/errors`). The nav surfaces this as a **Sudo** tab.
 
@@ -84,11 +84,13 @@ A user can belong to several businesses. The top-nav has a business switcher. UR
 | `/dashboard` | Any user | My tickets across all businesses + business cards |
 | `/tickets` | Staff / Admin | Unified cross-team console — sortable, filterable; the primary queue view |
 | `/t/new` | Any user | Open a ticket (pick business + category + subject + body) |
-| `/t/[id]` | Opener | Convenience redirect — resolves the ticket's business and forwards to `/b/<slug>/tickets/<id>` (`src/app/t/[id]/page.tsx` renders nothing) |
-| `/b/[slug]` | Admin | Business overview: open ticket counts, recent activity |
+| `/t/[id]` | Can-see | Convenience redirect — checks ticket access, then forwards to `/b/<slug>/tickets/<id>`; 404s (without leaking the slug) for anyone who can't see the ticket |
+| `/b/[slug]` | Member+ | Business overview: open ticket counts, recent activity (admin stat tiles; members see their own tickets). 404 for unknown slugs; no-access users bounce to `/dashboard` |
 | `/b/[slug]/tickets` | Admin | **Redirects** to `/tickets?team=<slug>` — the per-team filter of the unified console |
 | `/b/[slug]/tickets/[id]` | Admin / Staff | Reply, claim, close from this view; mirrors the bot's controls |
-| `/b/[slug]/settings` | Admin | Webhook URL, admin role IDs, category list |
+| `/b/[slug]/settings` | Admin | Webhook URL, admin role IDs, category list, ticket-panel appearance editor (+ post-panel-to-channel via the bot bridge) |
+| `/teams` | Any user | Admin rollup cards (stats → console) + "Your communities" member cards with open-ticket links |
+| `/settings/teams` | Admin | Redirect to the first admin team's settings (or `/dashboard`) |
 | `/settings/notifications` | Any user | ntfy / Discord DM notification preferences |
 | `/help` | Any user | Help and feature explainer page |
 | `/admin` | Sudo | Team CRUD (create / list) |

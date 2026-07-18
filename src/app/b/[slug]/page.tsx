@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { notFound, redirect } from 'next/navigation'
 import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { Plus } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusBadge } from '@/components/app/status-badge'
 import { resolveBusinessAccess, requireSession } from '@/server/permissions'
 import { db } from '@/db/client'
-import { tickets } from '@/db/schema'
+import { businesses, tickets } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
 import { desc } from 'drizzle-orm'
 
@@ -19,7 +20,17 @@ export default async function BusinessOverviewPage({
   const session = await requireSession()
   const { slug } = await params
   const resolved = await resolveBusinessAccess(slug)
-  if (!resolved) return null
+  if (!resolved) {
+    // Distinguish a typo'd slug (404) from a real team the viewer isn't in
+    // (bounce home) instead of rendering a blank page for both.
+    const [exists] = await db
+      .select({ id: businesses.id })
+      .from(businesses)
+      .where(eq(businesses.slug, slug))
+      .limit(1)
+    if (!exists) notFound()
+    redirect('/dashboard')
+  }
 
   const { business, level } = resolved
   const isAdmin = level === 'admin' || level === 'owner'

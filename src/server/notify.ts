@@ -61,8 +61,9 @@ async function postNtfy(
   }
 }
 
-// Best-effort DM via the bot's internal endpoint.
-async function postBotDm(discordUserId: string, content: string): Promise<void> {
+// Best-effort DM via the bot's internal endpoint. Exported for one-off DMs
+// outside the notification fan-out (e.g. "a ticket was opened for you").
+export async function postBotDm(discordUserId: string, content: string): Promise<void> {
   // Auth with INTERNAL_TOKEN if set, else the shared bot token (both services
   // already have it). Only the bot's URL is genuinely required config.
   const token = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN

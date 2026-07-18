@@ -1,12 +1,14 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
 import { businesses, ticketCategories, tickets } from '@/db/schema'
 import { requireBusinessAccess } from '@/server/permissions'
 import { reconcileTicketTool } from '@/server/tickettool'
+import { postBot } from '@/server/botControl'
 
 const snowflake = z.string().regex(/^\d{17,20}$/, 'Not a valid Discord snowflake')
 
@@ -98,6 +100,121 @@ export async function saveBusinessSettings(slug: string, formData: FormData): Pr
 
   revalidatePath(`/b/${slug}`)
   revalidatePath(`/b/${slug}/settings`)
+}
+
+// businesses.settings.panel — the JSONB contract the bot reads to render
+// panels (/panel post + refresh). All fields optional; unset = bot default.
+const panelSchema = z.object({
+  accentColor: z.string().regex(/^#[0-9a-f]{6}$/i, 'Accent color must be #rrggbb').optional(),
+  title: z.string().min(1).max(100).optional(),
+  body: z.string().min(1).max(1000).optional(),
+  imageUrl: z
+    .string()
+    .max(512)
+    .url()
+    .startsWith('https://', 'Image URL must be https')
+    .optional(),
+  buttonStyle: z.enum(['primary', 'secondary', 'success', 'danger']).optional(),
+  showCategoryDescriptions: z.boolean().optional(),
+})
+
+// The bot's hardcoded panel defaults (ticketRenderer.ts) — values equal to
+// these are dropped so an untouched form stores no panel key at all.
+const PANEL_DEFAULTS = {
+  accentColor: '#a855f7',
+  title: '🎫 Open a Ticket',
+  body: 'Need help? Pick a category below to open a private ticket with the staff team.\nOnly you and staff will see the channel.',
+}
+
+// Bridge to the bot's internal HTTP — shared transport in botControl. Short
+// timeout: the settings page shouldn't hang on a dead bot.
+async function postPanelBridge(
+  path: string,
+  body: Record<string, string>,
+): Promise<{ ok: true; data?: Record<string, unknown> } | { ok: false; error: string }> {
+  return postBot(path, body, { timeoutMs: 4000 })
+}
+
+export async function savePanelSettingsAction(slug: string, formData: FormData): Promise<void> {
+  const { business } = await requireBusinessAccess(slug, 'admin')
+
+  // Textareas submit CRLF — normalize so the default-body comparison holds.
+  const raw = {
+    accentColor: String(formData.get('accentColor') ?? '').trim().toLowerCase(),
+    title: String(formData.get('title') ?? '').trim(),
+    body: String(formData.get('body') ?? '').replace(/\r\n/g, '\n').trim(),
+    imageUrl: String(formData.get('imageUrl') ?? '').trim(),
+    buttonStyle: String(formData.get('buttonStyle') ?? 'primary'),
+    showCategoryDescriptions: formData.get('showCategoryDescriptions') != null,
+  }
+
+  const parsed = panelSchema.safeParse({
+    accentColor: raw.accentColor && raw.accentColor !== PANEL_DEFAULTS.accentColor ? raw.accentColor : undefined,
+    title: raw.title && raw.title !== PANEL_DEFAULTS.title ? raw.title : undefined,
+    body: raw.body && raw.body !== PANEL_DEFAULTS.body ? raw.body : undefined,
+    imageUrl: raw.imageUrl || undefined,
+    buttonStyle: raw.buttonStyle !== 'primary' ? raw.buttonStyle : undefined,
+    showCategoryDescriptions: raw.showCategoryDescriptions || undefined,
+  })
+  if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
+
+  const panel = Object.fromEntries(
+    Object.entries(parsed.data).filter(([, v]) => v !== undefined),
+  )
+  const settings: Record<string, unknown> = { ...business.settings }
+  if (Object.keys(panel).length > 0) settings.panel = panel
+  else delete settings.panel
+
+  await db
+    .update(businesses)
+    .set({ settings, updatedAt: sql`now()` })
+    .where(eq(businesses.id, business.id))
+
+  revalidatePath(`/b/${slug}/settings`)
+
+  // Best-effort: ask the bot to re-render every posted panel now. A dead
+  // bridge only delays the refresh until someone runs /panel refresh.
+  const refresh = await postPanelBridge('/api/internal/panel/refresh', { businessId: business.id })
+  if (!refresh.ok) {
+    redirect(
+      `/b/${slug}/settings?warn=${encodeURIComponent('Saved — panels will refresh when the bot next runs /panel refresh.')}`,
+    )
+  }
+  // The endpoint 200s even when individual panel edits failed (message or
+  // channel deleted) — read the counts so the flash doesn't overpromise.
+  const done = Number(refresh.data?.refreshed ?? 0)
+  const failed = Number(refresh.data?.failed ?? 0)
+  if (failed > 0) {
+    redirect(
+      `/b/${slug}/settings?warn=${encodeURIComponent(
+        `Panel saved — refreshed ${done} panel${done === 1 ? '' : 's'}, but ${failed} couldn't be updated (message or channel gone). Re-post those with /panel post.`,
+      )}`,
+    )
+  }
+  redirect(
+    `/b/${slug}/settings?ok=${encodeURIComponent(
+      done > 0 ? `Panel saved — ${done} posted panel${done === 1 ? '' : 's'} refreshed.` : 'Panel saved.',
+    )}`,
+  )
+}
+
+export async function postPanelAction(slug: string, formData: FormData): Promise<void> {
+  const { business } = await requireBusinessAccess(slug, 'admin')
+
+  const back = (params: Record<string, string>): never => {
+    redirect(`/b/${slug}/settings?${new URLSearchParams(params).toString()}`)
+  }
+
+  const channelId = String(formData.get('channelId') ?? '').trim()
+  if (!/^\d{17,20}$/.test(channelId)) back({ warn: 'Pick a channel first.' })
+
+  const result = await postPanelBridge('/api/internal/panel/post', {
+    businessId: business.id,
+    channelId,
+  })
+  if (!result.ok) back({ warn: `Couldn't post the panel: ${result.error}` })
+
+  back({ ok: 'Panel posted — ticket buttons work even in read-only channels.' })
 }
 
 // CSV of Discord role snowflakes — empty string allowed (means "inherit").

@@ -154,6 +154,7 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       categoryEmoji: ticketCategories.emoji,
       openerId: tickets.openerUserId,
       openerName: users.name,
+      openerDisplayName: tickets.openerDisplayName,
       openerImage: users.image,
       openerDiscordId: users.discordId,
       assigneeId: tickets.assigneeUserId,
@@ -212,7 +213,8 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
   // Opener/assignee identities should match what shows inside a Discord ticket
   // — the per-guild server nickname + server avatar, not the global account.
   // resolveGuildIdentities is cached ~5 min per (guild,user), so the live
-  // refetch path stays cheap; we fall back to the global users.* on any miss.
+  // refetch path stays cheap; on a miss the opener name falls back to the
+  // open-time snapshot, then the global users.*.
   const identityByGuild = new Map<string, Map<string, { name: string; image: string | null }>>()
   const botToken = process.env.DISCORD_BOT_TOKEN
   if (botToken) {
@@ -260,7 +262,7 @@ export async function getTicketsConsoleData(): Promise<TicketsConsoleData> {
       categoryLabel: r.categoryLabel,
       categoryEmoji: r.categoryEmoji,
       openerId: r.openerId,
-      openerName: openerIdent?.name ?? r.openerName,
+      openerName: openerIdent?.name ?? r.openerDisplayName ?? r.openerName,
       openerImage: openerIdent?.image ?? r.openerImage,
       assigneeId: r.assigneeId,
       assigneeName: assigneeIdent?.name ?? r.assigneeName,

@@ -5,7 +5,7 @@ import 'server-only'
 // bot's internal HTTP (BOT_INTERNAL_URL) with the shared INTERNAL_TOKEN (falling
 // back to the bot token, which both services already share).
 
-type BotResult = { ok: true } | { ok: false; error: string }
+type BotResult = { ok: true; data?: Record<string, unknown> } | { ok: false; error: string }
 
 function botEndpoint(): { base: string; token: string } | null {
   const base = process.env.BOT_INTERNAL_URL
@@ -13,7 +13,7 @@ function botEndpoint(): { base: string; token: string } | null {
   return base && token ? { base, token } : null
 }
 
-async function postBot(path: string, body: unknown): Promise<BotResult> {
+export async function postBot(path: string, body: unknown, opts?: { timeoutMs?: number }): Promise<BotResult> {
   const ep = botEndpoint()
   if (!ep) return { ok: false, error: 'Bot internal endpoint not configured (BOT_INTERNAL_URL).' }
   try {
@@ -21,12 +21,13 @@ async function postBot(path: string, body: unknown): Promise<BotResult> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-internal-token': ep.token },
       body: JSON.stringify(body),
+      ...(opts?.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
     })
-    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Record<string, unknown>
     if (!res.ok || !data.ok) {
       return { ok: false, error: data.error ?? `Bot rejected the request (${res.status}).` }
     }
-    return { ok: true }
+    return { ok: true, data }
   } catch (err) {
     return { ok: false, error: 'Could not reach the bot: ' + String(err) }
   }

@@ -12,6 +12,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { DemoTicket } from '@/server/demo/personas'
 import type { DemoMessage } from '@/server/demo/detail'
 import type { DemoBusiness, DemoCategory } from '@/server/demo/data'
+import type { PanelSettings } from '@/components/app/panel-preview'
 
 export type TicketPatch = {
   status?: string
@@ -40,6 +41,9 @@ export type DemoOverlay = {
   internalNotes: Record<number, DemoMessage[]>
   newTickets: DemoTicket[]
   settings: Record<string, Partial<DemoBusiness>>
+  // Per-team panel appearance, stored in the same shape as the real
+  // businesses.settings.panel JSONB. Each save replaces the whole record.
+  panelSettings: Record<string, PanelSettings>
   categoryOps: Record<string, CategoryOps>
   appSettings: { botName?: string }
 }
@@ -55,6 +59,7 @@ export const EMPTY_OVERLAY: DemoOverlay = {
   internalNotes: {},
   newTickets: [],
   settings: {},
+  panelSettings: {},
   categoryOps: {},
   appSettings: {},
 }
@@ -122,6 +127,7 @@ type DemoStore = {
   patchTicket: (ticketId: number, patch: TicketPatch) => void
   createTicket: (input: { ticket: Omit<DemoTicket, 'id'>; firstMessage: Omit<DemoMessage, 'id'> }) => number
   saveSettings: (slug: string, patch: Partial<DemoBusiness>) => void
+  setPanelSettings: (slug: string, panel: PanelSettings) => void
   addCategory: (slug: string, cat: DemoCategory) => void
   editCategory: (slug: string, catId: string, patch: Partial<DemoCategory>) => void
   deleteCategory: (slug: string, catId: string) => void
@@ -209,6 +215,10 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
     setOverlay((o) => ({ ...o, settings: { ...o.settings, [slug]: { ...o.settings[slug], ...patch } } }))
   }, [])
 
+  const setPanelSettings = useCallback((slug: string, panel: PanelSettings) => {
+    setOverlay((o) => ({ ...o, panelSettings: { ...o.panelSettings, [slug]: panel } }))
+  }, [])
+
   const mutateCatOps = useCallback((slug: string, fn: (ops: CategoryOps) => CategoryOps) => {
     setOverlay((o) => {
       const cur = o.categoryOps[slug] ?? { added: [], edited: {}, deleted: [] }
@@ -260,13 +270,14 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
       patchTicket,
       createTicket,
       saveSettings,
+      setPanelSettings,
       addCategory,
       editCategory,
       deleteCategory,
       setBotName,
       reset,
     }),
-    [overlay, hydrated, addMessage, addInternalNote, patchTicket, createTicket, saveSettings, addCategory, editCategory, deleteCategory, setBotName, reset],
+    [overlay, hydrated, addMessage, addInternalNote, patchTicket, createTicket, saveSettings, setPanelSettings, addCategory, editCategory, deleteCategory, setBotName, reset],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

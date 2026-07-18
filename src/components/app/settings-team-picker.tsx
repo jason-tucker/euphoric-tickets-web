@@ -14,9 +14,13 @@ import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@
 export function SettingsTeamPicker({
   teams,
   current,
+  basePath = '',
 }: {
   teams: { slug: string; name: string }[]
   current: string
+  // Route prefix for the settings pages — '' for the real app, '/demo' for
+  // the demo mirror.
+  basePath?: string
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -49,7 +53,7 @@ export function SettingsTeamPicker({
                 value={t.name}
                 onSelect={() => {
                   setOpen(false)
-                  if (t.slug !== current) router.push(`/b/${t.slug}/settings`)
+                  if (t.slug !== current) router.push(`${basePath}/b/${t.slug}/settings`)
                 }}
                 className="justify-between gap-2"
               >

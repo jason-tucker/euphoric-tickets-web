@@ -5,7 +5,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/app/submit-button'
-import { listMyBusinesses, requireSession } from '@/server/permissions'
+import { TeamAndOpenAsFields } from '@/components/app/open-as-field'
+import { listMyBusinesses, requireSession, resolveBusinessAccess } from '@/server/permissions'
 import { db } from '@/db/client'
 import { ticketCategories } from '@/db/schema'
 import { inArray } from 'drizzle-orm'
@@ -46,6 +47,20 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
     : myBusinesses[0]!.business.slug
   const selectedBusiness = myBusinesses.find((b) => b.business.slug === selectedSlug)!.business
 
+  // The cheap listMyBusinesses level settles admin/owner (and sudo = owner
+  // everywhere) without any Discord round-trips; only cheap-'member' teams
+  // need the full resolve to catch Ticket-Master admins (5-min role cache).
+  const adminTeamSlugs = new Set<string>()
+  const needsResolve: string[] = []
+  for (const { business, level } of myBusinesses) {
+    if (level === 'admin' || level === 'owner') adminTeamSlugs.add(business.slug)
+    else needsResolve.push(business.slug)
+  }
+  const resolved = await Promise.all(needsResolve.map((slug) => resolveBusinessAccess(slug)))
+  for (const a of resolved) {
+    if (a && (a.level === 'admin' || a.level === 'owner')) adminTeamSlugs.add(a.business.slug)
+  }
+
   const businessIds = myBusinesses.map((b) => b.business.id)
   const allCats = businessIds.length
     ? await db
@@ -79,19 +94,15 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                   Opening a sub-ticket of <span className="font-mono">#{parentId}</span>. Type is forced to Normal.
                 </p>
               )}
-              <div className="space-y-1">
-                <Label htmlFor="businessSlug">Team</Label>
-                <select
-                  id="businessSlug"
-                  name="businessSlug"
-                  defaultValue={selectedSlug}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  {myBusinesses.map(({ business }) => (
-                    <option key={business.id} value={business.slug}>{business.name}</option>
-                  ))}
-                </select>
-              </div>
+              <TeamAndOpenAsFields
+                teams={myBusinesses.map(({ business }) => ({
+                  slug: business.slug,
+                  name: business.name,
+                  guildId: business.discordGuildId,
+                  admin: adminTeamSlugs.has(business.slug),
+                }))}
+                defaultSlug={selectedSlug}
+              />
 
               <div className="space-y-1">
                 <Label htmlFor="categoryId">Category</Label>

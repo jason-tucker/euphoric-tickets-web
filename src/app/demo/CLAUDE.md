@@ -42,6 +42,9 @@ The following real-app screens do not yet have a `/demo` mirror:
 - `/demo/t/[id]` — individual ticket view for the opener (only `/demo/t/new` exists)
 - `/demo/settings/*` — notification preferences and team settings hub
 - `/demo/help` — help and feature explainer page
+- `/demo/b/[slug]/tickets` — the real route redirects to `/tickets?team=<slug>`; the demo URL
+  404s (demo links go straight to `/demo/tickets?team=<slug>` instead)
+- `/demo/t/new` accepts only `?b=` — no `?parent=` sub-ticket support
 
 When adding or updating any of these real screens, mirror them in `/demo` per the parity rule above.
 

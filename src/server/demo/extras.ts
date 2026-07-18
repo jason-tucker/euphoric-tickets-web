@@ -2,6 +2,7 @@
 // sudo surfaces (team list, bot dashboard, bot errors). All deterministic; error
 // timestamps are anchored to "now" so the log stays fresh day to day.
 
+import { avatarUrl } from '@/lib/format'
 import { getDemoDataset, type DemoBusiness, type DemoCategory } from './data'
 import { MIN_MS } from './dates'
 import { demoListMyBusinesses, type PersonaKey } from './personas'
@@ -30,25 +31,42 @@ export function getDemoSettings(personaKey: PersonaKey, slug: string): DemoSetti
 }
 
 export type DemoNewTicketForm = {
-  teams: { id: string; slug: string; name: string }[]
+  teams: { id: string; slug: string; name: string; admin: boolean }[]
   categoriesByTeam: Record<string, { key: string; label: string; emoji: string | null }[]>
+  // Admin-only "open as" candidates per team slug — the demo stand-in for the
+  // real DiscordPicker member search, drawn from the synthetic user pool.
+  openAsByTeam: Record<string, { id: string; discordId: string; name: string; image: string | null }[]>
 }
 
 export function getDemoNewTicketForm(personaKey: PersonaKey): DemoNewTicketForm {
   const ds = getDemoDataset()
   const persona = ds.personas[personaKey]
-  const teams = demoListMyBusinesses(persona).map((m) => m.team)
+  const mine = demoListMyBusinesses(persona)
   const categoriesByTeam: Record<string, { key: string; label: string; emoji: string | null }[]> = {}
-  for (const t of teams) {
-    categoriesByTeam[t.business.slug] = t.categories
+  const openAsByTeam: Record<string, { id: string; discordId: string; name: string; image: string | null }[]> = {}
+  for (const m of mine) {
+    const slug = m.team.business.slug
+    categoriesByTeam[slug] = m.team.categories
       .filter((c) => !c.staffOnly)
       .map((c) => ({ key: c.key, label: c.label, emoji: c.emoji }))
+    if (m.level === 'admin' || m.level === 'owner') {
+      openAsByTeam[slug] = rngFor('openas', m.team.business.id)
+        .sample(ds.users.filter((u) => u.id !== persona.userId), 8)
+        .map((u) => ({ id: u.id, discordId: u.discordId, name: u.name, image: avatarUrl(u.discordId, u.image) }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
   }
   return {
-    teams: teams
-      .map((t) => ({ id: t.business.id, slug: t.business.slug, name: t.business.name }))
+    teams: mine
+      .map((m) => ({
+        id: m.team.business.id,
+        slug: m.team.business.slug,
+        name: m.team.business.name,
+        admin: m.level === 'admin' || m.level === 'owner',
+      }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     categoriesByTeam,
+    openAsByTeam,
   }
 }
 

@@ -12,15 +12,25 @@ export default async function LoginPage({
 }) {
   const session = await auth()
   const params = await searchParams
+  // Only honor same-site return paths — a bare "/..." but not "//host" or
+  // "/\host" (browsers normalize backslashes, treating both as
+  // protocol-relative) — so ?next= can't bounce off-site.
+  const next =
+    params.next &&
+    params.next.startsWith('/') &&
+    !params.next.startsWith('//') &&
+    !params.next.includes('\\')
+      ? params.next
+      : '/dashboard'
   // Require user.id to be set — a half-baked session (cookie present but the
   // jwt callback didn't populate userId) would loop /login ↔ /dashboard
   // since /dashboard insists on user.id but /login would otherwise treat
   // any session.user as logged in.
-  if (session?.user?.id) redirect(params.next || '/dashboard')
+  if (session?.user?.id) redirect(next)
 
   async function loginWithDiscord() {
     'use server'
-    await signIn('discord', { redirectTo: params.next || '/dashboard' })
+    await signIn('discord', { redirectTo: next })
   }
 
   return (

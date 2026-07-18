@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.12.0] — 2026-07-18 — Navigation overhaul, team discovery for everyone, open-on-behalf, ticket-panel editor, server-name snapshots
+
+### Added
+- **"Open as" on `/t/new` (admin-only).** Team admins/owners (and sudo) can open a ticket on behalf of another Discord user: the target becomes the opener (dashboard visibility + channel access) while the admin stays the first message's author and the audit actor (`metadata.onBehalfOfDiscordId`). Targets are picked with the existing Discord member picker (raw-ID paste works for out-of-guild users, who get a `ticket_external_members` row and a best-effort DM with the ticket link). New client component `src/components/app/open-as-field.tsx`.
+- **Ticket-panel appearance editor** on `/b/<slug>/settings`: accent color (+ preset swatches), title, body, image URL, button style, and per-category description lines, with a live Discord-style preview (`panel-editor.tsx` / `panel-preview.tsx`). Stored in `businesses.settings.panel` (JSONB — no schema change); saving asks the bot to refresh every posted panel via the new `POST <BOT_INTERNAL_URL>/api/internal/panel/refresh`.
+- **"Post panel to a channel"** on the same settings card — picks any text channel (read-only-to-members channels work; ticket buttons don't require SendMessages) and posts the team's panel through the bot (`POST /api/internal/panel/post`).
+- **`/teams` now serves every signed-in user**, not just admins: the admin rollup keeps its stats cards (→ `/tickets?team=<slug>`, plus a new secondary "Overview" link → `/b/<slug>`), and a new "Your communities" section lists member-level teams with an "Open a ticket" button (`/t/new?b=<slug>`; TicketTool-mode teams get a Discord note instead). The account-menu item is visible to all signed-in users as "Teams". Anonymous visitors funnel through `/login?next=/teams`.
+- **`tickets.opener_display_name`** — snapshot of the opener's per-server display name, stamped at open time (web + bot) and refreshed by the bot's message relay. The `/tickets` console and ticket detail now resolve opener names live-nickname → snapshot → global `users.name`, so openers who left the guild (or a Discord API miss) no longer regress to their global name.
+- **Demo parity**: `/demo/teams`, the admin-only "Open as" select on `/demo/t/new`, the panel editor + preview on demo team settings (overlay-persisted via a new `panelSettings` record in the demo store), quick links on `/demo/admin` to the bot dashboard/errors mirrors, and the real `SettingsTeamPicker` in demo settings.
+- **`channel_detached` audit action** (schema mirrored with the bot) rendered on the ticket log ("detached the ticket from its Discord channel"), plus on-behalf rendering for `opened` events.
+
+### Changed — navigation cleanup
+- **Middleware now guards `/tickets` and `/settings/*`**, so anonymous visitors get the `/login?next=<path>` return trip instead of losing their destination; `requireSudo` likewise carries the actual sudo page into `?next=` instead of hardcoding `/admin`.
+- **`/login?next=` is validated** (must be a same-site path) — a signed-in user visiting `/login?next=https://evil.example` is no longer bounced off-site.
+- **`/t/[id]` runs the real ticket-access check before redirecting** — probing ids no longer leaks every team's slug to any signed-in user (matches the route's own doc comment).
+- **`/b/[slug]` no longer renders a blank page**: unknown slug → 404, real team without access → redirect to `/dashboard`.
+- **Labels standardized**: links to `/dashboard` consistently say "Overview"; the Sudo menu's "Teams" item is now "Manage teams" (no longer collides with the all-users "Teams" item); admin team cards on `/dashboard` + `/teams` gained a secondary "Overview" link (stretched-link pattern, whole-card click preserved).
+- **Active-tab highlighting**: the Tickets tab is active on `/b/<slug>/tickets/…` too; Settings only on `/b/<slug>/settings`; the demo nav follows the same rules.
+- **Sudo link is visible at 360 px** (dropped the `sm:` gating); demo nav scrolls horizontally instead of overflowing.
+- **Demo divergences fixed**: demo team cards carry `?team=` into the console, the demo ticket-detail back link keeps the team filter, `/demo/admin/bot` + `/demo/admin/errors` are reachable again, error-log filter pills use `<Link>` (both real and demo).
+
+### Removed
+- Dead `src/components/app/sort-header.tsx` (zero imports) and the never-taken `/settings/teams` fallback in the top-nav Settings tab.
+
+v0.12.0 · 4562e29
+
 ## [0.11.1] — 2026-07-06 — Docs: README sync with the team-wide staff tier, `/demo`, `/teams`, `/help`, and the unified console
 
 ### Fixed
