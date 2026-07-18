@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { db } from '@/db/client'
 import { businesses, tickets } from '@/db/schema'
-import { requireSession, listMyBusinesses } from '@/server/permissions'
+import { requireSession, listMyBusinesses, resolveBusinessAccess } from '@/server/permissions'
 import { currentUserIsSudo } from '@/server/sudo'
 import { relativeTime } from '@/lib/format'
 
@@ -18,16 +18,27 @@ export default async function TeamsPage() {
   const isSudo = await currentUserIsSudo()
 
   // Sudo administers everything; everyone else splits into teams they
-  // administer and communities they just belong to.
+  // administer and communities they just belong to. The cheap snapshot level
+  // misses Ticket-Master admins (admin via admin_role_ids, no Manage Server
+  // bit), so cheap-'member' teams get the full resolve — same pattern as
+  // /t/new's "Open as" gate, backed by the 5-min role cache.
   const myBusinesses = await listMyBusinesses()
-  const adminScope = isSudo
-    ? await db.select().from(businesses).orderBy(desc(businesses.createdAt))
-    : myBusinesses
-        .filter((b) => b.level === 'admin' || b.level === 'owner')
-        .map((b) => b.business)
-  const memberScope = isSudo
-    ? []
-    : myBusinesses.filter((b) => b.level === 'member').map((b) => b.business)
+  let adminScope: (typeof businesses.$inferSelect)[]
+  let memberScope: (typeof businesses.$inferSelect)[]
+  if (isSudo) {
+    adminScope = await db.select().from(businesses).orderBy(desc(businesses.createdAt))
+    memberScope = []
+  } else {
+    adminScope = myBusinesses.filter((b) => b.level === 'admin' || b.level === 'owner').map((b) => b.business)
+    memberScope = []
+    const cheapMember = myBusinesses.filter((b) => b.level !== 'admin' && b.level !== 'owner')
+    const resolved = await Promise.all(cheapMember.map((b) => resolveBusinessAccess(b.business.slug)))
+    for (let i = 0; i < cheapMember.length; i++) {
+      const level = resolved[i]?.level
+      if (level === 'admin' || level === 'owner') adminScope.push(cheapMember[i].business)
+      else memberScope.push(cheapMember[i].business)
+    }
+  }
 
   // Rollup counts per team — the tickets it operates (business_id).
   const stats = await db

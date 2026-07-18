@@ -45,7 +45,6 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   const selectedSlug = sp.b && myBusinesses.find((b) => b.business.slug === sp.b)
     ? sp.b
     : myBusinesses[0]!.business.slug
-  const selectedBusiness = myBusinesses.find((b) => b.business.slug === selectedSlug)!.business
 
   // The cheap listMyBusinesses level settles admin/owner (and sudo = owner
   // everywhere) without any Discord round-trips; only cheap-'member' teams
@@ -72,7 +71,13 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   // only as move-into targets for staff. Filter applies to everyone (member
   // and staff/admin alike), since staff still open tickets via this same flow
   // and a staff-only destination is by definition not a fresh-ticket option.
-  const cats = allCats.filter((c) => c.businessId === selectedBusiness.id && !c.staffOnly)
+  // Grouped per team so the client-side team switch swaps the list in step.
+  const catsByTeam: Record<string, { id: string; label: string; emoji: string | null }[]> = {}
+  for (const { business } of myBusinesses) {
+    catsByTeam[business.slug] = allCats
+      .filter((c) => c.businessId === business.id && !c.staffOnly)
+      .map((c) => ({ id: c.id, label: c.label, emoji: c.emoji }))
+  }
 
   return (
     <>
@@ -102,26 +107,8 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                   admin: adminTeamSlugs.has(business.slug),
                 }))}
                 defaultSlug={selectedSlug}
+                catsByTeam={catsByTeam}
               />
-
-              <div className="space-y-1">
-                <Label htmlFor="categoryId">Category</Label>
-                <select
-                  id="categoryId"
-                  name="categoryId"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">— pick one —</option>
-                  {cats.map((c) => (
-                    <option key={c.id} value={c.id}>{c.emoji ? `${c.emoji} ` : ''}{c.label}</option>
-                  ))}
-                </select>
-                {cats.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    This team has no categories yet. An admin can add them in team settings.
-                  </p>
-                )}
-              </div>
 
               <div className="space-y-1">
                 <Label htmlFor="subject">Subject</Label>

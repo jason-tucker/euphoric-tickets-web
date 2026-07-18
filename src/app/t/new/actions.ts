@@ -140,8 +140,11 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       openerDiscordId = openAsDiscordId
       openerDisplayName = ident.name
     } else {
+      // A null identity can be "not in guild" OR a transient Discord failure —
+      // the external path still works either way, but if the global lookup
+      // also fails, say "try again" rather than claiming the ID is invalid.
       const du = await fetchDiscordUser(botToken, openAsDiscordId)
-      if (!du) throw new Error('No Discord user with that ID.')
+      if (!du) throw new Error('Could not look up that Discord user — check the ID or try again.')
       const [u] = await db
         .insert(users)
         .values({ discordId: du.id, name: du.name, image: du.image })
