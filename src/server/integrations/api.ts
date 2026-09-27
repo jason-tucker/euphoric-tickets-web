@@ -253,8 +253,15 @@ const openSchema = z
   .object({
     categoryKey: z.string().min(1).max(64),
     openerDiscordId: SNOWFLAKE,
-    // The bot refuses a whitespace-only subject (400 → our 502); refuse it here as 422.
-    subject: LINE(100).refine((v) => v.trim().length > 0, 'must not be blank'),
+    // Trimmed BEFORE it is escaped: the bot stores the subject trimmed, and a
+    // trim after escaping could expose a line-leading block marker (e.g.
+    // '\u00a0# heading'). Blank after trimming → 422 (the bot would 400 → 502).
+    subject: z
+      .string()
+      .trim()
+      .min(1, 'must not be blank')
+      .max(100)
+      .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), 'control characters are not allowed'),
     card: z
       .object({
         title: LINE(100),
@@ -679,11 +686,13 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
     if ((input.actorDiscordId ?? null) !== storedActor) {
       return apiError(409, 'idempotency_conflict', undefined, { messageId: existing.id })
     }
-    if (existing.discordMessageId || ticket.status === 'closed') {
-      // Delivered — or a key accepted before the ticket closed (never
-      // re-posted into a closed ticket): the stored answer.
+    if (existing.discordMessageId) {
+      // Delivered (even if the ticket has closed since): the stored answer.
       return apiJson(200, { messageId: existing.id, discordMessageId: existing.discordMessageId, created: false })
     }
+    // Never delivered, and the ticket is now closed: it is never re-posted
+    // into a closed ticket, and an undelivered row is never reported as 200.
+    if (ticket.status === 'closed') return apiError(409, 'ticket_closed', undefined, { messageId: existing.id })
     const [leased] = await db
       .update(ticketMessages)
       .set({ metadata: sql`${ticketMessages.metadata} || jsonb_build_object('repostAt', now())` })

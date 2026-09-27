@@ -1,4 +1,4 @@
-# Integration API (v0.12.0)
+# Integration API (v0.12.1)
 
 A general, multi-tenant way for other services to talk to the ticket system.
 Its first client is the EFM Music Portal: each music batch or request becomes
@@ -9,7 +9,7 @@ Design source: the vault plan "EFM Music Portal — Plan" §4 (v3.2, approved). 
 
 **Reachability:** `/api/v1/*` is meant for the internal docker networks only. The edge must return 404 for `^/api/(internal|v1)/` (plan §4.6 P1d). There is no browser or CORS surface.
 
-**In-app host gate (defense in depth, before P1d):** every `/api/v1/*` request whose `Host` header is not listed in `INTERNAL_API_HOSTS` gets a bare `404` before any key work. The default is `tickets-web:3000,tickets-web` (the internal alias the music worker and the staging stack use). Requests through the public tunnel or Caddy carry `Host: tickets.euphoric.fm` / `tickets.euphoric.gg`, which an external caller cannot change into the internal alias through those proxies. Only `Host` is read, never `X-Forwarded-Host`. Assumption: neither proxy rewrites `Host` to the internal alias. To call the API through a published port for local testing (for example staging's `127.0.0.1:16095`), set `INTERNAL_API_HOSTS=tickets-web:3000,tickets-web,127.0.0.1:16095`; the variable replaces the list, and a blank value means the default. `/api/internal/*` is **not** gated this way yet, because the bot still reaches `/api/internal/notify` through the public URL until it deploys `WEB_INTERNAL_URL`; that gate is P1d.
+**In-app host gate (defense in depth, before P1d):** every `/api/v1/*` request whose `Host` header is not listed in `INTERNAL_API_HOSTS` gets a bare `404` before any key work — including `OPTIONS` and methods a route does not implement, which would otherwise get Next's automatic `204` / `405` (an internal `Host` gets `204` / `405 {"error":"method_not_allowed"}` with `Allow`). The default is `tickets-web:3000,tickets-web` (the internal alias the music worker and the staging stack use). Requests through the public tunnel or Caddy carry `Host: tickets.euphoric.fm` / `tickets.euphoric.gg`, which an external caller cannot change into the internal alias through those proxies. Only `Host` is read, never `X-Forwarded-Host`. Assumption: neither proxy rewrites `Host` to the internal alias. To call the API through a published port for local testing (for example staging's `127.0.0.1:16095`), set `INTERNAL_API_HOSTS=tickets-web:3000,tickets-web,127.0.0.1:16095`; the variable replaces the list, and a blank value means the default. `/api/internal/*` is **not** gated this way yet, because the bot still reaches `/api/internal/notify` through the public URL until it deploys `WEB_INTERNAL_URL`; that gate is P1d.
 
 ---
 
@@ -42,7 +42,7 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 ```
 
 - Unknown keys are rejected. `card.link.url` must satisfy `new URL(url).origin === link_origin` and be **at most 512 characters** (Discord's link-button limit), both as sent and once normalised by `new URL`; otherwise `422`.
-- **Plain text, not markdown.** `subject`, `card.title` and every `card.lines[]` entry are treated as plain text: the web escapes Discord markdown (backslash, `*`, `_`, `~`, backtick, `|`, `>`, `[`, `]`, `<`, and line-leading heading/list/subtext markers) and defuses `@everyone` / `@here` **before** forwarding them to the bot, and the bot does not escape again. A masked link such as `[Approve](https://…)` therefore renders literally in the welcome card. Escaping can lengthen a field; the escaped value is trimmed to the bot's limit (subject and title 100, each line 200 characters) and ends in `…` when trimmed. The stored ticket subject is the escaped form. `card.link.label` is a button label (never markdown) and is forwarded as-is.
+- **Plain text, not markdown.** `subject`, `card.title` and every `card.lines[]` entry are treated as plain text: the web escapes Discord markdown (backslash, `*`, `_`, `~`, backtick, `|`, `>`, `[`, `]`, `<`, and line-leading heading/list/subtext markers, including ones behind NBSP or other Unicode spaces) and defuses `@everyone` / `@here` **before** forwarding them to the bot, and the bot does not escape again. A masked link such as `[Approve](https://…)` therefore renders literally in the welcome card. Escaping can lengthen a field; the escaped value is trimmed to the bot's limit (subject and title 100, each line 200 characters) and ends in `…` when trimmed. `subject` is trimmed (Unicode whitespace) **before** it is escaped, and the stored ticket subject is the escaped form. `card.link.label` is a button label (never markdown) and is forwarded as-is.
 - The whole body must fit in 13 500 bytes of UTF-8 JSON, both as sent and once escaped, so the bot's 16 KB bridge cap is never hit.
 - The category must be in `allowed_category_keys` **and** exist in the key's team; otherwise `403 category_forbidden`.
 - Responses:
@@ -77,6 +77,7 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
    - the stored row reached Discord → `200 {messageId, discordMessageId, created:false}`;
    - it never reached Discord and is more than 30 s old (DB clock) → it is re-posted exactly once, under a conditional lease, and the lease winner gets `200 {…, created:false}`;
    - it never reached Discord and the first attempt (or another replay's re-post) may still be in flight → `409 {"error":"in_progress","messageId"}` with `Retry-After` (seconds until a replay may re-post). Retry with the same key.
+   - it never reached Discord and the ticket is now closed → `409 {"error":"ticket_closed","messageId"}` (not retryable).
 
    A replay must name the **same** `actorDiscordId` as the original request (or omit it if the original did); otherwise it gets `409 {"error":"idempotency_conflict","messageId"}`. A re-post always uses the identity stored on the original row: that actor's nickname and avatar if the actor still passes the actor check, otherwise the integration's own name. It never posts under the replay request's actor.
 
@@ -87,7 +88,7 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
 **Failure responses:**
 - A Discord failure returns `502 discord_unavailable` with `Retry-After: 30`. The row is kept, so retry with the same key after 30 s. A deleted webhook (404/401) is forgotten and re-ensured on the next try.
 - A bot failure returns `502 bot_unavailable`.
-- A closed ticket returns `409 ticket_closed`, except that a replay of a key accepted before the close still gets `200`.
+- A closed ticket returns `409 ticket_closed`. A replay of a key accepted before the close gets `200` only if that message was delivered (non-null `discordMessageId`); an undelivered one is never re-posted into a closed ticket and gets `409 {"error":"ticket_closed","messageId"}`.
 
 **`actorDiscordId`** requires `actor_impersonation` **and** a live bot-token member lookup. The actor must be a non-pending member who is in the **staff set**, **or** be the ticket's opener. Otherwise the response is `403 actor_forbidden`. The post then uses the actor's server nickname and avatar.
 

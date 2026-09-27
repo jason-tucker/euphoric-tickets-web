@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1] — 2026-09-27 — Integration API follow-ups
+
+### Fixed
+- **Subject trimmed before escaping.** `POST /api/v1/tickets` escaped `subject` first and the bot trimmed it later, so `"\u00a0# heading"` reached Discord as a live heading. The subject is now trimmed (`z.string().trim()`) before `escapeForBot`; a whitespace-only subject (NBSP included) is still `422`.
+- **Block markers behind Unicode spaces.** `escapeDiscordMarkdown` recognised line-leading `#`/`-#`/list markers only after ASCII spaces and tabs. The prefix (and the separator after the marker) is now `[\p{Zs}\t]` with the `u` flag, so NBSP- or em-space-prefixed `# heading` / `-# subtext` are escaped in every field.
+- **Undelivered replay on a closed ticket.** Replaying an `Idempotency-Key` whose message never reached Discord (`discordMessageId` null) on a ticket that has since closed returned `200 created:false`, which reads as delivered. It now returns `409 {error:'ticket_closed', messageId}`; a delivered replay still gets its stored `200`.
+- **Host gate for OPTIONS and unimplemented methods.** Next answers `OPTIONS` (204) and unimplemented methods (405) itself, before any handler, so those bypassed the `/api/v1` Host gate. Every `/api/v1` route now exports `OPTIONS` and a handler for each method it lacks (`v1Options` / `v1MethodNotAllowed`): a public Host gets the bare `404`; an internal Host gets `204` / `405 {error:'method_not_allowed'}` with `Allow`.
+
 ## [0.12.0] — 2026-09-26 — Integration API: other services can open, update and follow tickets
 
 A general, multi-tenant API so other services can talk to the ticket system (plan: vault "EFM Music Portal — Plan" §4, v3.2). Its first client is the EFM Music Portal: each music batch or request becomes a ticket that behaves **exactly like a bot-opened ticket**. Public replies flow back through signed webhooks; internal staff notes never do. Full contract: [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md). Schema list for the bot mirror: [`docs/INTEGRATION_SCHEMA.md`](docs/INTEGRATION_SCHEMA.md).

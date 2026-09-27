@@ -411,6 +411,36 @@ describeDb('POST /api/v1/tickets (open)', () => {
     expect(sent.card.link.label).toBe('Open [portal]')
   })
 
+  it('trims the subject BEFORE escaping, so an NBSP-prefixed heading is escaped and the bot stores it unchanged', async () => {
+    const w = await world()
+    for (const [subject, expected] of [
+      ['\u00a0# heading ', '\\# heading'],
+      ['\u00a0\u2003-# subtext\u00a0', '\\-# subtext'],
+      ['  **bold**  ', '\\*\\*bold\\*\\*'],
+    ] as const) {
+      resetLimiters()
+      const body = openBody({ subject })
+      const created = await makeIntegrationTicket(
+        { businessId: w.biz.id, integrationId: w.main.integration.id, openerUserId: w.opener.id, categoryId: w.cat.id },
+        { externalRef: body.externalRef as string },
+      )
+      const openTicket = vi.fn(async () => ({ ok: true as const, ticketId: created.id, channelId: created.discordChannelId!, created: true }))
+      const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), fakeDeps({ bot: { openTicket } }))
+      expect(r.status, JSON.stringify(subject)).toBe(201)
+      const sent = (openTicket.mock.calls[0] as unknown as [{ subject: string }])[0]
+      expect(sent.subject).toBe(expected)
+      // What the bot stores (it trims) is exactly what was escaped.
+      expect(sent.subject.trim()).toBe(sent.subject)
+    }
+    // Whitespace-only, NBSP included, is still blank → 422.
+    resetLimiters()
+    const blank = await handleOpenTicket(
+      apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody({ subject: '\u00a0 \u2003' }) }),
+      fakeDeps(),
+    )
+    expect(blank.status).toBe(422)
+  })
+
   it('maps bot errors to the public codes', async () => {
     const w = await world()
     const cases: Array<[unknown, number, string, string | null]> = [
@@ -651,6 +681,25 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     expect((await r.json()).error).toBe('ticket_closed')
     expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'before', deps)).status).toBe(200)
     expect(deps.calls.posts).toBe(1)
+  })
+
+  it('a replay of an UNDELIVERED key on a closed ticket is 409 ticket_closed with its messageId, never 200 or a re-post', async () => {
+    const w = await world()
+    const failing = fakeDeps({ discord: { postWebhook: vi.fn(async () => { throw new DiscordHttpError(500, 'boom') }) } })
+    const first = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'undelivered', failing)
+    expect(first.status).toBe(502)
+    const { messageId } = await first.json()
+    // Old enough that an open ticket would re-post it.
+    await db.execute(sql`UPDATE ticket_messages SET created_at = now() - interval '31 seconds' WHERE id = ${messageId}::uuid`)
+    await db.update(tickets).set({ status: 'closed', closedAt: new Date() }).where(eq(tickets.id, w.ticket.id))
+
+    const ok = fakeDeps()
+    const r = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'undelivered', ok)
+    expect(r.status).toBe(409)
+    expect(await r.json()).toEqual({ error: 'ticket_closed', messageId })
+    expect(ok.calls.posts).toBe(0)
+    const [row] = await db.select().from(ticketMessages).where(eq(ticketMessages.id, messageId))
+    expect(row!.discordMessageId).toBeNull()
   })
 
   it('enforces the actorDiscordId rule (impersonation + live staff/opener role check)', async () => {

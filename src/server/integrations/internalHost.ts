@@ -46,3 +46,35 @@ export function isInternalApiRequest(headers: Headers, env: Record<string, strin
 export function notFoundResponse(): Response {
   return new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } })
 }
+
+// Methods a /api/v1 route does NOT implement would otherwise be answered by
+// Next itself (auto OPTIONS 204, 405 Method Not Allowed) BEFORE any handler —
+// and so before the Host gate. Each /api/v1 route exports these handlers for
+// every method it lacks, so a public Host gets the same bare 404 as always.
+type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
+type RouteHandler = (req: Request) => Response
+
+function allowHeader(implemented: Method[]): string {
+  const allow = new Set<string>(implemented)
+  if (allow.has('GET')) allow.add('HEAD')
+  allow.add('OPTIONS')
+  return [...allow].join(', ')
+}
+
+// OPTIONS: 204 with Allow for an internal Host, else 404.
+export function v1Options(implemented: Method[]): RouteHandler {
+  const allow = allowHeader(implemented)
+  return (req) =>
+    isInternalApiRequest(req.headers)
+      ? new Response(null, { status: 204, headers: { Allow: allow, 'Cache-Control': 'no-store' } })
+      : notFoundResponse()
+}
+
+// An unimplemented method: 405 with Allow for an internal Host, else 404.
+export function v1MethodNotAllowed(implemented: Method[]): RouteHandler {
+  const allow = allowHeader(implemented)
+  return (req) =>
+    isInternalApiRequest(req.headers)
+      ? Response.json({ error: 'method_not_allowed' }, { status: 405, headers: { Allow: allow, 'Cache-Control': 'no-store' } })
+      : notFoundResponse()
+}
