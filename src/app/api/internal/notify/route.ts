@@ -1,11 +1,14 @@
 // P13 (lantern) — bot → web notify bridge. The bot POSTs here after a
 // Discord-origin ticket open or reply so the web dispatcher fans out
-// ntfy / DM notifications. Authed by the shared INTERNAL_TOKEN.
+// ntfy / DM notifications. Authed by the shared INTERNAL_TOKEN only — there is
+// no DISCORD_BOT_TOKEN fallback, and an invalid configured token rejects every
+// request rather than comparing against an empty expected value.
 
 import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { notify, type NotifyContext } from '@/server/notify'
+import { internalTokenOrNull } from '@/server/internalToken'
 import { notifyEvents } from '@/db/schema'
 
 // Constant-time comparison so the shared-secret check doesn't leak the token
@@ -41,8 +44,8 @@ const bodySchema = z.object({
 })
 
 export async function POST(req: Request) {
-  // INTERNAL_TOKEN if set, else the shared bot token (no extra config needed).
-  const token = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
+  // Fail closed: a missing or short INTERNAL_TOKEN yields null, never ''.
+  const token = internalTokenOrNull('internal/notify')
   if (!token || !tokenMatches(req.headers.get('x-internal-token'), token)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
