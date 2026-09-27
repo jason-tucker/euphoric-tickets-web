@@ -45,6 +45,10 @@ The following real-app screens do not yet have a `/demo` mirror:
 
 When adding or updating any of these real screens, mirror them in `/demo` per the parity rule above.
 
+## Deliberately not mirrored
+
+- `/admin/integrations` and `/admin/integrations/[id]` (sudo, v0.12.0) have **no** `/demo` mirror, on purpose. It is a secrets page: it mints Integration API keys and webhook signing secrets, shows them once, and manages the SSRF allowlist. A demo copy would add nothing a visitor can use and would invite a fake "key" UI that looks real. If a mirror is ever wanted, it must be a static, secret-free description (no key/secret fields, no generated values, no allowlist editing), never an interactive copy.
+
 ## How it fits together
 
 - `src/server/demo/` — the read-only base: a seeded, date-independent generator
