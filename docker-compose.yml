@@ -45,6 +45,13 @@ services:
         # Caddyfile in the euphoricfm-website repo.
         aliases:
           - tickets-web
+      # EFM Music Portal ↔ tickets: signed webhook delivery to music-web and
+      # music-web's guild:read calls. Fixed subnet 172.31.250.0/24 is pinned in
+      # the integration's webhook allowlist (expected_network_cidr). Create once:
+      #   docker network create --subnet 172.31.250.0/24 efm-music-hooks
+      efm-music-hooks:
+        aliases:
+          - tickets-web
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     logging:
@@ -108,6 +115,9 @@ networks:
   # Shared with the euphoricfm-website stack. Create once on the host:
   #   docker network create efm-public-net
   efm-public-net:
+    external: true
+  # EFM Music Portal hooks network (see tickets-web above). Must exist first.
+  efm-music-hooks:
     external: true
 
 volumes:
