@@ -1,0 +1,582 @@
+// DB-backed route tests for the Integration API (plan §6 "P1" checks that
+// can run without Discord). Requires TEST_DATABASE_URL (a scratch Postgres);
+// skipped otherwise. Network edges (bot, Discord) are faked.
+
+import { and, eq, sql } from 'drizzle-orm'
+import { beforeEach, expect, it, vi } from 'vitest'
+import { db } from '@/db/client'
+import { auditLogs, integrationAudit, integrations, ticketMessages, tickets } from '@/db/schema'
+import {
+  apiRequest,
+  describeDb,
+  fakeDeps,
+  makeBusiness,
+  makeCategory,
+  makeIntegration,
+  makeIntegrationTicket,
+  makeUser,
+  resetLimiters,
+  snowflake,
+  stateOf,
+} from '@/test/fixtures'
+import { DiscordHttpError } from '@/lib/discord'
+import { BotUnavailableError } from './botClient'
+import {
+  handleGetTicket,
+  handleGuildRoles,
+  handleMember,
+  handleOpenTicket,
+  handlePatchTicket,
+  handlePostMessage,
+  staffRoleIdsForCategory,
+} from './api'
+import { RATE } from './rateLimit'
+
+async function world() {
+  const biz = await makeBusiness()
+  const otherBiz = await makeBusiness()
+  const cat = await makeCategory(biz.id, 'newsong', { integrationOnly: true, staffRoleIds: snowflake() })
+  await makeCategory(otherBiz.id, 'newsong')
+  const opener = await makeUser()
+  const main = await makeIntegration(biz.id)
+  const sibling = await makeIntegration(biz.id) // same team, different integration
+  const foreign = await makeIntegration(otherBiz.id)
+  const ticket = await makeIntegrationTicket({ businessId: biz.id, integrationId: main.integration.id, openerUserId: opener.id, categoryId: cat.id })
+  const siblingTicket = await makeIntegrationTicket({ businessId: biz.id, integrationId: sibling.integration.id, openerUserId: opener.id, categoryId: cat.id })
+  const plainTicket = await makeIntegrationTicket({ businessId: biz.id, integrationId: null, openerUserId: opener.id, categoryId: cat.id })
+  const foreignTicket = await makeIntegrationTicket({ businessId: otherBiz.id, integrationId: foreign.integration.id, openerUserId: opener.id })
+  return { biz, otherBiz, cat, opener, main, sibling, foreign, ticket, siblingTicket, plainTicket, foreignTicket }
+}
+
+const openBody = (over: Record<string, unknown> = {}) => ({
+  categoryKey: 'newsong',
+  openerDiscordId: snowflake(),
+  subject: 'New songs from DJ X',
+  card: { title: 'Batch #12', lines: ['Song #1: A', 'Song #2: B'], link: { label: 'Open in portal', url: 'https://music.test/batches/12' } },
+  externalRef: `batch:${snowflake()}`,
+  ...over,
+})
+
+describeDb('Integration API — auth', () => {
+  beforeEach(resetLimiters)
+
+  it('401s a missing, malformed, unknown-prefix, wrong-secret or disabled key', async () => {
+    const w = await world()
+    const path = `/api/v1/tickets/${w.ticket.id}`
+    const wrongSecret = w.main.key.slice(0, -1) + (w.main.key.endsWith('A') ? 'B' : 'A')
+    const unknownPrefix = `etk.ZZZZZZZZZZ.${w.main.key.split('.')[2]}`
+    for (const key of [undefined, 'garbage', unknownPrefix, wrongSecret]) {
+      const res = await handleGetTicket(apiRequest('GET', path, { key, ip: `1.1.1.${Math.floor(Math.random() * 200)}` }), String(w.ticket.id))
+      expect(res.status, String(key)).toBe(401)
+      expect(await res.json()).toEqual({ error: 'unauthorized' })
+    }
+    await db.update(integrations).set({ enabled: false }).where(eq(integrations.id, w.main.integration.id))
+    const res = await handleGetTicket(apiRequest('GET', path, { key: w.main.key }), String(w.ticket.id))
+    expect(res.status).toBe(401)
+  })
+
+  it('rate-limits failed auth per IP (then even a valid key from that IP gets 429)', async () => {
+    const w = await world()
+    const ip = '203.0.113.77'
+    for (let i = 0; i < RATE.authFailuresPerIp; i++) {
+      const r = await handleGetTicket(apiRequest('GET', '/x', { key: 'etk.AAAAAAAAAA.' + 'A'.repeat(43), ip }), '1')
+      expect(r.status).toBe(401)
+    }
+    const blocked = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key, ip }), String(w.ticket.id))
+    expect(blocked.status).toBe(429)
+    expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0)
+    // cf-connecting-ip takes precedence over XFF for the bucket.
+    const other = await handleGetTicket(
+      apiRequest('GET', '/x', { key: w.main.key, ip, headers: { 'cf-connecting-ip': '198.51.100.9' } }),
+      String(w.ticket.id),
+    )
+    expect(other.status).toBe(200)
+  })
+
+  it('rate-limits 60/min per key', async () => {
+    const w = await world()
+    for (let i = 0; i < RATE.perKeyPerMin; i++) {
+      const r = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))
+      expect(r.status).toBe(200)
+    }
+    const r = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))
+    expect(r.status).toBe(429)
+    // A different key is unaffected.
+    const s = await handleGetTicket(apiRequest('GET', '/x', { key: w.sibling.key }), String(w.siblingTicket.id))
+    expect(s.status).toBe(200)
+  })
+
+  it('403s a missing scope', async () => {
+    const w = await world()
+    await db.update(integrations).set({ scopes: ['guild:read'] }).where(eq(integrations.id, w.main.integration.id))
+    const r = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))
+    expect(r.status).toBe(403)
+    expect((await r.json()).error).toBe('scope_missing')
+  })
+})
+
+describeDb('Integration API — scoping', () => {
+  beforeEach(resetLimiters)
+
+  it('404s any cross-integration, cross-business, non-integration or unknown ticket on every /tickets/:id* route', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    for (const t of [w.siblingTicket, w.foreignTicket, w.plainTicket]) {
+      const id = String(t.id)
+      expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), id)).status).toBe(404)
+      expect(
+        (await handlePatchTicket(apiRequest('PATCH', '/x', { key: w.main.key, body: { status: 'waiting' } }), id, deps)).status,
+      ).toBe(404)
+      expect(
+        (
+          await handlePostMessage(
+            apiRequest('POST', '/x', { key: w.main.key, body: { kind: 'system', body: 'hi' }, headers: { 'idempotency-key': 'k1' } }),
+            id,
+            deps,
+          )
+        ).status,
+      ).toBe(404)
+    }
+    for (const id of ['999999999', 'abc', '0', '-1']) {
+      expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), id)).status).toBe(404)
+    }
+    expect(deps.calls.posts).toBe(0)
+    // Foreign tickets were not touched.
+    const [f] = await db.select().from(tickets).where(eq(tickets.id, w.foreignTicket.id))
+    expect(f!.status).toBe('open')
+  })
+
+  it('returns the scoped ticket view', async () => {
+    const w = await world()
+    const staff = await makeUser()
+    await db.update(tickets).set({ assigneeUserId: staff.id, status: 'in_progress' }).where(eq(tickets.id, w.ticket.id))
+    const r = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({
+      status: 'in_progress',
+      claimedBy: staff.discordId,
+      closedAt: null,
+      webUrl: `https://tickets.test/b/${w.biz.slug}/tickets/${w.ticket.id}`,
+      discordChannelUrl: `https://discord.com/channels/${w.biz.discordGuildId}/${w.ticket.discordChannelId}`,
+    })
+  })
+})
+
+describeDb('POST /api/v1/tickets (open)', () => {
+  beforeEach(resetLimiters)
+
+  it('validates the body strictly (422)', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    const bad = [
+      openBody({ subject: 'x'.repeat(101) }),
+      openBody({ extra: 1 }),
+      openBody({ openerDiscordId: 'nope' }),
+      openBody({ externalRef: 'has space' }),
+      openBody({ card: { title: 't', lines: Array(26).fill('l'), link: { label: 'l', url: 'https://music.test/' } } }),
+      openBody({ card: { title: 't', lines: ['x'.repeat(201)], link: { label: 'l', url: 'https://music.test/' } } }),
+      openBody({ card: { title: 't', lines: [], link: { label: 'x'.repeat(41), url: 'https://music.test/' } } }),
+    ]
+    for (const body of bad) {
+      const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)
+      expect(r.status).toBe(422)
+    }
+    const notJson = await handleOpenTicket(
+      apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: '{', headers: { 'content-type': 'application/json' } }),
+      deps,
+    )
+    expect(notJson.status).toBe(422)
+    const huge = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: 'x'.repeat(40_000) }), deps)
+    expect(huge.status).toBe(413)
+    expect(deps.bot.openTicket).not.toHaveBeenCalled()
+  })
+
+  it('422s a card.link.url whose origin is not link_origin', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    for (const url of ['https://music.test.evil.com/x', 'http://music.test/x', 'https://music.test:444/x', 'https://evil.com/?https://music.test']) {
+      const body = openBody({ card: { title: 't', lines: [], link: { label: 'l', url } } })
+      const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)
+      expect(r.status, url).toBe(422)
+    }
+    expect(deps.bot.openTicket).not.toHaveBeenCalled()
+  })
+
+  it('403s a category not allowlisted on the key or not in the key business', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    await makeCategory(w.biz.id, 'support')
+    let r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody({ categoryKey: 'support' }) }), deps)
+    expect(r.status).toBe(403)
+    expect((await r.json()).error).toBe('category_forbidden')
+    // Allowlisted key but the category only exists in ANOTHER business.
+    await db.update(integrations).set({ allowedCategoryKeys: ['newsong', 'elsewhere'] }).where(eq(integrations.id, w.main.integration.id))
+    await makeCategory(w.otherBiz.id, 'elsewhere')
+    r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody({ categoryKey: 'elsewhere' }) }), deps)
+    expect(r.status).toBe(403)
+    expect(deps.bot.openTicket).not.toHaveBeenCalled()
+  })
+
+  it('passes the §4.4 request to the bot and maps its answers', async () => {
+    const w = await world()
+    const body = openBody()
+    const created = await makeIntegrationTicket(
+      { businessId: w.biz.id, integrationId: w.main.integration.id, openerUserId: w.opener.id, categoryId: w.cat.id },
+      { externalRef: body.externalRef as string },
+    )
+    const openTicket = vi.fn(async () => ({ ok: true as const, ticketId: created.id, channelId: created.discordChannelId!, created: true }))
+    const deps = fakeDeps({ bot: { openTicket } })
+    const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)
+    expect(r.status).toBe(201)
+    expect(await r.json()).toEqual({
+      ticketId: created.id,
+      number: created.id,
+      webUrl: `https://tickets.test/b/${w.biz.slug}/tickets/${created.id}`,
+      discordChannelUrl: `https://discord.com/channels/${w.biz.discordGuildId}/${created.discordChannelId}`,
+      created: true,
+    })
+    expect(openTicket).toHaveBeenCalledWith({
+      integrationId: w.main.integration.id,
+      integrationSlug: w.main.integration.slug,
+      integrationName: w.main.integration.name,
+      businessId: w.biz.id,
+      categoryKey: 'newsong',
+      openerDiscordId: body.openerDiscordId,
+      subject: body.subject,
+      card: body.card,
+      externalRef: body.externalRef,
+    })
+    expect((await stateOf(created.id))?.lastStatus).toBe('open')
+
+    // Adoption / replay → 200 created:false.
+    openTicket.mockResolvedValueOnce({ ok: true, ticketId: created.id, channelId: created.discordChannelId!, created: false })
+    const again = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)
+    expect(again.status).toBe(200)
+    expect((await again.json()).created).toBe(false)
+  })
+
+  it('maps bot errors to the public codes', async () => {
+    const w = await world()
+    const cases: Array<[unknown, number, string, string | null]> = [
+      [{ ok: false, status: 404, code: 'opener_not_member' }, 404, 'opener_not_member', null],
+      [{ ok: false, status: 403, code: 'opener_pending' }, 403, 'opener_pending', null],
+      [{ ok: false, status: 403, code: 'category_forbidden' }, 403, 'category_forbidden', null],
+      [{ ok: false, status: 409, code: 'opening_in_progress' }, 409, 'opening_in_progress', '5'],
+    ]
+    for (const [result, status, code, retry] of cases) {
+      const deps = fakeDeps({ bot: { openTicket: vi.fn(async () => result as never) } })
+      const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody() }), deps)
+      expect(r.status).toBe(status)
+      expect((await r.json()).error).toBe(code)
+      expect(r.headers.get('Retry-After')).toBe(retry)
+      resetLimiters()
+    }
+    for (const errorClass of ['guild_unavailable', 'timeout', 'not_configured', 'http_500']) {
+      const deps = fakeDeps({ bot: { openTicket: vi.fn(async () => { throw new BotUnavailableError(errorClass) }) } })
+      const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody() }), deps)
+      expect(r.status).toBe(502)
+      expect((await r.json()).error).toBe('bot_unavailable')
+    }
+    // Bot claims success with a ticket outside this integration's scope → 502, no leak.
+    const deps = fakeDeps({ bot: { openTicket: vi.fn(async () => ({ ok: true as const, ticketId: w.foreignTicket.id, channelId: snowflake(), created: true })) } })
+    const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody() }), deps)
+    expect(r.status).toBe(502)
+  })
+
+  it('limits opens to 10/min per key', async () => {
+    const w = await world()
+    const deps = fakeDeps({ bot: { openTicket: vi.fn(async () => ({ ok: false as const, status: 409 as const, code: 'opening_in_progress' as const })) } })
+    for (let i = 0; i < RATE.opensPerKeyPerMin; i++) {
+      expect((await handleOpenTicket(apiRequest('POST', '/x', { key: w.main.key, body: openBody() }), deps)).status).toBe(409)
+    }
+    expect((await handleOpenTicket(apiRequest('POST', '/x', { key: w.main.key, body: openBody() }), deps)).status).toBe(429)
+  })
+})
+
+describeDb('POST /api/v1/tickets/:id/messages', () => {
+  beforeEach(resetLimiters)
+
+  const post = (key: string, id: number, body: unknown, idem?: string, deps = fakeDeps()) =>
+    handlePostMessage(
+      apiRequest('POST', `/api/v1/tickets/${id}/messages`, { key, body, headers: idem ? { 'idempotency-key': idem } : {} }),
+      String(id),
+      deps,
+    )
+
+  it('requires a well-formed Idempotency-Key', async () => {
+    const w = await world()
+    expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' })).status).toBe(422)
+    expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'bad key!')).status).toBe(422)
+    expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x'.repeat(1801) }, 'k')).status).toBe(422)
+    expect((await post(w.main.key, w.ticket.id, { kind: 'shout', body: 'x' }, 'k')).status).toBe(422)
+  })
+
+  it('stores source=system, author_kind=integration and posts escaped text with the footer', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    const r = await post(w.main.key, w.ticket.id, { kind: 'system', body: '**Approved** @everyone', itemRef: 'Song #3' }, 'decision:1', deps)
+    expect(r.status).toBe(201)
+    const json = await r.json()
+    expect(json.created).toBe(true)
+    const [row] = await db.select().from(ticketMessages).where(eq(ticketMessages.id, json.messageId))
+    expect(row).toMatchObject({
+      source: 'system',
+      authorKind: 'integration',
+      idempotencyKey: 'decision:1',
+      authorUserId: null,
+      body: '**Approved** @everyone',
+      discordMessageId: json.discordMessageId,
+    })
+    expect(row!.metadata).toEqual({ integrationId: w.main.integration.id, itemRef: 'Song #3', actorDiscordId: null, kind: 'system' })
+    const call = vi.mocked(deps.discord.postWebhook).mock.calls[0]![0]
+    expect(call.content).toBe('\\*\\*Approved\\*\\* @​everyone\n-# via EFM Music · Song #3')
+    expect(call.allowedMentions).toEqual({ parse: [] })
+    expect(call.username).toBe('EFM Music')
+    expect(call.webhookUrl).toBe(w.ticket.discordWebhookUrl)
+  })
+
+  it('2 concurrent requests with the same key produce exactly 1 Discord post', async () => {
+    const w = await world()
+    let posts = 0
+    const deps = fakeDeps({
+      discord: {
+        postWebhook: vi.fn(async () => {
+          posts++
+          await new Promise((r) => setTimeout(r, 150))
+          return { id: snowflake() }
+        }),
+      },
+    })
+    const body = { kind: 'comment', body: 'Nice track' }
+    const [a, b] = await Promise.all([
+      post(w.main.key, w.ticket.id, body, 'same-key', deps),
+      post(w.main.key, w.ticket.id, body, 'same-key', deps),
+    ])
+    expect(posts).toBe(1)
+    const statuses = [a.status, b.status].sort()
+    expect(statuses).toEqual([200, 201])
+    const ja = await a.json()
+    const jb = await b.json()
+    expect(ja.messageId).toBe(jb.messageId)
+    const rows = await db
+      .select()
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, w.ticket.id), eq(ticketMessages.idempotencyKey, 'same-key')))
+    expect(rows).toHaveLength(1)
+    // A later replay also posts nothing and returns the stored Discord id.
+    const c = await post(w.main.key, w.ticket.id, body, 'same-key', deps)
+    expect(c.status).toBe(200)
+    expect((await c.json()).discordMessageId).toBe(rows[0]!.discordMessageId)
+    expect(posts).toBe(1)
+  })
+
+  it('re-posts a stored message that never reached Discord only once it is >30 s old', async () => {
+    const w = await world()
+    const failing = fakeDeps({
+      discord: {
+        postWebhook: vi.fn(async () => {
+          throw new DiscordHttpError(500, 'boom')
+        }),
+      },
+    })
+    const first = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'retry-me', failing)
+    expect(first.status).toBe(502)
+    expect(first.headers.get('Retry-After')).toBe('30')
+    const { messageId } = await first.json()
+
+    const ok = fakeDeps()
+    // Too young: no re-post.
+    const young = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'retry-me', ok)
+    expect(young.status).toBe(200)
+    expect((await young.json()).discordMessageId).toBeNull()
+    expect(ok.calls.posts).toBe(0)
+    // Age it past 30 s → exactly one re-post, even with two concurrent replays.
+    await db.execute(sql`UPDATE ticket_messages SET created_at = now() - interval '31 seconds' WHERE id = ${messageId}::uuid`)
+    const [r1, r2] = await Promise.all([
+      post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'retry-me', ok),
+      post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'retry-me', ok),
+    ])
+    expect(ok.calls.posts).toBe(1)
+    expect([r1.status, r2.status]).toEqual([200, 200])
+    const [row] = await db.select().from(ticketMessages).where(eq(ticketMessages.id, messageId))
+    expect(row!.discordMessageId).not.toBeNull()
+  })
+
+  it('ensures a webhook through the bot when the ticket has none, stores it, and forgets a deleted one', async () => {
+    const w = await world()
+    await db.update(tickets).set({ discordWebhookUrl: null, discordWebhookId: null }).where(eq(tickets.id, w.ticket.id))
+    const deps = fakeDeps()
+    const r = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'e1', deps)
+    expect(r.status).toBe(201)
+    expect(deps.bot.ensureWebhook).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id })
+    const [t] = await db.select().from(tickets).where(eq(tickets.id, w.ticket.id))
+    expect(t!.discordWebhookUrl).toMatch(/^https:\/\/discord\.com\/api\/v10\/webhooks\//)
+
+    const gone = fakeDeps({ discord: { postWebhook: vi.fn(async () => { throw new DiscordHttpError(404, 'Unknown Webhook') }) } })
+    expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'e2', gone)).status).toBe(502)
+    const [t2] = await db.select().from(tickets).where(eq(tickets.id, w.ticket.id))
+    expect(t2!.discordWebhookUrl).toBeNull()
+
+    const botDown = fakeDeps({ bot: { ensureWebhook: vi.fn(async () => { throw new BotUnavailableError('timeout') }) } })
+    const down = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'e3', botDown)
+    expect(down.status).toBe(502)
+    expect((await down.json()).error).toBe('bot_unavailable')
+  })
+
+  it('409s on a closed ticket (but still answers a replay of an accepted key)', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'before', deps)).status).toBe(201)
+    await db.update(tickets).set({ status: 'closed', closedAt: new Date() }).where(eq(tickets.id, w.ticket.id))
+    const r = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'after', deps)
+    expect(r.status).toBe(409)
+    expect((await r.json()).error).toBe('ticket_closed')
+    expect((await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'before', deps)).status).toBe(200)
+    expect(deps.calls.posts).toBe(1)
+  })
+
+  it('enforces the actorDiscordId rule (impersonation + live staff/opener role check)', async () => {
+    const w = await world()
+    const staffRole = w.cat.staffRoleIds
+    const staff = snowflake()
+    const member = (roles: string[], extra: Record<string, unknown> = {}) => ({
+      user: { id: staff, username: 'staffer', global_name: 'Staff Person', avatar: null },
+      nick: null,
+      roles,
+      ...extra,
+    })
+    const call = (deps: ReturnType<typeof fakeDeps>, actor: string, idem: string) =>
+      post(w.main.key, w.ticket.id, { kind: 'comment', body: 'hi', actorDiscordId: actor }, idem, deps)
+
+    // Not a member → 403; pending → 403; non-staff member → 403.
+    for (const [m, idem] of [
+      [null, 'a1'],
+      [member([staffRole], { pending: true }), 'a2'],
+      [member([snowflake()]), 'a3'],
+    ] as const) {
+      const deps = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => m as never) } })
+      const r = await call(deps, staff, idem)
+      expect(r.status, idem).toBe(403)
+      expect((await r.json()).error).toBe('actor_forbidden')
+      expect(deps.calls.posts).toBe(0)
+    }
+    // Staff for the category → posted as the actor's display name.
+    const ok = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => member([staffRole]) as never) } })
+    expect((await call(ok, staff, 'a4')).status).toBe(201)
+    expect(vi.mocked(ok.discord.postWebhook).mock.calls[0]![0].username).toBe('Staff Person')
+    // Team-wide staff and admin roles also count.
+    expect(staffRoleIdsForCategory({ staffRoleIds: 'T1', adminRoleIds: 'A1' }, { staffRoleIds: 'C1,C2' }).sort()).toEqual(['A1', 'C1', 'C2', 'T1'])
+    // The opener counts; a reserved-word name falls back to the integration name.
+    const opener = fakeDeps({
+      discord: {
+        fetchGuildMember: vi.fn(async () => ({ user: { id: w.opener.discordId, username: 'x', global_name: null, avatar: null }, nick: 'Discord King', roles: [] }) as never),
+      },
+    })
+    expect((await call(opener, w.opener.discordId, 'a5')).status).toBe(201)
+    expect(vi.mocked(opener.discord.postWebhook).mock.calls[0]![0].username).toBe('EFM Music')
+    const [row] = await db.select().from(ticketMessages).where(and(eq(ticketMessages.ticketId, w.ticket.id), eq(ticketMessages.idempotencyKey, 'a5')))
+    expect(row!.authorUserId).toBe(w.opener.id)
+    expect(row!.metadata).toMatchObject({ actorDiscordId: w.opener.discordId, kind: 'comment' })
+
+    // actor_impersonation off → 403 before any lookup.
+    await db.update(integrations).set({ actorImpersonation: false }).where(eq(integrations.id, w.main.integration.id))
+    const off = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => member([staffRole]) as never) } })
+    expect((await call(off, staff, 'a6')).status).toBe(403)
+    expect(off.discord.fetchGuildMember).not.toHaveBeenCalled()
+  })
+})
+
+describeDb('PATCH /api/v1/tickets/:id', () => {
+  beforeEach(resetLimiters)
+
+  const patch = (key: string, id: number, body: unknown, deps = fakeDeps()) =>
+    handlePatchTicket(apiRequest('PATCH', `/api/v1/tickets/${id}`, { key, body }), String(id), deps)
+
+  it('sets a workflow status, posts a footer, and audits via integration:<slug>', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    const r = await patch(w.main.key, w.ticket.id, { status: 'waiting' }, deps)
+    expect(r.status).toBe(200)
+    expect((await r.json()).status).toBe('waiting')
+    expect(deps.discord.postChannelStatus).toHaveBeenCalledTimes(1)
+    const logs = await db.select().from(auditLogs).where(eq(auditLogs.ticketId, w.ticket.id))
+    expect(logs.find((l) => l.action === 'status_changed')?.metadata).toEqual({
+      from: 'open',
+      to: 'waiting',
+      via: `integration:${w.main.integration.slug}`,
+    })
+    expect((await patch(w.main.key, w.ticket.id, { status: 'open' }, deps)).status).toBe(422)
+    expect((await patch(w.main.key, w.ticket.id, { status: 'waiting', x: 1 }, deps)).status).toBe(422)
+  })
+
+  it('closes through the bot, needs tickets:close, and 409s once closed', async () => {
+    const w = await world()
+    await db.update(integrations).set({ scopes: ['tickets:read', 'tickets:write'] }).where(eq(integrations.id, w.main.integration.id))
+    const deps = fakeDeps()
+    const noScope = await patch(w.main.key, w.ticket.id, { status: 'closed' }, deps)
+    expect(noScope.status).toBe(403)
+    expect(deps.bot.closeTicket).not.toHaveBeenCalled()
+
+    await db.update(integrations).set({ scopes: ['tickets:read', 'tickets:write', 'tickets:close'] }).where(eq(integrations.id, w.main.integration.id))
+    const closeTicket = vi.fn(async () => {
+      await db.update(tickets).set({ status: 'closed', closedAt: new Date() }).where(eq(tickets.id, w.ticket.id))
+      return { ok: true as const }
+    })
+    const closing = fakeDeps({ bot: { closeTicket } })
+    const r = await patch(w.main.key, w.ticket.id, { status: 'closed', reason: 'All songs decided' }, closing)
+    expect(r.status).toBe(200)
+    expect(closeTicket).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id, reason: 'All songs decided' })
+    const body = await r.json()
+    expect(body.status).toBe('closed')
+    expect(body.closedAt).not.toBeNull()
+
+    expect((await patch(w.main.key, w.ticket.id, { status: 'closed' }, closing)).status).toBe(409)
+    expect((await patch(w.main.key, w.ticket.id, { status: 'waiting' }, closing)).status).toBe(409)
+    expect(closeTicket).toHaveBeenCalledTimes(1)
+    const audit = await db.select().from(integrationAudit).where(eq(integrationAudit.integrationId, w.main.integration.id))
+    expect(audit.some((a) => a.action === 'ticket.closed')).toBe(true)
+    expect(JSON.stringify(audit)).not.toContain('etk.')
+  })
+
+  it('maps bot close answers and gates the close actor on actor_impersonation', async () => {
+    const w = await world()
+    expect(
+      (await patch(w.main.key, w.ticket.id, { status: 'closed' }, fakeDeps({ bot: { closeTicket: vi.fn(async () => ({ ok: false as const, status: 409 as const, code: 'already_closed' as const })) } }))).status,
+    ).toBe(409)
+    expect(
+      (await patch(w.main.key, w.ticket.id, { status: 'closed' }, fakeDeps({ bot: { closeTicket: vi.fn(async () => { throw new BotUnavailableError('timeout') }) } }))).status,
+    ).toBe(502)
+    await db.update(integrations).set({ actorImpersonation: false }).where(eq(integrations.id, w.main.integration.id))
+    const deps = fakeDeps()
+    expect((await patch(w.main.key, w.ticket.id, { status: 'closed', actorDiscordId: snowflake() }, deps)).status).toBe(403)
+    expect(deps.bot.closeTicket).not.toHaveBeenCalled()
+  })
+})
+
+describeDb('guild:read routes', () => {
+  beforeEach(resetLimiters)
+
+  it('lists guild roles (cached) and resolves members', async () => {
+    const w = await world()
+    await db.update(integrations).set({ scopes: ['guild:read'] }).where(eq(integrations.id, w.main.integration.id))
+    const roles = [{ id: snowflake(), name: 'EFM Managers', color: 5, position: 3, managed: false }]
+    const deps = fakeDeps({ discord: { fetchGuildRoles: vi.fn(async () => roles) } })
+    for (let i = 0; i < 3; i++) {
+      const r = await handleGuildRoles(apiRequest('GET', '/api/v1/guild/roles', { key: w.main.key }), deps)
+      expect(r.status).toBe(200)
+      expect(await r.json()).toEqual([{ id: roles[0]!.id, name: 'EFM Managers', color: 5, position: 3 }])
+    }
+    expect(deps.discord.fetchGuildRoles).toHaveBeenCalledTimes(1)
+
+    const m = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => ({ roles: ['1'], nick: null, pending: true }) as never) } })
+    const r = await handleMember(apiRequest('GET', '/x', { key: w.main.key }), snowflake(), m)
+    expect(await r.json()).toEqual({ member: true, pending: true, roleIds: ['1'] })
+    const none = await handleMember(apiRequest('GET', '/x', { key: w.main.key }), snowflake(), fakeDeps())
+    expect(await none.json()).toEqual({ member: false, pending: false, roleIds: [] })
+    expect((await handleMember(apiRequest('GET', '/x', { key: w.main.key }), 'abc', fakeDeps())).status).toBe(422)
+    // A tickets-only key cannot use guild:read.
+    expect((await handleGuildRoles(apiRequest('GET', '/x', { key: w.sibling.key }), deps)).status).toBe(200)
+    await db.update(integrations).set({ scopes: ['tickets:read'] }).where(eq(integrations.id, w.sibling.integration.id))
+    expect((await handleGuildRoles(apiRequest('GET', '/x', { key: w.sibling.key }), deps)).status).toBe(403)
+  })
+})
