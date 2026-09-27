@@ -1,4 +1,4 @@
-# Integration API (v0.12.0)
+# Integration API (v0.12.1)
 
 A general, multi-tenant way for other services to talk to the ticket system.
 Its first client is the EFM Music Portal: each music batch or request becomes
