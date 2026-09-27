@@ -478,10 +478,16 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
       post(w.main.key, w.ticket.id, body, 'same-key', deps),
     ])
     expect(posts).toBe(1)
-    const statuses = [a.status, b.status].sort()
-    expect(statuses).toEqual([200, 201])
-    const ja = await a.json()
-    const jb = await b.json()
+    // The duplicate that arrives while the first attempt is in flight is NOT
+    // told "done": 409 in_progress + Retry-After (only a Discord id means delivered).
+    const [winner, loser] = a.status === 201 ? [a, b] : [b, a]
+    expect(winner.status).toBe(201)
+    expect(loser.status).toBe(409)
+    expect(Number(loser.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1)
+    expect(Number(loser.headers.get('Retry-After'))).toBeLessThanOrEqual(30)
+    const ja = await winner.json()
+    const jb = await loser.json()
+    expect(jb.error).toBe('in_progress')
     expect(ja.messageId).toBe(jb.messageId)
     const rows = await db
       .select()
@@ -510,10 +516,11 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     const { messageId } = await first.json()
 
     const ok = fakeDeps()
-    // Too young: no re-post.
+    // Too young: no re-post, and no false success either.
     const young = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'retry-me', ok)
-    expect(young.status).toBe(200)
-    expect((await young.json()).discordMessageId).toBeNull()
+    expect(young.status).toBe(409)
+    expect(await young.json()).toEqual({ error: 'in_progress', messageId })
+    expect(Number(young.headers.get('Retry-After'))).toBeGreaterThanOrEqual(25)
     expect(ok.calls.posts).toBe(0)
     // Age it past 30 s → exactly one re-post, even with two concurrent replays.
     await db.execute(sql`UPDATE ticket_messages SET created_at = now() - interval '31 seconds' WHERE id = ${messageId}::uuid`)
@@ -522,7 +529,10 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
       post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'retry-me', ok),
     ])
     expect(ok.calls.posts).toBe(1)
-    expect([r1.status, r2.status]).toEqual([200, 200])
+    // The lease winner re-posts (200); the other either sees it delivered
+    // (200) or the lease still held (409 in_progress).
+    expect([r1.status, r2.status]).toContain(200)
+    for (const r of [r1, r2]) expect([200, 409]).toContain(r.status)
     const [row] = await db.select().from(ticketMessages).where(eq(ticketMessages.id, messageId))
     expect(row!.discordMessageId).not.toBeNull()
   })

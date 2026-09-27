@@ -73,7 +73,12 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
 
 **Order of operations:**
 1. `INSERT … ON CONFLICT (ticket_id, idempotency_key) DO NOTHING RETURNING`.
-2. On a conflict, return the stored row: `200 {messageId, discordMessageId, created:false}`. If that row never reached Discord and is more than 30 s old (DB clock), it is re-posted exactly once, under a conditional lease.
+2. On a conflict (a replay of the key):
+   - the stored row reached Discord → `200 {messageId, discordMessageId, created:false}`;
+   - it never reached Discord and is more than 30 s old (DB clock) → it is re-posted exactly once, under a conditional lease, and the lease winner gets `200 {…, created:false}`;
+   - it never reached Discord and the first attempt (or another replay's re-post) may still be in flight → `409 {"error":"in_progress","messageId"}` with `Retry-After` (seconds until a replay may re-post). Retry with the same key.
+
+   **Only a non-null `discordMessageId` means the message was delivered.**
 3. Otherwise post through the ticket channel's webhook. When the ticket has no webhook, web first calls the bot's `/webhook/ensure` and stores the URL.
 4. `UPDATE discord_message_id`. The response is `201 {messageId, discordMessageId, created:true}`.
 

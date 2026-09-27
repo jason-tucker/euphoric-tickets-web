@@ -580,6 +580,23 @@ async function deliverMessageRow(
   return { ok: true, discordMessageId: posted.id }
 }
 
+// For an undelivered message: its Discord id if it was delivered meanwhile,
+// else how long until a replay may take the re-post lease (DB clock).
+async function inFlightStatus(messageId: string): Promise<{ discordMessageId: string | null; retryAfterSec: number } | null> {
+  const [row] = await db
+    .select({
+      discordMessageId: ticketMessages.discordMessageId,
+      retryAfterSec: sql<number>`GREATEST(1, CEIL(GREATEST(
+        EXTRACT(EPOCH FROM (${ticketMessages.createdAt} + make_interval(secs => ${REPOST_AFTER_SEC}) - now())),
+        COALESCE(EXTRACT(EPOCH FROM ((${ticketMessages.metadata}->>'repostAt')::timestamptz + make_interval(secs => ${REPOST_AFTER_SEC}) - now())), 0)
+      )))::int`,
+    })
+    .from(ticketMessages)
+    .where(eq(ticketMessages.id, messageId))
+    .limit(1)
+  return row ? { discordMessageId: row.discordMessageId, retryAfterSec: Number(row.retryAfterSec) } : null
+}
+
 export async function handlePostMessage(req: Request, rawId: string, deps: ApiDeps = defaultApiDeps()): Promise<Response> {
   const auth = await authenticateIntegration(req, { scope: 'tickets:write' })
   if (!auth.ok) return auth.response
@@ -667,7 +684,16 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
         ),
       )
       .returning()
-    if (!leased) return apiJson(200, { messageId: existing.id, discordMessageId: existing.discordMessageId, created: false })
+    if (!leased) {
+      // No lease: either the first attempt is still in flight (row < 30 s
+      // old), another replay holds the re-post lease, or the row was just
+      // delivered. Only a non-null discordMessageId means "delivered"; an
+      // undelivered row is NOT reported as success (the in-flight attempt may
+      // still fail, and then nobody would retry).
+      const st = await inFlightStatus(existing.id)
+      if (st?.discordMessageId) return apiJson(200, { messageId: existing.id, discordMessageId: st.discordMessageId, created: false })
+      return apiError(409, 'in_progress', { 'Retry-After': String(st?.retryAfterSec ?? REPOST_AFTER_SEC) }, { messageId: existing.id })
+    }
     const repost = await deliverMessageRow(ctx, ticket, leased, identity, deps)
     if (!repost.ok) return repost.response
     return apiJson(200, { messageId: existing.id, discordMessageId: repost.discordMessageId, created: false })
