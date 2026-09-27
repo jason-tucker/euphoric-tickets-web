@@ -215,6 +215,9 @@ async function checkActor(
 
 // ---- POST /api/v1/tickets -----------------------------------------------------
 
+// Leaves ~2.5 KB of the bot's 16 KB cap for the integration id/slug/name/business id.
+export const BOT_BODY_BUDGET = 13_500
+
 const openSchema = z
   .object({
     categoryKey: z.string().min(1).max(64),
@@ -230,6 +233,13 @@ const openSchema = z
     externalRef: REF(100),
   })
   .strict()
+  // The bot's internal routes cap bodies at 16 KB (plan §4.4); 25 lines of
+  // 200 multi-byte chars can exceed that, so bound the forwarded payload here
+  // (422) instead of surfacing the bot's refusal as a 502.
+  .refine((v) => Buffer.byteLength(JSON.stringify(v), 'utf8') <= BOT_BODY_BUDGET, {
+    message: `request too large for the bot bridge (max ${BOT_BODY_BUDGET} bytes of UTF-8 JSON)`,
+    path: ['card'],
+  })
 
 export async function handleOpenTicket(req: Request, deps: ApiDeps = defaultApiDeps()): Promise<Response> {
   const auth = await authenticateIntegration(req, { scope: 'tickets:write', open: true })

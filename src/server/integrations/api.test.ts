@@ -176,6 +176,8 @@ describeDb('POST /api/v1/tickets (open)', () => {
       openBody({ card: { title: 't', lines: Array(26).fill('l'), link: { label: 'l', url: 'https://music.test/' } } }),
       openBody({ card: { title: 't', lines: ['x'.repeat(201)], link: { label: 'l', url: 'https://music.test/' } } }),
       openBody({ card: { title: 't', lines: [], link: { label: 'x'.repeat(41), url: 'https://music.test/' } } }),
+      // Within every per-field limit but over the bot's 16 KB body cap in UTF-8.
+      openBody({ card: { title: 't', lines: Array(25).fill('♪'.repeat(200)), link: { label: 'l', url: 'https://music.test/' } } }),
     ]
     for (const body of bad) {
       const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)
