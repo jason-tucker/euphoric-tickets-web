@@ -184,6 +184,48 @@ describeDb('admin integration actions', () => {
     expect(b!.integrationOnly).toBe(false)
   })
 
+  it('toggles ping_staff_on_open only for categories of the integration’s own team, and audits it', async () => {
+    const biz = await makeBusiness()
+    const other = await makeBusiness()
+    const own = await makeCategory(biz.id, 'newsong', { integrationOnly: true })
+    const foreign = await makeCategory(other.id, 'newsong')
+    // Column default keeps the existing behaviour (ping staff).
+    expect(own.pingStaffOnOpen).toBe(true)
+    const created = await actions.createIntegrationAction(null, form({ businessId: biz.id, name: 'EFM', slug: rand('efm'), allowedCategoryKeys: '' }))
+    if (!created?.ok) throw new Error('create failed')
+    await actions.setCategoryPingStaffOnOpenAction(created.id, form({ categoryId: own.id, pingStaffOnOpen: 'false' }))
+    await expect(actions.setCategoryPingStaffOnOpenAction(created.id, form({ categoryId: foreign.id, pingStaffOnOpen: 'false' }))).rejects.toThrow()
+    await expect(actions.setCategoryPingStaffOnOpenAction(created.id, form({ categoryId: 'nope', pingStaffOnOpen: 'false' }))).rejects.toThrow()
+    const [a] = await db.select().from(ticketCategories).where(eq(ticketCategories.id, own.id))
+    const [b] = await db.select().from(ticketCategories).where(eq(ticketCategories.id, foreign.id))
+    expect(a!.pingStaffOnOpen).toBe(false)
+    expect(a!.integrationOnly).toBe(true)
+    expect(b!.pingStaffOnOpen).toBe(true)
+    const audits = await db.select().from(integrationAudit).where(eq(integrationAudit.integrationId, created.id))
+    const entry = audits.find((r) => r.action === 'category.ping_staff_on_open')
+    expect(entry?.metadata).toMatchObject({ categoryId: own.id, key: 'newsong', pingStaffOnOpen: false })
+
+    await actions.setCategoryPingStaffOnOpenAction(created.id, form({ categoryId: own.id, pingStaffOnOpen: 'true' }))
+    const [c] = await db.select().from(ticketCategories).where(eq(ticketCategories.id, own.id))
+    expect(c!.pingStaffOnOpen).toBe(true)
+  })
+
+  it('refuses the ping toggle without sudo', async () => {
+    const biz = await makeBusiness()
+    const cat = await makeCategory(biz.id, 'songedit')
+    const created = await actions.createIntegrationAction(null, form({ businessId: biz.id, name: 'EFM', slug: rand('efm'), allowedCategoryKeys: '' }))
+    if (!created?.ok) throw new Error('create failed')
+    const prev = sudo.userId
+    sudo.userId = null
+    try {
+      await expect(actions.setCategoryPingStaffOnOpenAction(created.id, form({ categoryId: cat.id, pingStaffOnOpen: 'false' }))).rejects.toThrow('NEXT_REDIRECT')
+    } finally {
+      sudo.userId = prev
+    }
+    const [row] = await db.select().from(ticketCategories).where(eq(ticketCategories.id, cat.id))
+    expect(row!.pingStaffOnOpen).toBe(true)
+  })
+
   it('disabling an integration makes its key stop authenticating', async () => {
     const biz = await makeBusiness()
     const opener = await makeUser()

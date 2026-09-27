@@ -122,6 +122,9 @@ const categorySchema = z.object({
   // Staff-only destination — hidden from the open-ticket flow (web + bot),
   // but still selectable in the staff change-category dropdown.
   staffOnly: z.boolean().optional(),
+  // Ping this category's staff roles in the ticket-open message (default on).
+  // Off = the bot pings only the opener; staff keep channel access.
+  pingStaffOnOpen: z.boolean().optional(),
   // Default ticket kind for tickets opened in this category. Replaces the
   // per-ticket Type picker that used to live on /t/new.
   kind: z.enum(['normal', 'project']).optional(),
@@ -145,6 +148,7 @@ function readCategoryFields(formData: FormData) {
     staffRoleIds: String(formData.get('staffRoleIds') ?? '').trim().replace(/\s+/g, ''),
     firstMessageTemplate: norm('firstMessageTemplate'),
     staffOnly: formData.get('staffOnly') != null,
+    pingStaffOnOpen: formData.get('pingStaffOnOpen') != null,
     kind: (formData.get('kind') === 'project' ? 'project' : 'normal') as 'normal' | 'project',
   }
 }
@@ -169,6 +173,7 @@ export async function addCategoryAction(slug: string, formData: FormData): Promi
     staffRoleIds: parsed.data.staffRoleIds ?? '',
     firstMessageTemplate: parsed.data.firstMessageTemplate ?? null,
     staffOnly: parsed.data.staffOnly ?? false,
+    pingStaffOnOpen: parsed.data.pingStaffOnOpen ?? true,
     kind: parsed.data.kind ?? 'normal',
   })
 
@@ -201,6 +206,7 @@ export async function updateCategoryAction(
       staffRoleIds: parsed.data.staffRoleIds ?? '',
       firstMessageTemplate: parsed.data.firstMessageTemplate ?? null,
       staffOnly: parsed.data.staffOnly ?? false,
+      pingStaffOnOpen: parsed.data.pingStaffOnOpen ?? true,
       kind: parsed.data.kind ?? 'normal',
     })
     .where(and(eq(ticketCategories.id, categoryId), eq(ticketCategories.businessId, business.id)))

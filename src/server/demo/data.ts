@@ -39,6 +39,7 @@ export type DemoCategory = {
   staffRoleIds: string
   firstMessageTemplate: string | null
   staffOnly: boolean
+  pingStaffOnOpen: boolean
   kind: TicketKind
 }
 
@@ -153,14 +154,14 @@ const GUILDS: { name: string; teams: { slug: string; name: string; tickettool?: 
 ]
 
 const CATEGORY_TEMPLATES: Omit<DemoCategory, 'id' | 'businessId' | 'discordParentCategoryId' | 'discordClosedCategoryId' | 'allowRoleIds' | 'staffRoleIds'>[] = [
-  { key: 'support', label: 'General Support', emoji: '💬', description: 'Anything that doesn’t fit elsewhere.', sortOrder: '0', firstMessageTemplate: 'Thanks {{user}} — a team member will be with you shortly. (Ticket #{{ticketId}})', staffOnly: false, kind: 'normal' },
-  { key: 'billing', label: 'Billing', emoji: '💳', description: 'Charges, refunds, and subscriptions.', sortOrder: '1', firstMessageTemplate: null, staffOnly: false, kind: 'normal' },
-  { key: 'technical', label: 'Technical Issue', emoji: '🛠️', description: 'Bugs, errors, and outages.', sortOrder: '2', firstMessageTemplate: null, staffOnly: false, kind: 'normal' },
-  { key: 'account', label: 'Account & Access', emoji: '🔐', description: 'Login, passwords, and permissions.', sortOrder: '3', firstMessageTemplate: null, staffOnly: false, kind: 'normal' },
-  { key: 'feedback', label: 'Feedback', emoji: '✨', description: 'Feature requests and ideas.', sortOrder: '4', firstMessageTemplate: null, staffOnly: false, kind: 'normal' },
-  { key: 'projects', label: 'Projects', emoji: '📦', description: 'Long-running work with sub-tickets.', sortOrder: '5', firstMessageTemplate: null, staffOnly: false, kind: 'project' },
-  { key: 'partnerships', label: 'Partnerships', emoji: '🤝', description: 'Collabs and business enquiries.', sortOrder: '6', firstMessageTemplate: null, staffOnly: false, kind: 'normal' },
-  { key: 'archive', label: 'Triage / Archive', emoji: '🗂️', description: 'Staff-only landing zone.', sortOrder: '9', firstMessageTemplate: null, staffOnly: true, kind: 'normal' },
+  { key: 'support', label: 'General Support', emoji: '💬', description: 'Anything that doesn’t fit elsewhere.', sortOrder: '0', firstMessageTemplate: 'Thanks {{user}} — a team member will be with you shortly. (Ticket #{{ticketId}})', staffOnly: false, pingStaffOnOpen: true, kind: 'normal' },
+  { key: 'billing', label: 'Billing', emoji: '💳', description: 'Charges, refunds, and subscriptions.', sortOrder: '1', firstMessageTemplate: null, staffOnly: false, pingStaffOnOpen: true, kind: 'normal' },
+  { key: 'technical', label: 'Technical Issue', emoji: '🛠️', description: 'Bugs, errors, and outages.', sortOrder: '2', firstMessageTemplate: null, staffOnly: false, pingStaffOnOpen: true, kind: 'normal' },
+  { key: 'account', label: 'Account & Access', emoji: '🔐', description: 'Login, passwords, and permissions.', sortOrder: '3', firstMessageTemplate: null, staffOnly: false, pingStaffOnOpen: true, kind: 'normal' },
+  { key: 'feedback', label: 'Feedback', emoji: '✨', description: 'Feature requests and ideas.', sortOrder: '4', firstMessageTemplate: null, staffOnly: false, pingStaffOnOpen: true, kind: 'normal' },
+  { key: 'projects', label: 'Projects', emoji: '📦', description: 'Long-running work with sub-tickets.', sortOrder: '5', firstMessageTemplate: null, staffOnly: false, pingStaffOnOpen: true, kind: 'project' },
+  { key: 'partnerships', label: 'Partnerships', emoji: '🤝', description: 'Collabs and business enquiries.', sortOrder: '6', firstMessageTemplate: null, staffOnly: false, pingStaffOnOpen: true, kind: 'normal' },
+  { key: 'archive', label: 'Triage / Archive', emoji: '🗂️', description: 'Staff-only landing zone.', sortOrder: '9', firstMessageTemplate: null, staffOnly: true, pingStaffOnOpen: true, kind: 'normal' },
 ]
 
 const SUBJECTS = [

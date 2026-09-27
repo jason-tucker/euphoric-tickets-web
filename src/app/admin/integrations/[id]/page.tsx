@@ -30,6 +30,7 @@ import {
   rotateKeyAction,
   rotateSecretAction,
   setCategoryIntegrationOnlyAction,
+  setCategoryPingStaffOnOpenAction,
   setEnabledAction,
   setWebhookUrlAction,
   updateIntegrationAction,
@@ -235,13 +236,14 @@ export default async function AdminIntegrationPage({ params }: { params: Promise
             <CardTitle className="text-base">Integration-only categories</CardTitle>
             <CardDescription>
               An integration-only category is hidden from the web &quot;Open a ticket&quot; form and refused on Discord
-              panels; only an integration can open tickets in it.
+              panels; only an integration can open tickets in it. &quot;Staff ping&quot; controls whether the bot&apos;s
+              ticket-open message pings the category&apos;s staff roles; off pings only the opener (staff keep access).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {cats.length === 0 && <p className="text-sm text-muted-foreground">This team has no categories.</p>}
             {cats.map((c) => (
-              <form key={c.id} action={setCategoryIntegrationOnlyAction.bind(null, integ.id)} className="flex items-center justify-between gap-3">
+              <div key={c.id} className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-sm">
                   {c.emoji ? `${c.emoji} ` : ''}
                   {c.label} <code className="text-xs text-muted-foreground">{c.key}</code>
@@ -250,13 +252,27 @@ export default async function AdminIntegrationPage({ params }: { params: Promise
                       integration-only
                     </Badge>
                   )}
+                  <Badge variant={c.pingStaffOnOpen ? 'secondary' : 'outline'} className="ml-2">
+                    {c.pingStaffOnOpen ? 'staff ping: on' : 'staff ping: off'}
+                  </Badge>
                 </span>
-                <input type="hidden" name="categoryId" value={c.id} />
-                <input type="hidden" name="integrationOnly" value={c.integrationOnly ? 'false' : 'true'} />
-                <SubmitButton size="sm" variant="outline" pendingChildren="…">
-                  {c.integrationOnly ? 'Allow normal opens' : 'Make integration-only'}
-                </SubmitButton>
-              </form>
+                <div className="flex flex-wrap gap-2">
+                  <form action={setCategoryPingStaffOnOpenAction.bind(null, integ.id)}>
+                    <input type="hidden" name="categoryId" value={c.id} />
+                    <input type="hidden" name="pingStaffOnOpen" value={c.pingStaffOnOpen ? 'false' : 'true'} />
+                    <SubmitButton size="sm" variant="outline" pendingChildren="…">
+                      {c.pingStaffOnOpen ? 'Stop pinging staff' : 'Ping staff on open'}
+                    </SubmitButton>
+                  </form>
+                  <form action={setCategoryIntegrationOnlyAction.bind(null, integ.id)}>
+                    <input type="hidden" name="categoryId" value={c.id} />
+                    <input type="hidden" name="integrationOnly" value={c.integrationOnly ? 'false' : 'true'} />
+                    <SubmitButton size="sm" variant="outline" pendingChildren="…">
+                      {c.integrationOnly ? 'Allow normal opens' : 'Make integration-only'}
+                    </SubmitButton>
+                  </form>
+                </div>
+              </div>
             ))}
           </CardContent>
         </Card>

@@ -354,3 +354,30 @@ export async function setCategoryIntegrationOnlyAction(id: string, formData: For
   })
   revalidatePath(`/admin/integrations/${row.id}`)
 }
+
+// Toggle ticket_categories.ping_staff_on_open for a category of the
+// integration's team (v0.12.3). Off = the bot's ticket-open message pings only
+// the opener, not the category's staff roles (staff keep channel access).
+// Same guards as the integration_only toggle: sudo re-checked, category must
+// belong to the integration's team, audited.
+export async function setCategoryPingStaffOnOpenAction(id: string, formData: FormData): Promise<void> {
+  const session = await requireSudo()
+  const row = await loadIntegration(id)
+  const categoryId = String(formData.get('categoryId') ?? '')
+  if (!UUID_RE.test(categoryId)) throw new Error('Bad category id')
+  const value = String(formData.get('pingStaffOnOpen') ?? '') === 'true'
+  const [updated] = await db
+    .update(ticketCategories)
+    .set({ pingStaffOnOpen: value })
+    .where(and(eq(ticketCategories.id, categoryId), eq(ticketCategories.businessId, row.businessId)))
+    .returning({ key: ticketCategories.key })
+  if (!updated) throw new Error('Category not found in this team')
+  await writeIntegrationAudit({
+    integrationId: row.id,
+    businessId: row.businessId,
+    actorUserId: session.user.id,
+    action: 'category.ping_staff_on_open',
+    metadata: { categoryId, key: updated.key, pingStaffOnOpen: value },
+  })
+  revalidatePath(`/admin/integrations/${row.id}`)
+}

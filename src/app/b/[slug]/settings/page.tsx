@@ -285,6 +285,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                         <div className="text-xs text-muted-foreground">
                           <span className="font-mono">{c.key}</span>
                           {c.integrationOnly ? <> · integration-only</> : null}
+                          {!c.pingStaffOnOpen ? <> · no staff ping</> : null}
                           {c.description ? <> — {c.description}</> : null}
                         </div>
                       </div>
@@ -381,6 +382,7 @@ function CategoryFormFields({
     staffRoleIds: string
     firstMessageTemplate: string | null
     staffOnly: boolean
+    pingStaffOnOpen: boolean
     kind: 'normal' | 'project'
   }
   guildId: string
@@ -516,6 +518,23 @@ function CategoryFormFields({
               into it from the ticket detail page. Useful for triage/archive landing zones.
             </p>
           </div>
+        </div>
+      </div>
+      <div className="flex items-start gap-3 rounded-md border border-input bg-background/40 p-3">
+        <input
+          id={`${idPrefix}pingStaffOnOpen`}
+          name="pingStaffOnOpen"
+          type="checkbox"
+          defaultChecked={v ? v.pingStaffOnOpen : true}
+          className="mt-0.5 h-4 w-4 rounded border-input accent-foreground"
+        />
+        <div className="space-y-0.5">
+          <Label htmlFor={`${idPrefix}pingStaffOnOpen`} className="cursor-pointer">Ping staff roles when a ticket opens</Label>
+          <p className="text-xs text-muted-foreground">
+            On: the bot&apos;s ticket-open message pings the opener and every staff role of this category.
+            Off: it pings only the opener — staff still see and can work the ticket, they just don&apos;t get a
+            notification for every new one. Turn off for high-volume categories.
+          </p>
         </div>
       </div>
       <div className="space-y-1">
