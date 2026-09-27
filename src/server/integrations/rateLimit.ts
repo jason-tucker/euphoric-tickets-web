@@ -119,6 +119,40 @@ export class SlidingWindowLimiter {
   }
 }
 
+// ---- recently-valid key prefixes (failed-auth brake pre-check) ---------------
+//
+// A small bounded LRU of key prefixes that recently authenticated. While a
+// client bucket is braked, a request whose prefix is NOT in this set is
+// answered 429 before any DB lookup (auth.ts), so a garbage flood from a
+// braked bucket costs no database work. Membership only lets a request reach
+// the normal full verification; it never authenticates anything.
+
+export class PrefixLru {
+  private readonly items = new Map<string, true>()
+  constructor(private readonly capacity: number) {}
+
+  get size(): number {
+    return this.items.size
+  }
+
+  has(prefix: string): boolean {
+    if (!this.items.has(prefix)) return false
+    this.items.delete(prefix) // refresh recency
+    this.items.set(prefix, true)
+    return true
+  }
+
+  add(prefix: string): void {
+    this.items.delete(prefix)
+    this.items.set(prefix, true)
+    while (this.items.size > this.capacity) {
+      const oldest = this.items.keys().next().value
+      if (oldest === undefined) break
+      this.items.delete(oldest)
+    }
+  }
+}
+
 // ---- client bucket for the failed-auth brake --------------------------------
 //
 // Choice (documented in docs/INTEGRATION_API.md): tickets-web cannot see the
@@ -215,6 +249,13 @@ export const RATE = {
   // failures (or of distinct buckets) cannot grow the table without bound.
   authAuditPerMinGlobal: 10,
   authAuditMaxBuckets: 1_000,
+  // Recently-valid prefix LRU for the brake pre-check. When a braked bucket
+  // presents a prefix the LRU does not know (cold start, or a key not used
+  // lately), the LRU is re-seeded from the enabled integrations' prefixes —
+  // one query, at most once per validPrefixSeedMinIntervalMs — so a valid key
+  // is still never braked.
+  validPrefixCapacity: 1_024,
+  validPrefixSeedMinIntervalMs: 5_000,
 } as const
 
 type Limiters = {
@@ -223,6 +264,9 @@ type Limiters = {
   authFail: SlidingWindowLimiter
   authAudit: SlidingWindowLimiter
   authAuditGlobal: SlidingWindowLimiter
+  validPrefixes: PrefixLru
+  // Date.now() of the last validPrefixes seed from the DB (0 = never).
+  validPrefixSeed: { at: number }
 }
 
 declare global {
@@ -240,6 +284,8 @@ export function limiters(): Limiters {
       }),
       authAudit: new SlidingWindowLimiter(1, 60_000, Date.now, { maxKeys: RATE.authAuditMaxBuckets }),
       authAuditGlobal: new SlidingWindowLimiter(RATE.authAuditPerMinGlobal, 60_000, Date.now, { maxKeys: 1 }),
+      validPrefixes: new PrefixLru(RATE.validPrefixCapacity),
+      validPrefixSeed: { at: 0 },
     }
   }
   return globalThis.__integrationLimiters

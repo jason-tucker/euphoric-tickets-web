@@ -5,6 +5,11 @@
 //      alias gets a bare 404 before anything else;
 //   1. parse `Authorization: Bearer etk.<prefix>.<secret>`. A missing or
 //      malformed header costs no DB round-trip;
+//   1b. brake pre-check: when the client bucket is ALREADY braked and the
+//      prefix is not a recently-valid one (rateLimit.ts PrefixLru, re-seeded
+//      from the enabled integrations at most every few seconds on a miss),
+//      answer 429 with no per-request DB lookup. A valid key's prefix is
+//      always found (LRU or seed), so it still reaches full verification;
 //   2. look the prefix up (only for a well-formed header); ALWAYS one sha256
 //      + one timingSafeEqual (a dummy compare when the prefix is unknown or
 //      the header is malformed);
@@ -23,7 +28,7 @@ import { eq, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { businesses, integrations, type Business, type Integration, type IntegrationScope } from '@/db/schema'
 import { parseAuthorizationHeader, verifySecret } from './keys'
-import { clientBucket, limiters } from './rateLimit'
+import { clientBucket, limiters, RATE } from './rateLimit'
 import { writeIntegrationAudit } from './audit'
 import { apiError } from './http'
 import { isInternalApiRequest, notFoundResponse } from './internalHost'
@@ -42,6 +47,9 @@ export async function authenticateIntegration(
   const lim = limiters()
 
   const parsed = parseAuthorizationHeader(req.headers.get('authorization'))
+  if (!lim.authFail.check(clientBucket(req.headers)).allowed && !(await mayBeValidPrefix(parsed?.prefix))) {
+    return { ok: false, response: await authFailure(req, parsed ? 'unverified_while_braked' : 'missing_or_malformed') }
+  }
   let row: Integration | undefined
   if (parsed) {
     ;[row] = await db.select().from(integrations).where(eq(integrations.keyPrefix, parsed.prefix)).limit(1)
@@ -53,6 +61,7 @@ export async function authenticateIntegration(
     const reason: AuthFailureReason = !parsed ? 'missing_or_malformed' : !row ? 'unknown_prefix' : !secretOk ? 'bad_secret' : 'disabled'
     return { ok: false, response: await authFailure(req, reason, row) }
   }
+  lim.validPrefixes.add(row.keyPrefix)
 
   const perKey = lim.perKey.hit(row.id)
   if (!perKey.allowed) {
@@ -86,7 +95,34 @@ export async function authenticateIntegration(
   return { ok: true, ctx: { integration: row, business } }
 }
 
-type AuthFailureReason = 'missing_or_malformed' | 'unknown_prefix' | 'bad_secret' | 'disabled' | 'business_missing'
+type AuthFailureReason =
+  | 'missing_or_malformed'
+  | 'unknown_prefix'
+  | 'bad_secret'
+  | 'disabled'
+  | 'business_missing'
+  | 'unverified_while_braked'
+
+// Brake pre-check: could this prefix belong to a valid key? True when it is in
+// the recently-valid LRU. On a miss, re-seed the LRU from the enabled
+// integrations (one small query, at most once per validPrefixSeedMinIntervalMs
+// per process), so a key that has not been used lately — or at all since a
+// restart — is never braked. Everything else costs no DB work.
+async function mayBeValidPrefix(prefix: string | undefined): Promise<boolean> {
+  if (!prefix) return false
+  const lim = limiters()
+  if (lim.validPrefixes.has(prefix)) return true
+  const now = Date.now()
+  if (now - lim.validPrefixSeed.at < RATE.validPrefixSeedMinIntervalMs) return false
+  lim.validPrefixSeed.at = now // before the await: concurrent misses don't stampede
+  const rows = await db
+    .select({ keyPrefix: integrations.keyPrefix })
+    .from(integrations)
+    .where(eq(integrations.enabled, true))
+    .limit(RATE.validPrefixCapacity)
+  for (const r of rows) lim.validPrefixes.add(r.keyPrefix)
+  return lim.validPrefixes.has(prefix)
+}
 
 // A failed authentication: record it against the client bucket and answer
 // 401, or 429 once the bucket is over the brake. Refused (429) hits are not

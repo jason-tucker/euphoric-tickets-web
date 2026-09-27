@@ -97,6 +97,44 @@ describeDb('Integration API — auth', () => {
     expect(ok.status).toBe(200)
   })
 
+  it('braked bucket: an unknown prefix is refused before any DB lookup; recently-valid and seeded prefixes still verify', async () => {
+    const w = await world()
+    const bad = (i: number) => `etk.${String(i).padStart(10, 'Q')}.${'A'.repeat(43)}`
+    for (let i = 0; i < RATE.authFailuresPerBucket; i++) {
+      expect((await handleGetTicket(apiRequest('GET', '/x', { key: bad(i) }), '1')).status).toBe(401)
+    }
+    // Cold start (empty LRU) while braked: the valid key is found by the
+    // one-off seed of enabled prefixes and succeeds.
+    const lim = globalThis.__integrationLimiters!
+    expect(lim.validPrefixes.size).toBe(0)
+    expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))).status).toBe(200)
+    expect(lim.validPrefixes.size).toBeGreaterThan(0)
+
+    // A flood of unknown prefixes from the braked bucket: 429, zero DB selects.
+    const select = vi.spyOn(db, 'select')
+    try {
+      for (let i = 0; i < 50; i++) {
+        const r = await handleGetTicket(apiRequest('GET', '/x', { key: bad(1000 + i) }), '1')
+        expect(r.status).toBe(429)
+        expect(Number(r.headers.get('Retry-After'))).toBeGreaterThan(0)
+      }
+      // Header-less / malformed: also 429 with no lookup.
+      expect((await handleGetTicket(apiRequest('GET', '/x', {}), '1')).status).toBe(429)
+      expect((await handleGetTicket(apiRequest('GET', '/x', { key: 'garbage' }), '1')).status).toBe(429)
+      expect(select).not.toHaveBeenCalled()
+    } finally {
+      select.mockRestore()
+    }
+
+    // Valid keys are never braked: the recently-valid one, and a sibling
+    // that was seeded (never used) — both reach full verification.
+    expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))).status).toBe(200)
+    expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.sibling.key }), String(w.siblingTicket.id))).status).toBe(200)
+    // A known prefix with a wrong secret is verified (DB lookup) and still braked.
+    const wrongSecret = w.main.key.slice(0, -1) + (w.main.key.endsWith('A') ? 'B' : 'A')
+    expect((await handleGetTicket(apiRequest('GET', '/x', { key: wrongSecret }), String(w.ticket.id))).status).toBe(429)
+  })
+
   it('with INTEGRATION_TRUST_PROXY_HEADERS: per-IP buckets, and a spoofed victim IP cannot lock the victim out', async () => {
     const w = await world()
     process.env.INTEGRATION_TRUST_PROXY_HEADERS = '1'
