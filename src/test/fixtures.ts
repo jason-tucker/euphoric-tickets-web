@@ -119,7 +119,7 @@ export function apiRequest(
   path: string,
   opts: { key?: string; body?: unknown; headers?: Record<string, string>; ip?: string } = {},
 ): Request {
-  const headers: Record<string, string> = { 'x-forwarded-for': opts.ip ?? '10.9.8.7', ...(opts.headers ?? {}) }
+  const headers: Record<string, string> = { host: 'tickets-web:3000', 'x-forwarded-for': opts.ip ?? '10.9.8.7', ...(opts.headers ?? {}) }
   if (opts.key) headers.authorization = `Bearer ${opts.key}`
   let body: string | undefined
   if (opts.body !== undefined) {

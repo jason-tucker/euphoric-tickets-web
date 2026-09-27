@@ -1,6 +1,8 @@
 // Integration API authentication + scoping (plan §4.2).
 //
 // Order (every /api/v1/* request):
+//   0. internal-host gate (internalHost.ts): a Host that is not an internal
+//      alias gets a bare 404 before anything else;
 //   1. parse `Authorization: Bearer etk.<prefix>.<secret>`. A missing or
 //      malformed header costs no DB round-trip;
 //   2. look the prefix up (only for a well-formed header); ALWAYS one sha256
@@ -23,6 +25,7 @@ import { businesses, integrations, type Business, type Integration, type Integra
 import { parseAuthorizationHeader, verifySecret } from './keys'
 import { clientBucket, limiters } from './rateLimit'
 import { apiError } from './http'
+import { isInternalApiRequest, notFoundResponse } from './internalHost'
 
 export type IntegrationContext = { integration: Integration; business: Business }
 
@@ -34,6 +37,7 @@ export async function authenticateIntegration(
   req: Request,
   opts: { scope: IntegrationScope; open?: boolean },
 ): Promise<AuthResult> {
+  if (!isInternalApiRequest(req.headers)) return { ok: false, response: notFoundResponse() }
   const lim = limiters()
 
   const parsed = parseAuthorizationHeader(req.headers.get('authorization'))

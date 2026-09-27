@@ -9,6 +9,8 @@ Design source: the vault plan "EFM Music Portal — Plan" §4 (v3.2, approved). 
 
 **Reachability:** `/api/v1/*` is meant for the internal docker networks only. The edge must return 404 for `^/api/(internal|v1)/` (plan §4.6 P1d). There is no browser or CORS surface.
 
+**In-app host gate (defense in depth, before P1d):** every `/api/v1/*` request whose `Host` header is not listed in `INTERNAL_API_HOSTS` gets a bare `404` before any key work. The default is `tickets-web:3000,tickets-web` (the internal alias the music worker and the staging stack use). Requests through the public tunnel or Caddy carry `Host: tickets.euphoric.fm` / `tickets.euphoric.gg`, which an external caller cannot change into the internal alias through those proxies. Only `Host` is read, never `X-Forwarded-Host`. Assumption: neither proxy rewrites `Host` to the internal alias. To call the API through a published port for local testing (for example staging's `127.0.0.1:16095`), set `INTERNAL_API_HOSTS=tickets-web:3000,tickets-web,127.0.0.1:16095`; the variable replaces the list, and a blank value means the default. `/api/internal/*` is **not** gated this way yet, because the bot still reaches `/api/internal/notify` through the public URL until it deploys `WEB_INTERNAL_URL`; that gate is P1d.
+
 ---
 
 ## Authentication
@@ -189,6 +191,7 @@ X-Euphoric-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, `${t}.${deliveryId}.$
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| Every call `404` (even with a valid key) | the request's `Host` is not in `INTERNAL_API_HOSTS` | call `http://tickets-web:3000/…` on the docker network, or add the host you use to `INTERNAL_API_HOSTS` |
 | Every call `401` | wrong key, key rotated, or integration disabled | re-issue the key on `/admin/integrations` |
 | `429 rate_limited` on requests with a bad key | 20+ failed auths from that bucket in 10 min (by default all failures share one bucket) | fix the caller's key; valid keys are never braked, and the window clears in 10 min |
 | Opens return `502 bot_unavailable` | `INTERNAL_TOKEN` or `BOT_INTERNAL_URL` unset or mismatched, bot down, or guild unavailable | check the bot's health and both `.env` files |

@@ -144,6 +144,41 @@ describeDb('Integration API — auth', () => {
     expect(s.status).toBe(200)
   })
 
+  it('404s /api/v1 unless the Host is an internal alias (public tunnel/Caddy Host, even with a valid key)', async () => {
+    const w = await world()
+    const deps = fakeDeps()
+    for (const host of ['tickets.euphoric.fm', 'tickets.euphoric.gg', '127.0.0.1:16095']) {
+      const headers = { host }
+      const get = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key, headers }), String(w.ticket.id))
+      expect(get.status, host).toBe(404)
+      expect(await get.text()).toBe('')
+      const open = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody(), headers }), deps)
+      expect(open.status).toBe(404)
+      const msg = await handlePostMessage(
+        apiRequest('POST', '/x', { key: w.main.key, body: { kind: 'system', body: 'x' }, headers: { ...headers, 'idempotency-key': 'h1' } }),
+        String(w.ticket.id),
+        deps,
+      )
+      expect(msg.status).toBe(404)
+      const roles = await handleGuildRoles(apiRequest('GET', '/x', { key: w.main.key, headers }), deps)
+      expect(roles.status).toBe(404)
+    }
+    expect(deps.bot.openTicket).not.toHaveBeenCalled()
+    expect(deps.calls.posts).toBe(0)
+    // Rejected hosts are not counted as auth failures.
+    expect(globalThis.__integrationLimiters?.authFail.size ?? 0).toBe(0)
+    // The staging/local-test port works once added to INTERNAL_API_HOSTS.
+    process.env.INTERNAL_API_HOSTS = 'tickets-web:3000,tickets-web,127.0.0.1:16095'
+    try {
+      const local = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key, headers: { host: '127.0.0.1:16095' } }), String(w.ticket.id))
+      expect(local.status).toBe(200)
+    } finally {
+      delete process.env.INTERNAL_API_HOSTS
+    }
+    // The internal alias works.
+    expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key }), String(w.ticket.id))).status).toBe(200)
+  })
+
   it('403s a missing scope', async () => {
     const w = await world()
     await db.update(integrations).set({ scopes: ['guild:read'] }).where(eq(integrations.id, w.main.integration.id))
