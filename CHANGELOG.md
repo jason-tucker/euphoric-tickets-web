@@ -69,7 +69,7 @@ A general, multi-tenant API so other services can talk to the ticket system (pla
 - The Integration API needs `INTERNAL_TOKEN` and `BOT_INTERNAL_URL`. Deploy **web before the bot**, and check the DB columns in between (plan §5). The web↔bot contract changed during review (`integrationId` on close/ensure, `closedBy`, `409 ticket_channel_missing`, the shared staff set, escaping done by the web): ship this web build with the matching bot build.
 - Add a GitHub custom secret-scanning pattern for `etk\.[0-9A-Za-z]{10}\.[0-9A-Za-z]{43}`.
 
-v0.12.0 · 3915528
+v0.12.0 · 3622b2e
 
 ## [0.11.1] — 2026-07-06 — Docs: README sync with the team-wide staff tier, `/demo`, `/teams`, `/help`, and the unified console
 
