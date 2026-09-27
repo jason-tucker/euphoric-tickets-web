@@ -24,6 +24,7 @@ import { db } from '@/db/client'
 import { businesses, integrations, type Business, type Integration, type IntegrationScope } from '@/db/schema'
 import { parseAuthorizationHeader, verifySecret } from './keys'
 import { clientBucket, limiters } from './rateLimit'
+import { writeIntegrationAudit } from './audit'
 import { apiError } from './http'
 import { isInternalApiRequest, notFoundResponse } from './internalHost'
 
@@ -48,7 +49,10 @@ export async function authenticateIntegration(
   // Exactly one hash + constant-time compare on every path (dummy when no row).
   const secretOk = verifySecret(parsed?.secret ?? '', row?.keyHash ?? null)
 
-  if (!parsed || !row || !secretOk || !row.enabled) return { ok: false, response: authFailure(req) }
+  if (!parsed || !row || !secretOk || !row.enabled) {
+    const reason: AuthFailureReason = !parsed ? 'missing_or_malformed' : !row ? 'unknown_prefix' : !secretOk ? 'bad_secret' : 'disabled'
+    return { ok: false, response: await authFailure(req, reason, row) }
+  }
 
   const perKey = lim.perKey.hit(row.id)
   if (!perKey.allowed) {
@@ -68,7 +72,7 @@ export async function authenticateIntegration(
   const [business] = await db.select().from(businesses).where(eq(businesses.id, row.businessId)).limit(1)
   if (!business) {
     // The integration's team is gone (cascade should have removed the row).
-    return { ok: false, response: authFailure(req) }
+    return { ok: false, response: await authFailure(req, 'business_missing', row) }
   }
 
   if (!row.lastUsedAt || Date.now() - row.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS) {
@@ -82,11 +86,28 @@ export async function authenticateIntegration(
   return { ok: true, ctx: { integration: row, business } }
 }
 
+type AuthFailureReason = 'missing_or_malformed' | 'unknown_prefix' | 'bad_secret' | 'disabled' | 'business_missing'
+
 // A failed authentication: record it against the client bucket and answer
 // 401, or 429 once the bucket is over the brake. Refused (429) hits are not
 // recorded, so the bucket drains on schedule.
-function authFailure(req: Request): Response {
-  const brake = limiters().authFail.hit(clientBucket(req.headers))
+//
+// Sampled integration_audit row ('auth.failed'): at most one per bucket per
+// minute and RATE.authAuditPerMinGlobal per minute overall. It carries the
+// bucket, a reason code and (when the prefix matched a row) the integration
+// id — never the Authorization header, prefix or secret.
+async function authFailure(req: Request, reason: AuthFailureReason, row?: Integration): Promise<Response> {
+  const lim = limiters()
+  const bucket = clientBucket(req.headers)
+  const brake = lim.authFail.hit(bucket)
+  if (lim.authAudit.hit(bucket).allowed && lim.authAuditGlobal.hit('*').allowed) {
+    await writeIntegrationAudit({
+      integrationId: row?.id ?? null,
+      businessId: row?.businessId ?? null,
+      action: 'auth.failed',
+      metadata: { bucket, reason, braked: !brake.allowed },
+    })
+  }
   if (!brake.allowed) return apiError(429, 'rate_limited', { 'Retry-After': String(brake.retryAfterSec) })
   return apiError(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' })
 }

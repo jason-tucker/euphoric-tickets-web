@@ -114,6 +114,16 @@ Only the member's roles count. Discord's **Manage Server** / **Administrator** p
 
 `200 {member, pending, roleIds[]}`. A non-member returns `{member:false, pending:false, roleIds:[]}`.
 
+## Integration audit (`integration_audit`)
+
+Besides the admin actions and `ticket.opened` / `ticket.closed` (with `closedBy`) / `ticket.status_changed`, the API writes:
+
+| Action | When | Metadata |
+|---|---|---|
+| `actor.forbidden` | every refused `actorDiscordId` (messages, re-posts and close) | `{ticketId, actorDiscordId, reason: impersonation_disabled\|not_member\|pending\|not_staff, purpose: message\|message_repost\|close}` |
+| `message.posted_as_actor` | a message reached Discord under an impersonated actor's name | `{ticketId, messageId, actorDiscordId, repost}` (never the body) |
+| `auth.failed` | failed authentication, **sampled**: at most one row per client bucket per minute and 10 rows per minute overall | `{bucket, reason: missing_or_malformed\|unknown_prefix\|bad_secret\|disabled\|business_missing, braked}`; `integration_id` is set only when the key prefix matched a row. Never the header, prefix or secret. |
+
 ## Web → bot bridge (plan §4.4)
 
 The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}` with the header `x-internal-token: $INTERNAL_TOKEN`. There is **no** `DISCORD_BOT_TOKEN` fallback; if the token is missing, the call fails closed as `bot_unavailable`. The request bodies are exactly the §4.4 table, and the business is always passed by id.

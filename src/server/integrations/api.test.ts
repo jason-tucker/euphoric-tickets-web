@@ -131,6 +131,37 @@ describeDb('Integration API — auth', () => {
     }
   }, 60_000)
 
+  it('audits auth failures sampled (≤1 row per bucket per minute, ≤10/min overall), never with key material', async () => {
+    const w = await world()
+    const count = async () => (await db.select({ id: integrationAudit.id }).from(integrationAudit).where(eq(integrationAudit.action, 'auth.failed'))).length
+    const before = await count()
+    const wrongSecret = w.main.key.slice(0, -1) + (w.main.key.endsWith('A') ? 'B' : 'A')
+    for (let i = 0; i < 15; i++) {
+      await handleGetTicket(apiRequest('GET', '/x', { key: i % 2 ? wrongSecret : undefined }), '1')
+    }
+    // Default mode: one shared bucket → one row for 15 failures.
+    expect((await count()) - before).toBe(1)
+    const rows = await db.select().from(integrationAudit).where(eq(integrationAudit.action, 'auth.failed'))
+    const text = JSON.stringify(rows)
+    expect(text).not.toContain('etk.')
+    expect(text).not.toContain(w.main.key.split('.')[1]!) // not even the prefix
+    expect(text).not.toContain(w.main.key.split('.')[2]!.slice(0, 20))
+
+    // Trusted per-IP buckets: 40 distinct IPs still add at most 10 rows a minute.
+    resetLimiters()
+    process.env.INTEGRATION_TRUST_PROXY_HEADERS = '1'
+    try {
+      const mid = await count()
+      for (let i = 0; i < 40; i++) await handleGetTicket(apiRequest('GET', '/x', { ip: `192.0.2.${i}` }), '1')
+      expect((await count()) - mid).toBe(RATE.authAuditPerMinGlobal)
+      const latest = await db.select().from(integrationAudit).where(eq(integrationAudit.action, 'auth.failed'))
+      expect(latest.some((r) => (r.metadata as { bucket?: string; reason?: string }).bucket === '192.0.2.0')).toBe(true)
+      expect(latest.every((r) => typeof (r.metadata as { reason?: unknown }).reason === 'string')).toBe(true)
+    } finally {
+      delete process.env.INTEGRATION_TRUST_PROXY_HEADERS
+    }
+  })
+
   it('rate-limits 60/min per key', async () => {
     const w = await world()
     for (let i = 0; i < RATE.perKeyPerMin; i++) {
@@ -646,10 +677,26 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
       expect((await r.json()).error).toBe('actor_forbidden')
       expect(deps.calls.posts).toBe(0)
     }
+    // Every refusal is audited with a reason (ids only).
+    const forbidden = async () =>
+      (await db.select().from(integrationAudit).where(and(eq(integrationAudit.integrationId, w.main.integration.id), eq(integrationAudit.action, 'actor.forbidden')))).map(
+        (r) => r.metadata as { ticketId: number; actorDiscordId: string; reason: string; purpose: string },
+      )
+    expect((await forbidden()).map((m) => m.reason).sort()).toEqual(['not_member', 'not_staff', 'pending'])
+    expect((await forbidden()).every((m) => m.ticketId === w.ticket.id && m.actorDiscordId === staff && m.purpose === 'message')).toBe(true)
     // Staff for the category → posted as the actor's display name.
     const ok = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => member([staffRole]) as never) } })
-    expect((await call(ok, staff, 'a4')).status).toBe(201)
+    const posted = await call(ok, staff, 'a4')
+    expect(posted.status).toBe(201)
     expect(vi.mocked(ok.discord.postWebhook).mock.calls[0]![0].username).toBe('Staff Person')
+    // A successful impersonated post is audited: actor id, no body.
+    const postedAudit = await db
+      .select()
+      .from(integrationAudit)
+      .where(and(eq(integrationAudit.integrationId, w.main.integration.id), eq(integrationAudit.action, 'message.posted_as_actor')))
+    expect(postedAudit.map((r) => r.metadata)).toEqual([
+      { ticketId: w.ticket.id, messageId: (await posted.json()).messageId, actorDiscordId: staff, repost: false },
+    ])
     // Team-wide staff and admin roles also count (the staff set is the
     // role-based union category ∪ team staff ∪ team admin).
     expect(staffRoleIdsForCategory({ staffRoleIds: 'T1', adminRoleIds: 'A1' }, { staffRoleIds: 'C1,C2' }).sort()).toEqual(['A1', 'C1', 'C2', 'T1'])
@@ -682,6 +729,7 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     const off = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => member([staffRole]) as never) } })
     expect((await call(off, staff, 'a6')).status).toBe(403)
     expect(off.discord.fetchGuildMember).not.toHaveBeenCalled()
+    expect((await forbidden()).some((m) => m.reason === 'impersonation_disabled')).toBe(true)
   })
 })
 
@@ -773,8 +821,11 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
     ).toBe(502)
     await db.update(integrations).set({ actorImpersonation: false }).where(eq(integrations.id, w.main.integration.id))
     const deps = fakeDeps()
-    expect((await patch(w.main.key, w.ticket.id, { status: 'closed', actorDiscordId: snowflake() }, deps)).status).toBe(403)
+    const actor = snowflake()
+    expect((await patch(w.main.key, w.ticket.id, { status: 'closed', actorDiscordId: actor }, deps)).status).toBe(403)
     expect(deps.bot.closeTicket).not.toHaveBeenCalled()
+    const audit = await db.select().from(integrationAudit).where(and(eq(integrationAudit.integrationId, w.main.integration.id), eq(integrationAudit.action, 'actor.forbidden')))
+    expect(audit.map((a) => a.metadata)).toEqual([{ ticketId: w.ticket.id, actorDiscordId: actor, reason: 'impersonation_disabled', purpose: 'close' }])
   })
 })
 

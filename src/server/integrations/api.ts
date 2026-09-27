@@ -184,13 +184,34 @@ type ActorOk = { ok: true; member: DiscordGuildMember & { avatar?: string | null
 // a (non-pending) guild member who holds a role in staffRoleIdsForCategory, or
 // is the ticket's opener. Otherwise 403 `actor_forbidden`. Only the member's
 // role list is consulted — never permissions or sudo.
+type ActorPurpose = 'message' | 'message_repost' | 'close'
+
+// integration_audit 'actor.forbidden': every refused impersonation attempt
+// (ids and a reason code only).
+async function actorForbidden(
+  ctx: IntegrationContext,
+  ticketId: number,
+  actorDiscordId: string,
+  reason: 'impersonation_disabled' | 'not_member' | 'pending' | 'not_staff',
+  purpose: ActorPurpose,
+): Promise<{ ok: false; response: Response }> {
+  await writeIntegrationAudit({
+    integrationId: ctx.integration.id,
+    businessId: ctx.business.id,
+    action: 'actor.forbidden',
+    metadata: { ticketId, actorDiscordId, reason, purpose },
+  })
+  return { ok: false, response: apiError(403, 'actor_forbidden') }
+}
+
 async function checkActor(
   ctx: IntegrationContext,
   ticket: Ticket,
   actorDiscordId: string,
   deps: ApiDeps,
+  purpose: ActorPurpose = 'message',
 ): Promise<ActorOk | { ok: false; response: Response }> {
-  if (!ctx.integration.actorImpersonation) return { ok: false, response: apiError(403, 'actor_forbidden') }
+  if (!ctx.integration.actorImpersonation) return actorForbidden(ctx, ticket.id, actorDiscordId, 'impersonation_disabled', purpose)
   const botToken = deps.botToken()
   if (!botToken) return { ok: false, response: apiError(502, 'discord_unavailable') }
 
@@ -200,7 +221,8 @@ async function checkActor(
   } catch {
     return { ok: false, response: apiError(502, 'discord_unavailable') }
   }
-  if (!member || member.pending) return { ok: false, response: apiError(403, 'actor_forbidden') }
+  if (!member) return actorForbidden(ctx, ticket.id, actorDiscordId, 'not_member', purpose)
+  if (member.pending) return actorForbidden(ctx, ticket.id, actorDiscordId, 'pending', purpose)
 
   const [opener] = await db.select({ discordId: users.discordId }).from(users).where(eq(users.id, ticket.openerUserId)).limit(1)
   let category: { staffRoleIds: string } | null = null
@@ -214,7 +236,7 @@ async function checkActor(
   const staffRoles = staffRoleIdsForCategory(ctx.business, category ?? null)
   const isStaff = member.roles.some((r) => staffRoles.includes(r))
   const isOpener = opener?.discordId === actorDiscordId
-  if (!isStaff && !isOpener) return { ok: false, response: apiError(403, 'actor_forbidden') }
+  if (!isStaff && !isOpener) return actorForbidden(ctx, ticket.id, actorDiscordId, 'not_staff', purpose)
 
   const [u] = await db.select({ id: users.id }).from(users).where(eq(users.discordId, actorDiscordId)).limit(1)
   return { ok: true, member, userId: u?.id ?? null }
@@ -423,7 +445,9 @@ export async function handlePatchTicket(req: Request, rawId: string, deps: ApiDe
     // set (staffRoleIdsForCategory — the opener does NOT count for close),
     // else the bot itself; it reports which as closedBy. Web only gates
     // impersonation here.
-    if (input.actorDiscordId && !ctx.integration.actorImpersonation) return apiError(403, 'actor_forbidden')
+    if (input.actorDiscordId && !ctx.integration.actorImpersonation) {
+      return (await actorForbidden(ctx, ticket.id, input.actorDiscordId, 'impersonation_disabled', 'close')).response
+    }
     let res
     try {
       res = await deps.bot.closeTicket({
@@ -580,6 +604,23 @@ async function deliverMessageRow(
   return { ok: true, discordMessageId: posted.id }
 }
 
+// integration_audit 'message.posted_as_actor': a message that reached Discord
+// under an impersonated actor's name. Ids only — never the message body.
+async function auditImpersonatedPost(
+  ctx: IntegrationContext,
+  ticketId: number,
+  messageId: string,
+  actorDiscordId: string,
+  repost: boolean,
+): Promise<void> {
+  await writeIntegrationAudit({
+    integrationId: ctx.integration.id,
+    businessId: ctx.business.id,
+    action: 'message.posted_as_actor',
+    metadata: { ticketId, messageId, actorDiscordId, repost },
+  })
+}
+
 // For an undelivered message: its Discord id if it was delivered meanwhile,
 // else how long until a replay may take the re-post lease (DB clock).
 async function inFlightStatus(messageId: string): Promise<{ discordMessageId: string | null; retryAfterSec: number } | null> {
@@ -669,7 +710,7 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
     // never under anyone else's.
     let identity = integrationIdentity
     if (storedActor) {
-      const actor = await checkActor(ctx, ticket, storedActor, deps)
+      const actor = await checkActor(ctx, ticket, storedActor, deps, 'message_repost')
       if (actor.ok) {
         const who = memberIdentity(ctx.business.discordGuildId, storedActor, actor.member)
         identity = { username: safeWebhookUsername(who.name, ctx.integration.name), avatarUrl: who.avatarUrl }
@@ -680,6 +721,7 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
     }
     const repost = await deliverMessageRow(ctx, ticket, leased, identity, deps)
     if (!repost.ok) return repost.response
+    if (identity !== integrationIdentity) await auditImpersonatedPost(ctx, ticket.id, existing.id, storedActor!, true)
     return apiJson(200, { messageId: existing.id, discordMessageId: repost.discordMessageId, created: false })
   }
 
@@ -728,6 +770,7 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
   // (3) Post, (4) record the Discord id.
   const delivered = await deliverMessageRow(ctx, ticket, inserted, identity, deps)
   if (!delivered.ok) return delivered.response
+  if (input.actorDiscordId) await auditImpersonatedPost(ctx, ticket.id, inserted.id, input.actorDiscordId, false)
 
   await db.update(tickets).set({ lastActivityAt: sql`now()` }).where(eq(tickets.id, ticket.id))
   void deps

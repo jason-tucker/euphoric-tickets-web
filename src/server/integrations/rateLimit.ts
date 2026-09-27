@@ -210,9 +210,20 @@ export const RATE = {
   authFailuresPerBucket: 20,
   authFailureWindowMs: 10 * 60_000,
   authFailureMaxBuckets: DEFAULT_MAX_KEYS,
+  // integration_audit sampling for auth failures: at most one row per bucket
+  // per minute, and at most this many rows per minute in total, so a flood of
+  // failures (or of distinct buckets) cannot grow the table without bound.
+  authAuditPerMinGlobal: 10,
+  authAuditMaxBuckets: 1_000,
 } as const
 
-type Limiters = { perKey: SlidingWindowLimiter; opens: SlidingWindowLimiter; authFail: SlidingWindowLimiter }
+type Limiters = {
+  perKey: SlidingWindowLimiter
+  opens: SlidingWindowLimiter
+  authFail: SlidingWindowLimiter
+  authAudit: SlidingWindowLimiter
+  authAuditGlobal: SlidingWindowLimiter
+}
 
 declare global {
   var __integrationLimiters: Limiters | undefined
@@ -227,6 +238,8 @@ export function limiters(): Limiters {
       authFail: new SlidingWindowLimiter(RATE.authFailuresPerBucket, RATE.authFailureWindowMs, Date.now, {
         maxKeys: RATE.authFailureMaxBuckets,
       }),
+      authAudit: new SlidingWindowLimiter(1, 60_000, Date.now, { maxKeys: RATE.authAuditMaxBuckets }),
+      authAuditGlobal: new SlidingWindowLimiter(RATE.authAuditPerMinGlobal, 60_000, Date.now, { maxKeys: 1 }),
     }
   }
   return globalThis.__integrationLimiters
