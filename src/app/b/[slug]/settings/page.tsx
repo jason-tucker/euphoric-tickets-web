@@ -4,7 +4,8 @@ import { requireBusinessAccess } from '@/server/permissions'
 import { ticketsConsoleScope } from '@/server/tickets'
 import { env } from '@/lib/env'
 import { db } from '@/db/client'
-import { ticketCategories } from '@/db/schema'
+import { integrations, ticketCategories } from '@/db/schema'
+import { relativeTime } from '@/lib/format'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -31,6 +32,25 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
     .from(ticketCategories)
     .where(eq(ticketCategories.businessId, business.id))
     .orderBy(asc(ticketCategories.sortOrder), asc(ticketCategories.label))
+
+  // Integration API clients for this team — READ-ONLY here; only sudo can
+  // create or change them (/admin/integrations). Never select key material.
+  const teamIntegrations = await db
+    .select({
+      id: integrations.id,
+      name: integrations.name,
+      slug: integrations.slug,
+      scopes: integrations.scopes,
+      allowedCategoryKeys: integrations.allowedCategoryKeys,
+      linkOrigin: integrations.linkOrigin,
+      actorImpersonation: integrations.actorImpersonation,
+      webhookUrl: integrations.webhookUrl,
+      enabled: integrations.enabled,
+      lastUsedAt: integrations.lastUsedAt,
+    })
+    .from(integrations)
+    .where(eq(integrations.businessId, business.id))
+    .orderBy(asc(integrations.name))
 
   return (
     <main className="container max-w-2xl space-y-6 py-6">
@@ -264,6 +284,7 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
                         <div className="font-medium">{c.label}</div>
                         <div className="text-xs text-muted-foreground">
                           <span className="font-mono">{c.key}</span>
+                          {c.integrationOnly ? <> · integration-only</> : null}
                           {c.description ? <> — {c.description}</> : null}
                         </div>
                       </div>
@@ -299,6 +320,40 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
             <CategoryFormFields idPrefix="new-" guildId={business.discordGuildId} />
             <SubmitButton variant="secondary" pendingChildren="Adding…">Add category</SubmitButton>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Integrations</CardTitle>
+          <CardDescription>
+            Services that open and update tickets for this team through the Integration API. Read-only here — the bot
+            owner manages them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {teamIntegrations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No integrations.</p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {teamIntegrations.map((i) => (
+                <li key={i.id} className="space-y-0.5 py-2">
+                  <div className="font-medium">
+                    {i.name} <span className="font-mono text-xs text-muted-foreground">{i.slug}</span>
+                    {!i.enabled && <span className="ml-2 text-xs text-destructive">disabled</span>}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Scopes: {i.scopes.join(', ') || 'none'} · Categories: {i.allowedCategoryKeys.join(', ') || 'none'}
+                    {i.actorImpersonation ? ' · may post as verified staff' : ''}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Links: {i.linkOrigin ?? 'none'} · Webhook: {i.webhookUrl ? 'configured' : 'none'} ·{' '}
+                    {i.lastUsedAt ? `used ${relativeTime(i.lastUsedAt)}` : 'never used'}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
     </main>

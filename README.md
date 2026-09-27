@@ -145,8 +145,10 @@ the same Postgres the bot uses if you want both halves talking to one DB.
 | `AUTH_URL` | Dev only | e.g. `http://localhost:3000`. Unset in production — Caddy/cloudflared forwarding + a per-request URL rebuild cover it there. |
 | `DISCORD_BOT_TOKEN` | Yes | Picker data, channel ops, attachment refresh, member resolution, admin-role and team-wide staff-role checks. |
 | `PUBLIC_BASE_URL` | Rec. | Public site URL, used in notification links. |
-| `INTERNAL_TOKEN` | Rec. | Shared secret for the web↔bot internal endpoints (notify / DM). |
-| `BOT_INTERNAL_URL` | Rec. | e.g. `http://euphoric-tickets:8787` — where the bot's DM endpoint lives. |
+| `INTERNAL_TOKEN` | Rec. | Shared secret for the web↔bot internal endpoints (notify / DM). **Required** for the Integration API bridge (no fallback there). |
+| `BOT_INTERNAL_URL` | Rec. | e.g. `http://euphoric-tickets:8787` — where the bot's DM endpoint lives. **Required** for the Integration API. |
+| `INTEGRATION_ENC_KEY` | Integrations | 32 bytes (base64 or 64 hex) — AES-256-GCM key for stored webhook signing secrets. Env only; never in dumps or git. `openssl rand -base64 32`. |
+| `INTEGRATION_DISPATCHER` | No | `off` disables the outbound webhook dispatcher (a Postgres advisory lock already keeps it to one process). |
 | `NTFY_BASE_URL` | No | Override the ntfy server (default `https://ntfy.sh`). |
 | `POSTGRES_PASSWORD` | compose | Postgres password. |
 
@@ -175,6 +177,7 @@ the same Postgres the bot uses if you want both halves talking to one DB.
 | `/admin` | sudo | create/list teams |
 | `/admin/bot` | sudo | health dashboard |
 | `/admin/errors` | sudo | error log |
+| `/admin/integrations` | sudo | Integration API clients: create (key + webhook secret shown once), scopes, categories, webhook allowlist/URL, rotate, disable, delivery log |
 | `/demo/*` | anon | public, fully-interactive mirror of the whole app on synthetic data; every edit is saved to the visitor's browser only (localStorage) and never touches the database or Discord — 4 switchable personas via the `demo_persona` cookie |
 | `/api/health` | — | LB health probe (200 iff Postgres reachable) |
 | `/api/version` | — | running build id (drives the "new version, reload" toast) |
@@ -184,6 +187,7 @@ the same Postgres the bot uses if you want both halves talking to one DB.
 | `/api/tickets/[id]/attachment` | per-ticket | 302 → fresh Discord CDN URL |
 | `/api/discord/[guildId]/{channels,roles,members}` | admin | picker data |
 | `/api/internal/notify` | bot | notification fan-out bridge |
+| `/api/v1/tickets`, `/api/v1/tickets/[id]`, `/api/v1/tickets/[id]/messages`, `/api/v1/guild/roles`, `/api/v1/members/[discordId]` | integration key | **Integration API** — docker-network only, edge-blocked; see [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md) |
 | `/api/auth/[...nextauth]` | — | Auth.js handler |
 
 Multi-tenant URLs live under `/b/<slug>/…`; a **business switcher** in the top
@@ -237,7 +241,14 @@ Per-category `allow_role_ids` additionally gate *who can open* a category.
 - **Notifications** (`/settings/notifications`) — opt into **ntfy** push and/or
   **Discord DM** for new-ticket / reply events.
 - **Sudo** — `/admin` (create teams), `/admin/bot` (health dashboard),
-  `/admin/errors` (persistent 5-day error log).
+  `/admin/errors` (persistent 5-day error log), `/admin/integrations`
+  (Integration API clients; team admins get a read-only list on their settings page).
+- **Integration API** (v0.12.0) — other services (first: the EFM Music Portal) open
+  tickets that behave exactly like bot-opened ones, post escaped + footered
+  messages idempotently, and receive public replies / status changes through
+  HMAC-signed, SSRF-pinned webhooks (internal notes never leave). Categories can be
+  marked **integration-only** (hidden from `/t/new`, refused on panels). See
+  [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md).
 
 ### Data model
 
@@ -250,8 +261,14 @@ with its own per-category `staff_role_ids`), **`tickets`**, **`ticket_messages`*
 (members added by ID who aren't in the guild). Supporting tables: `ticket_panels`,
 `user_notification_prefs`, `audit_logs`, `bot_errors`, and `app_settings`
 (bot-owner global key/value settings, e.g. the bot's display name, edited on
-`/admin/bot`). There are **no SQL migration files** — `drizzle-kit push`
-applies the schema.
+`/admin/bot`). Integration API tables (v0.12.0): `integrations`,
+`integration_webhook_allowlist`, `integration_deliveries`,
+`integration_ticket_state`, `integration_open_claims`, `integration_audit` — the
+exact column list the bot mirror diffs against is
+[`docs/INTEGRATION_SCHEMA.md`](docs/INTEGRATION_SCHEMA.md). There are **no SQL
+migration files** — `drizzle-kit push` applies the schema; before merging a schema
+change run `scripts/schema-push-gate.sh` against a scratch restore (push twice:
+no DROP/TRUNCATE, empty second run).
 
 ---
 
@@ -323,4 +340,4 @@ and the restic backup/restore drill live in **[`ops/README.md`](ops/README.md)**
 - See `CLAUDE.md` for the full working agreement and `CHANGELOG.md` for the
   per-release history (the system is at the lantern milestone P1–P19).
 
-`euphoric-tickets-web v0.11.1`
+`euphoric-tickets-web v0.12.0`

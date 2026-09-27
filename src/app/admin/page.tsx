@@ -34,6 +34,9 @@ export default async function AdminPage() {
             <Link href="/admin/errors" className="rounded-md border px-2.5 py-1 hover:bg-accent">
               Bot errors
             </Link>
+            <Link href="/admin/integrations" className="rounded-md border px-2.5 py-1 hover:bg-accent">
+              Integrations
+            </Link>
           </div>
         </div>
 

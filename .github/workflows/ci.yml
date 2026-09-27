@@ -23,6 +23,23 @@ jobs:
     name: Typecheck, test & build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Throwaway Postgres for the DB-backed suites (Integration API routes,
+    # message idempotency, dispatcher cursor). vitest's global setup pushes the
+    # schema into it; the credentials exist only inside this job.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-throwaway
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       # Third-party actions are pinned to a commit SHA (tag in the comment) so a
       # retargeted/compromised tag can't silently change what runs in CI.
@@ -46,6 +63,8 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
+        env:
+          TEST_DATABASE_URL: postgresql://ci:ci-throwaway@localhost:5432/ci
         run: pnpm test
 
       # Mirrors the Dockerfile build stage: `next build` evaluates server

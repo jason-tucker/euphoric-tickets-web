@@ -15,6 +15,7 @@ import {
 } from '@/lib/discord'
 import { avatarUrl } from '@/lib/format'
 import { writeAudit } from '@/server/audit'
+import { isWebOpenableCategory } from '@/lib/categories'
 
 const schema = z.object({
   businessSlug: z.string().min(1),
@@ -89,6 +90,9 @@ export async function openTicketAction(formData: FormData): Promise<void> {
       .limit(1)
     if (c && c.businessId === hostBusiness.id) {
       if (c.staffOnly) throw new Error('That category is staff-only — pick another.')
+      // Integration-only categories (plan §4.4) are opened by an integration
+      // (e.g. the EFM Music Portal), never from this form — refuse a crafted post.
+      if (!isWebOpenableCategory(c)) throw new Error('That category only accepts tickets from its integration — pick another.')
       category = c
     }
   }

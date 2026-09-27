@@ -51,6 +51,12 @@ export const ticketCategories = pgTable(
     // regardless of their category's setting.
     kind: text('kind', { enum: ['normal', 'project'] as const }).notNull().default('normal'),
 
+    // Integration API (v0.12.0): when true, tickets in this category can ONLY
+    // be opened by an integration (the bot's integration open route). The web
+    // /t/new picker hides it and the action refuses it; the bot refuses panel
+    // buttons for it. Sudo toggles it on /admin/integrations.
+    integrationOnly: boolean('integration_only').notNull().default(false),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({ businessKey: uniqueIndex('ticket_categories_business_key_uq').on(t.businessId, t.key) }),

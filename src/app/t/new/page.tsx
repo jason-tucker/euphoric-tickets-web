@@ -10,6 +10,7 @@ import { db } from '@/db/client'
 import { ticketCategories } from '@/db/schema'
 import { inArray } from 'drizzle-orm'
 import { openTicketAction } from './actions'
+import { isWebOpenableCategory } from '@/lib/categories'
 
 export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ b?: string; parent?: string }> }) {
   await requireSession()
@@ -57,7 +58,8 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   // only as move-into targets for staff. Filter applies to everyone (member
   // and staff/admin alike), since staff still open tickets via this same flow
   // and a staff-only destination is by definition not a fresh-ticket option.
-  const cats = allCats.filter((c) => c.businessId === selectedBusiness.id && !c.staffOnly)
+  // `integrationOnly` categories are opened only by an integration (§4.4).
+  const cats = allCats.filter((c) => c.businessId === selectedBusiness.id && isWebOpenableCategory(c))
 
   return (
     <>

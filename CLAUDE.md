@@ -94,8 +94,11 @@ A user can belong to several businesses. The top-nav has a business switcher. UR
 | `/admin` | Sudo | Team CRUD (create / list) |
 | `/admin/bot` | Sudo | Bot health dashboard + bot name |
 | `/admin/errors` | Sudo | Persistent bot error log |
+| `/admin/integrations`, `/admin/integrations/[id]` | Sudo | Integration API clients: create (API key + webhook secret shown once), scopes, allowed categories, link origin, actor impersonation, webhook allowlist + URL, rotate, enable/disable, per-category `integration_only`, delivery log, audit. No `/demo` mirror (secrets page — see `src/app/demo/CLAUDE.md`) |
 | `/demo/*` | Anonymous | Public, interactive, read-only-against-the-system mirror of the whole app on synthetic data; all edits persist in the visitor's browser only (never DB/Discord). 4 personas via the `demo_persona` cookie |
 | `/api/auth/[...nextauth]` | — | Auth.js handler |
+| `/api/v1/tickets` (POST), `/api/v1/tickets/[id]` (GET, PATCH), `/api/v1/tickets/[id]/messages` (POST), `/api/v1/guild/roles` (GET), `/api/v1/members/[discordId]` (GET) | Integration (Bearer `etk.` key + scopes) | Integration API, internal docker networks only: a `Host` not in `INTERNAL_API_HOSTS` gets 404 in-app, and the edge must 404 `^/api/(internal\|v1)/` (P1d). Contract: [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md); logic in `src/server/integrations/` |
+| `/api/internal/notify` (POST) | Bot (`x-internal-token`) | Bot → web notify bridge (see below) |
 
 Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
 
@@ -117,6 +120,14 @@ Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
 | `audit_logs` | Per-ticket lifecycle events (open / claim / close / rename / …) written by both web and bot |
 | `bot_errors` | Persistent error log written by the bot; surfaced in `/admin/errors` |
 | `app_settings` | Bot-owner global key/value settings (e.g. `bot_name`), set on the Sudo dashboard (`/admin/bot`) and applied to the bot via its internal HTTP |
+| `integrations` | Integration API clients: team, slug/name, key prefix + sha256 hash, scopes, allowed category keys, link origin, actor impersonation, webhook URL + AES-GCM-encrypted signing secret, enabled |
+| `integration_webhook_allowlist` | Per-integration exact (scheme, host, port, path) webhook targets + the private CIDR they must resolve into |
+| `integration_deliveries` | Outbound signed-webhook queue/log (status + error class only) |
+| `integration_audit` | Integration admin actions and API events (opens, closes, refused/used impersonation, sampled auth failures) — never secrets |
+| `integration_ticket_state` | Dispatcher cursor + last seen status/assignee per integration ticket |
+| `integration_open_claims` | Bot-side single-winner claim per (integration, external_ref) for idempotent opens |
+
+Integration columns on existing tables: `tickets.integration_id / external_ref / integration_card`, `ticket_messages.author_kind / idempotency_key / metadata`, `ticket_categories.integration_only`. Full list for the bot mirror: [`docs/INTEGRATION_SCHEMA.md`](docs/INTEGRATION_SCHEMA.md).
 
 `ticket_messages.source = 'discord'` rows arrive via the bot's relay: the bot POSTs to `/api/internal/notify` on new Discord messages, which triggers notification fan-out; the bot also writes `ticket_messages` rows directly into the shared DB.
 
@@ -139,9 +150,13 @@ Beyond the three `AUTH_*` vars, several runtime features require additional env 
 | Variable | Purpose |
 |---|---|
 | `DISCORD_BOT_TOKEN` | Permission resolution (Ticket Master role check), member fetch for admin checks, Discord channel ops — **required** for any protected route to work correctly. |
-| `INTERNAL_TOKEN` | Shared secret for the web↔bot internal bridge (`/api/internal/notify`). Set the same value in the bot's env. |
+| `INTERNAL_TOKEN` | Shared secret for the web↔bot internal bridge (`/api/internal/notify`, and the Integration API's `/api/internal/tickets/{open,close,webhook/ensure}` calls to the bot, which have no bot-token fallback). Set the same value in the bot's env. |
 | `BOT_INTERNAL_URL` | Base URL of the bot's internal HTTP server (e.g. `http://euphoric-tickets:8787`). Required for web→bot DM and bot-name/force-leave Sudo controls. |
 | `PUBLIC_BASE_URL` | Public site URL, used in notification links and cookie domain. |
+| `INTEGRATION_ENC_KEY` | 32 bytes (base64 or 64 hex; `openssl rand -base64 32`). Encrypts integration webhook signing secrets at rest (AES-256-GCM). Env only — never in git or dumps; losing it means rotating every integration's webhook secret. Required for `/admin/integrations` and the dispatcher. |
+| `INTERNAL_API_HOSTS` | Comma-separated `Host` values `/api/v1/*` accepts; anything else gets 404. Default `tickets-web:3000,tickets-web`. Replaces the list, so add a published port only for local testing (e.g. `…,127.0.0.1:16095`). |
+| `INTEGRATION_TRUST_PROXY_HEADERS` | `1`/`true` makes the failed-auth brake key on `cf-connecting-ip` / `x-forwarded-for`. Default off (one shared bucket), because on the internal networks those headers are caller-controlled. Enable only behind a proxy you control that overwrites them. |
+| `INTEGRATION_DISPATCHER` | `off` disables the outbound integration webhook dispatcher. |
 
 ## Bot ↔ Web bridge
 
@@ -149,6 +164,7 @@ The web and bot share one Postgres database (this repo owns the schema and runs 
 
 - **`POST /api/internal/notify`** (this app) — the bot POSTs here on new Discord messages to trigger notification fan-out (ntfy / Discord DM). Guarded by `INTERNAL_TOKEN` (constant-time compare).
 - **`POST <BOT_INTERNAL_URL>/api/internal/...`** (bot) — the web calls the bot to send DMs (`/api/internal/dm`) and to push bot-name changes or force-leave a guild from the Sudo dashboard.
+- **`POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}`** (bot) — the Integration API's bridge (plan §4.4): opens go through the bot so the channel, card and pings match a panel open; close and webhook/ensure carry `integrationId`, which the bot verifies against the ticket. See `docs/INTEGRATION_API.md`.
 
 See also the companion bot repo: [`euphoric-tickets`](https://github.com/jason-tucker/euphoric-tickets).
 

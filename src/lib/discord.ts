@@ -226,10 +226,23 @@ export async function postWebhook(input: WebhookPostInput): Promise<{ id: string
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Discord webhook POST failed: ${res.status} ${text}`)
+    throw new DiscordHttpError(res.status, `Discord webhook POST failed: ${res.status} ${text}`)
   }
   const json = (await res.json()) as { id: string }
   return { id: json.id }
+}
+
+// Thrown by postWebhook on a non-2xx. Same message as the plain Error it
+// replaced (existing callers stringify it), plus the HTTP status so the
+// Integration API can tell "webhook deleted" (404/401) from a transient error.
+export class DiscordHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'DiscordHttpError'
+  }
 }
 
 // ---------------------------------------------------------------------------

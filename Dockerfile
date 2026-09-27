@@ -50,13 +50,16 @@ RUN npm install --no-save --prefix /opt/drizzle drizzle-kit@0.31.10 drizzle-orm@
 # package, so the schema files can't resolve it from there.
 COPY --from=builder /build/src/db/schema /opt/drizzle/schema
 COPY drizzle.docker.config.cjs /opt/drizzle/drizzle.config.cjs
+# Schema-push gate (docs/INTEGRATION_SCHEMA.md): lets the NEW image prove its
+# push is additive + convergent against a scratch restore before a merge.
+COPY scripts/schema-push-gate.sh /opt/drizzle/schema-push-gate.sh
 
 COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 # Run as the unprivileged `node` user (uid 1000, shipped in the base image)
 # instead of root. The entrypoint pushes the Drizzle schema from /opt/drizzle
 # and runs the Next standalone server from /app, so both trees (and the Next
 # runtime cache dir) must be owned by `node`.
-RUN chmod +x docker-entrypoint.sh \
+RUN chmod +x docker-entrypoint.sh /opt/drizzle/schema-push-gate.sh \
  && mkdir -p /app/.next/cache \
  && chown -R node:node /app /opt/drizzle
 
