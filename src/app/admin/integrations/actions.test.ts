@@ -10,6 +10,7 @@ import { apiRequest, describeDb, makeBusiness, makeCategory, makeIntegrationTick
 import { handleGetTicket } from '@/server/integrations/api'
 import { decryptSecret } from '@/server/integrations/crypto'
 import { allowlistRowSchema, parseLinkOrigin, readSettingsForm } from '@/server/integrations/adminValidation'
+import { matchAllowlist } from '@/server/integrations/webhookSsrf'
 
 const sudo = vi.hoisted(() => ({ userId: null as string | null }))
 vi.mock('@/server/sudo', () => ({
@@ -142,6 +143,30 @@ describeDb('admin integration actions', () => {
     ;[row] = await db.select().from(integrations).where(eq(integrations.id, id))
     expect(row!.webhookUrl).toBeNull()
     expect(await db.select().from(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, id))).toHaveLength(0)
+  })
+
+  it('keeps the invariant "a stored webhook URL matches an allowlist row" under concurrent set/remove', async () => {
+    const biz = await makeBusiness()
+    const created = await actions.createIntegrationAction(null, form({ businessId: biz.id, name: 'EFM', slug: rand('efm'), allowedCategoryKeys: '' }))
+    if (!created?.ok) throw new Error('create failed')
+    const id = created.id
+    const url = 'http://music-web:6096/api/hooks/tickets'
+    const rowForm = { scheme: 'http', host: 'music-web', port: '6096', path: '/api/hooks/tickets' }
+    // Removing an unrelated row keeps a still-matching URL.
+    await actions.addAllowlistAction(id, form({ ...rowForm, expectedNetworkCidr: '172.30.40.0/24' }))
+    await actions.addAllowlistAction(id, form({ ...rowForm, port: '7000', expectedNetworkCidr: '172.30.40.0/24' }))
+    await actions.setWebhookUrlAction(id, form({ webhookUrl: url }))
+    await actions.removeAllowlistAction(id, form({ ...rowForm, port: '7000' }))
+    let [row] = await db.select().from(integrations).where(eq(integrations.id, id))
+    expect(row!.webhookUrl).toBe(url)
+
+    for (let i = 0; i < 10; i++) {
+      await actions.addAllowlistAction(id, form({ ...rowForm, expectedNetworkCidr: '172.30.40.0/24' }))
+      await Promise.allSettled([actions.setWebhookUrlAction(id, form({ webhookUrl: url })), actions.removeAllowlistAction(id, form(rowForm))])
+      ;[row] = await db.select().from(integrations).where(eq(integrations.id, id))
+      const rest = await db.select().from(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, id))
+      if (row!.webhookUrl) expect(matchAllowlist(row!.webhookUrl, rest), `iteration ${i}`).not.toBeNull()
+    }
   })
 
   it('toggles integration_only only for categories of the integration’s own team', async () => {

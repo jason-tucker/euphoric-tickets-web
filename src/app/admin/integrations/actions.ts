@@ -256,24 +256,35 @@ export async function removeAllowlistAction(id: string, formData: FormData): Pro
   const port = Number(formData.get('port') ?? '')
   const path = String(formData.get('path') ?? '')
   if (!Number.isInteger(port)) throw new Error('Bad port')
-  await db
-    .delete(integrationWebhookAllowlist)
-    .where(
-      and(
-        eq(integrationWebhookAllowlist.integrationId, row.id),
-        eq(integrationWebhookAllowlist.scheme, scheme),
-        eq(integrationWebhookAllowlist.host, host),
-        eq(integrationWebhookAllowlist.port, port),
-        eq(integrationWebhookAllowlist.path, path),
-      ),
-    )
-  // Keep the save-time invariant: a stored webhook URL always matches a row.
-  if (row.webhookUrl) {
-    const rest = await db.select().from(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, row.id))
-    if (!matchAllowlist(row.webhookUrl, rest)) {
-      await db.update(integrations).set({ webhookUrl: null }).where(eq(integrations.id, row.id))
+  // One transaction, with the integration row locked (FOR UPDATE, as in
+  // setWebhookUrlAction): the row delete and clearing a webhook URL that no
+  // longer matches commit together, so no reader ever sees a stored URL
+  // without its allowlist row. (The dispatcher also fails closed on that.)
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ webhookUrl: integrations.webhookUrl })
+      .from(integrations)
+      .where(eq(integrations.id, row.id))
+      .for('update')
+    await tx
+      .delete(integrationWebhookAllowlist)
+      .where(
+        and(
+          eq(integrationWebhookAllowlist.integrationId, row.id),
+          eq(integrationWebhookAllowlist.scheme, scheme),
+          eq(integrationWebhookAllowlist.host, host),
+          eq(integrationWebhookAllowlist.port, port),
+          eq(integrationWebhookAllowlist.path, path),
+        ),
+      )
+    // Keep the save-time invariant: a stored webhook URL always matches a row.
+    if (locked?.webhookUrl) {
+      const rest = await tx.select().from(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, row.id))
+      if (!matchAllowlist(locked.webhookUrl, rest)) {
+        await tx.update(integrations).set({ webhookUrl: null }).where(eq(integrations.id, row.id))
+      }
     }
-  }
+  })
   await writeIntegrationAudit({
     integrationId: row.id,
     businessId: row.businessId,
@@ -292,15 +303,23 @@ export async function setWebhookUrlAction(id: string, formData: FormData): Promi
   if (raw) {
     const checked = checkWebhookUrl(raw)
     if (!checked.ok) throw new Error(checked.error)
-    const allow = await db.select().from(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, row.id))
-    // SSRF policy (plan §4.5): exact (scheme, host, port, path) match with an
-    // allowlist row of THIS integration, or refuse.
-    if (!matchAllowlist(checked.url, allow)) {
-      throw new Error('Refused: the URL does not exactly match an allowlist row of this integration.')
-    }
     next = checked.url
   }
-  await db.update(integrations).set({ webhookUrl: next }).where(eq(integrations.id, row.id))
+  // Check and write under the same integration-row lock as
+  // removeAllowlistAction, so a concurrent row removal cannot slip between
+  // the allowlist check and the URL write.
+  await db.transaction(async (tx) => {
+    await tx.select({ id: integrations.id }).from(integrations).where(eq(integrations.id, row.id)).for('update')
+    if (next) {
+      const allow = await tx.select().from(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, row.id))
+      // SSRF policy (plan §4.5): exact (scheme, host, port, path) match with an
+      // allowlist row of THIS integration, or refuse.
+      if (!matchAllowlist(next, allow)) {
+        throw new Error('Refused: the URL does not exactly match an allowlist row of this integration.')
+      }
+    }
+    await tx.update(integrations).set({ webhookUrl: next }).where(eq(integrations.id, row.id))
+  })
   await writeIntegrationAudit({
     integrationId: row.id,
     businessId: row.businessId,

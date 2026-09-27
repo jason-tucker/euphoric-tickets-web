@@ -172,11 +172,12 @@ X-Euphoric-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, `${t}.${deliveryId}.$
 - `redirect: 'manual'`, so a 3xx counts as a failure (`redirect`).
 - Any 2xx is success.
 - Failures back off exponentially: 15 s, 30 s, … capped at 1 h, with jitter, until 24 h after the event. After that the delivery shows as `failed`.
-- The delivery log keeps only the HTTP status and an error class: `http_4xx`, `http_5xx`, `redirect`, `timeout`, `blocked_address`, `dns`, `connect_refused`, `tls`, `integration_disabled`, `not_configured`, `decrypt_failed`, or `expired`.
+- The delivery log keeps only the HTTP status and an error class: `http_4xx`, `http_5xx`, `redirect`, `timeout`, `blocked_address`, `dns`, `connect_refused`, `tls`, `integration_disabled`, `not_configured`, `not_allowlisted`, `decrypt_failed`, or `expired`.
 
 **SSRF policy:**
 - **At save:** the webhook URL must exactly equal an allowlist row's (scheme, host, port, path). No query string or credentials are allowed.
-- **At send:** an undici `connect` hook resolves the host, checks **every** address, and pins the socket to the validated IP. TLS still verifies the hostname. For an allowlisted URL the address must lie inside `expected_network_cidr` and never in `127/8`, `169.254/16`, `0/8`, `::1`, `::` or `fe80::/10`. Anything else falls back to the public-only guard.
+- **At send:** an undici `connect` hook resolves the host, checks **every** address, and pins the socket to the validated IP. TLS still verifies the hostname. The address must lie inside the matching allowlist row's `expected_network_cidr` and never in `127/8`, `169.254/16`, `0/8`, `::1`, `::` or `fe80::/10`.
+- **Fail closed:** if the stored webhook URL no longer matches a current allowlist row at send time, nothing is sent and the delivery records `not_allowlisted`. There is no fallback to a public-address policy. Removing an allowlist row and clearing a webhook URL that no longer matches happen in one transaction (under a lock on the integration row, shared with setting the URL).
 - If the hooks network is recreated with a different subnet, deliveries fail as `blocked_address` until the allowlist row's CIDR is updated.
 
 ## Operating it
@@ -206,5 +207,6 @@ X-Euphoric-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, `${t}.${deliveryId}.$
 | Messages `502 discord_unavailable` | Discord error or deleted webhook | retry the same `Idempotency-Key` after 30 s; the webhook is re-ensured |
 | Deliveries `blocked_address` | receiver resolves outside `expected_network_cidr` (hooks network recreated with a new subnet) | update the allowlist row's CIDR |
 | Deliveries `dns` | receiver container or alias missing from the hooks network | re-attach the receiver to the network |
+| Deliveries `not_allowlisted` | the stored webhook URL matches no allowlist row (row removed, or a DB edit) | re-add the allowlist row, then set the webhook URL again |
 | Deliveries `decrypt_failed` | `INTEGRATION_ENC_KEY` changed or lost | rotate the webhook secret, then update the receiver |
 | Nothing is dispatched | another process holds the advisory lock, or `INTEGRATION_DISPATCHER=off` | check `pg_locks` (classid 1163152177, objid 1) |

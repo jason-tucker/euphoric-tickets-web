@@ -394,7 +394,12 @@ async function attemptOne(
     .from(integrationWebhookAllowlist)
     .where(eq(integrationWebhookAllowlist.integrationId, integ.id))
   const row = matchAllowlist(integ.webhookUrl, allow)
-  const policy: AddressPolicy = row ? { mode: 'cidr', cidr: row.expectedNetworkCidr } : { mode: 'public' }
+  // Fail closed: the stored URL must still match a current allowlist row of
+  // this integration (the save-time invariant). If it does not — a row was
+  // removed, or the DB was edited — do NOT fall back to the weaker
+  // public-address policy; refuse to send.
+  if (!row) return { ok: false, errorClass: 'not_allowlisted' }
+  const policy: AddressPolicy = { mode: 'cidr', cidr: row.expectedNetworkCidr }
 
   const body = JSON.stringify(d.payload)
   const t = Math.floor(Date.now() / 1000)

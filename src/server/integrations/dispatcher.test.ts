@@ -232,19 +232,50 @@ describeDb('dispatcher — delivery', () => {
     expect(await deliverDue(ok)).toEqual({ attempted: 0, delivered: 0 })
   })
 
-  it('classifies redirects, uses the public guard for a non-allowlisted URL, and gives up after 24 h', async () => {
+  it('fails closed (not_allowlisted, nothing sent) when the stored URL matches no current allowlist row', async () => {
     const w = await setup()
     await db.insert(ticketMessages).values({ ticketId: w.ticket.id, body: 'a', source: 'web' })
     await enqueueMessageDeliveries()
     const [d] = await deliveriesFor(w.integration.id)
 
+    // A DB edit (or a half-applied removal) leaves a URL with no allowlist row.
     await db.update(integrations).set({ webhookUrl: 'https://hooks.example.com/x' }).where(eq(integrations.id, w.integration.id))
+    let called = false
+    expect(
+      await deliverDue(async () => {
+        called = true
+        return { status: 204 }
+      }),
+    ).toEqual({ attempted: 1, delivered: 0 })
+    expect(called).toBe(false)
+    let [row] = await db.select().from(integrationDeliveries).where(eq(integrationDeliveries.id, d!.id))
+    expect(row).toMatchObject({ attempts: 1, lastErrorClass: 'not_allowlisted', deliveredAt: null })
+
+    // Same when the matching row itself is removed out from under the URL.
+    await db.update(integrations).set({ webhookUrl: 'http://music-web:6096/api/hooks/tickets' }).where(eq(integrations.id, w.integration.id))
+    await db.delete(integrationWebhookAllowlist).where(eq(integrationWebhookAllowlist.integrationId, w.integration.id))
+    await db.update(integrationDeliveries).set({ nextAttemptAt: new Date(Date.now() - 1000) }).where(eq(integrationDeliveries.id, d!.id))
+    await deliverDue(async () => {
+      called = true
+      return { status: 204 }
+    })
+    expect(called).toBe(false)
+    ;[row] = await db.select().from(integrationDeliveries).where(eq(integrationDeliveries.id, d!.id))
+    expect(row).toMatchObject({ attempts: 2, lastErrorClass: 'not_allowlisted' })
+  })
+
+  it('classifies redirects and gives up after 24 h', async () => {
+    const w = await setup()
+    await db.insert(ticketMessages).values({ ticketId: w.ticket.id, body: 'a', source: 'web' })
+    await enqueueMessageDeliveries()
+    const [d] = await deliveriesFor(w.integration.id)
+
     let policy: unknown
     await deliverDue(async (r) => {
       policy = r.policy
       return { status: 302 }
     })
-    expect(policy).toEqual({ mode: 'public' })
+    expect(policy).toEqual({ mode: 'cidr', cidr: '172.30.40.0/24' })
     let [row] = await db.select().from(integrationDeliveries).where(eq(integrationDeliveries.id, d!.id))
     expect(row!.lastErrorClass).toBe('redirect')
 
