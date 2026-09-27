@@ -274,6 +274,7 @@ describeDb('POST /api/v1/tickets (open)', () => {
     const deps = fakeDeps()
     const bad = [
       openBody({ subject: 'x'.repeat(101) }),
+      openBody({ subject: '   ' }),
       openBody({ extra: 1 }),
       openBody({ openerDiscordId: 'nope' }),
       openBody({ externalRef: 'has space' }),

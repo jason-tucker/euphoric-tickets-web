@@ -253,7 +253,8 @@ const openSchema = z
   .object({
     categoryKey: z.string().min(1).max(64),
     openerDiscordId: SNOWFLAKE,
-    subject: LINE(100),
+    // The bot refuses a whitespace-only subject (400 → our 502); refuse it here as 422.
+    subject: LINE(100).refine((v) => v.trim().length > 0, 'must not be blank'),
     card: z
       .object({
         title: LINE(100),

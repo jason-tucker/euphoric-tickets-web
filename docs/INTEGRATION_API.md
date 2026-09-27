@@ -36,7 +36,7 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 ### `POST /api/v1/tickets` — `tickets:write`
 
 ```json
-{ "categoryKey": "newsong", "openerDiscordId": "…", "subject": "≤100",
+{ "categoryKey": "newsong", "openerDiscordId": "…", "subject": "≤100, not blank",
   "card": { "title": "≤100", "lines": ["≤200", "… ≤25 lines"], "link": { "label": "≤40", "url": "https://<link_origin>/… (≤512)" } },
   "externalRef": "≤100 visible ASCII" }
 ```
