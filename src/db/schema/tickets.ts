@@ -1,5 +1,6 @@
-import { boolean, index, integer, pgTable, serial, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { businesses } from './businesses'
+import { integrations } from './integrations'
 import { ticketCategories } from './ticketCategories'
 import { users } from './users'
 
@@ -14,6 +15,12 @@ export const ticketStatuses = [
   'closed',
 ] as const
 export type TicketStatus = (typeof ticketStatuses)[number]
+
+export type IntegrationCard = {
+  title: string
+  lines: string[]
+  link: { label: string; url: string }
+}
 
 export const ticketKinds = ['normal', 'project'] as const
 export type TicketKind = (typeof ticketKinds)[number]
@@ -65,6 +72,18 @@ export const tickets = pgTable(
     // Optional tickettool.xyz transcript URL captured from a TicketTool ticket.
     externalTranscriptUrl: text('external_transcript_url'),
 
+    // Integration API (v0.12.0). Set only on tickets opened through
+    // POST /api/v1/tickets (the bot's /api/internal/tickets/open). Every
+    // /api/v1/tickets/:id* route 404s unless integration_id AND business_id
+    // both match the calling key. `external_ref` is the client's idempotency
+    // handle for opens; the unique index is NOT partial — Postgres treats
+    // NULLs as distinct, so ordinary tickets never collide.
+    // `integration_card` is the persisted welcome card ({title, lines[],
+    // link:{label,url}}) the bot re-renders on claim/close.
+    integrationId: uuid('integration_id').references(() => integrations.id),
+    externalRef: text('external_ref'),
+    integrationCard: jsonb('integration_card').$type<IntegrationCard>(),
+
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedByUserId: uuid('closed_by_user_id').references(() => users.id),
@@ -81,6 +100,7 @@ export const tickets = pgTable(
     byDiscordChannel: index('tickets_discord_channel_idx').on(t.discordChannelId),
     byInternalThread: index('tickets_internal_thread_idx').on(t.discordInternalThreadId),
     byParent: index('tickets_parent_idx').on(t.parentTicketId),
+    integrationRefUq: uniqueIndex('tickets_integration_external_ref_uq').on(t.integrationId, t.externalRef),
   }),
 )
 
