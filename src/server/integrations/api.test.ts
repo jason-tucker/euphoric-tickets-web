@@ -537,6 +537,57 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     expect(row!.discordMessageId).not.toBeNull()
   })
 
+  it('a replay re-posts with the ORIGINAL row identity and refuses a different actor (409 idempotency_conflict)', async () => {
+    const w = await world()
+    const staffRole = w.cat.staffRoleIds
+    const alice = snowflake()
+    const bob = snowflake()
+    const names: Record<string, string> = { [alice]: 'Alice', [bob]: 'Bob' }
+    let staffNow = new Set([alice, bob])
+    const lookup = vi.fn(async (_t: string, _g: string, id: string) =>
+      ({ user: { id, username: names[id], global_name: names[id], avatar: null }, nick: null, roles: staffNow.has(id) ? [staffRole] : [] }) as never,
+    )
+    const msg = (actor?: string) => ({ kind: 'comment', body: 'hi', ...(actor ? { actorDiscordId: actor } : {}) })
+
+    // Alice's post fails at Discord; the row is stored with actor Alice.
+    const failing = fakeDeps({ discord: { fetchGuildMember: lookup, postWebhook: vi.fn(async () => { throw new DiscordHttpError(500, 'boom') }) } })
+    const first = await post(w.main.key, w.ticket.id, msg(alice), 'who-1', failing)
+    expect(first.status).toBe(502)
+    const { messageId } = await first.json()
+    await db.execute(sql`UPDATE ticket_messages SET created_at = now() - interval '31 seconds' WHERE id = ${messageId}::uuid`)
+
+    // Scenario from the review: a replay naming Bob must not post as Bob.
+    const ok = fakeDeps({ discord: { fetchGuildMember: lookup } })
+    for (const actor of [bob, undefined]) {
+      const r = await post(w.main.key, w.ticket.id, msg(actor), 'who-1', ok)
+      expect(r.status, String(actor)).toBe(409)
+      expect(await r.json()).toEqual({ error: 'idempotency_conflict', messageId })
+    }
+    expect(ok.calls.posts).toBe(0)
+
+    // The matching replay wins the lease and posts as Alice (the stored actor).
+    const replay = await post(w.main.key, w.ticket.id, msg(alice), 'who-1', ok)
+    expect(replay.status).toBe(200)
+    expect(ok.calls.posts).toBe(1)
+    expect(vi.mocked(ok.discord.postWebhook).mock.calls[0]![0].username).toBe('Alice')
+    const [row] = await db.select().from(ticketMessages).where(eq(ticketMessages.id, messageId))
+    expect(row!.metadata).toMatchObject({ actorDiscordId: alice })
+    // Once delivered, a mismatched replay is still a conflict.
+    expect((await post(w.main.key, w.ticket.id, msg(bob), 'who-1', ok)).status).toBe(409)
+
+    // If the stored actor is no longer staff, the re-post uses the integration's
+    // own name — never the actor's, and never the replay's.
+    const second = await post(w.main.key, w.ticket.id, msg(alice), 'who-2', failing)
+    expect(second.status).toBe(502)
+    const m2 = (await second.json()).messageId
+    await db.execute(sql`UPDATE ticket_messages SET created_at = now() - interval '31 seconds' WHERE id = ${m2}::uuid`)
+    staffNow = new Set([bob])
+    const demoted = fakeDeps({ discord: { fetchGuildMember: lookup } })
+    const r2 = await post(w.main.key, w.ticket.id, msg(alice), 'who-2', demoted)
+    expect(r2.status).toBe(200)
+    expect(vi.mocked(demoted.discord.postWebhook).mock.calls[0]![0].username).toBe('EFM Music')
+  })
+
   it('ensures a webhook through the bot when the ticket has none, stores it, and forgets a deleted one', async () => {
     const w = await world()
     await db.update(tickets).set({ discordWebhookUrl: null, discordWebhookId: null }).where(eq(tickets.id, w.ticket.id))

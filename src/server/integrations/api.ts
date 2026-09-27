@@ -624,15 +624,71 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
     return existing ?? null
   }
 
-  if (ticket.status === 'closed') {
-    // A replay of a message accepted before the close still gets its answer.
-    const existing = await findExisting()
-    if (existing) return apiJson(200, { messageId: existing.id, discordMessageId: existing.discordMessageId, created: false })
-    return apiError(409, 'ticket_closed')
+  const integrationIdentity: PostIdentity = { username: safeWebhookUsername(ctx.integration.name), avatarUrl: null }
+
+  // (2) A replay of an existing key. The answer and any re-post belong to the
+  // ORIGINAL row: a replay naming a different actor is refused, and a re-post
+  // uses the identity stored on the row (metadata.actorDiscordId), never the
+  // replay request's. Re-post only when the row never reached Discord AND is
+  // older than 30 s; the conditional UPDATE is the single-winner lease for it
+  // (metadata.repostAt). Both age checks use the DATABASE clock.
+  const replay = async (existing: TicketMessage): Promise<Response> => {
+    const storedActor = ((existing.metadata ?? {}) as { actorDiscordId?: string | null }).actorDiscordId ?? null
+    if ((input.actorDiscordId ?? null) !== storedActor) {
+      return apiError(409, 'idempotency_conflict', undefined, { messageId: existing.id })
+    }
+    if (existing.discordMessageId || ticket.status === 'closed') {
+      // Delivered — or a key accepted before the ticket closed (never
+      // re-posted into a closed ticket): the stored answer.
+      return apiJson(200, { messageId: existing.id, discordMessageId: existing.discordMessageId, created: false })
+    }
+    const [leased] = await db
+      .update(ticketMessages)
+      .set({ metadata: sql`${ticketMessages.metadata} || jsonb_build_object('repostAt', now())` })
+      .where(
+        and(
+          eq(ticketMessages.id, existing.id),
+          sql`${ticketMessages.discordMessageId} IS NULL`,
+          sql`${ticketMessages.createdAt} < now() - make_interval(secs => ${REPOST_AFTER_SEC})`,
+          sql`(${ticketMessages.metadata}->>'repostAt' IS NULL OR (${ticketMessages.metadata}->>'repostAt')::timestamptz < now() - make_interval(secs => ${REPOST_AFTER_SEC}))`,
+        ),
+      )
+      .returning()
+    if (!leased) {
+      // No lease: either the first attempt is still in flight (row < 30 s
+      // old), another replay holds the re-post lease, or the row was just
+      // delivered. Only a non-null discordMessageId means "delivered"; an
+      // undelivered row is NOT reported as success (the in-flight attempt may
+      // still fail, and then nobody would retry).
+      const st = await inFlightStatus(existing.id)
+      if (st?.discordMessageId) return apiJson(200, { messageId: existing.id, discordMessageId: st.discordMessageId, created: false })
+      return apiError(409, 'in_progress', { 'Retry-After': String(st?.retryAfterSec ?? REPOST_AFTER_SEC) }, { messageId: existing.id })
+    }
+    // Identity for the re-post: the stored actor, re-checked live. If that
+    // actor is no longer allowed, post under the integration's own name —
+    // never under anyone else's.
+    let identity = integrationIdentity
+    if (storedActor) {
+      const actor = await checkActor(ctx, ticket, storedActor, deps)
+      if (actor.ok) {
+        const who = memberIdentity(ctx.business.discordGuildId, storedActor, actor.member)
+        identity = { username: safeWebhookUsername(who.name, ctx.integration.name), avatarUrl: who.avatarUrl }
+      } else if (actor.response.status !== 403) {
+        // Discord lookup failed: the lease expires in 30 s; retry then.
+        return apiError(502, 'discord_unavailable', { 'Retry-After': String(REPOST_AFTER_SEC) }, { messageId: existing.id })
+      }
+    }
+    const repost = await deliverMessageRow(ctx, ticket, leased, identity, deps)
+    if (!repost.ok) return repost.response
+    return apiJson(200, { messageId: existing.id, discordMessageId: repost.discordMessageId, created: false })
   }
 
-  // Actor gate BEFORE anything is stored.
-  let identity: PostIdentity = { username: safeWebhookUsername(ctx.integration.name), avatarUrl: null }
+  const prior = await findExisting()
+  if (prior) return replay(prior)
+  if (ticket.status === 'closed') return apiError(409, 'ticket_closed')
+
+  // A new key: actor gate BEFORE anything is stored.
+  let identity = integrationIdentity
   let authorUserId: string | null = null
   if (input.actorDiscordId) {
     const actor = await checkActor(ctx, ticket, input.actorDiscordId, deps)
@@ -663,40 +719,10 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
     .returning()
 
   if (!inserted) {
-    // (2) Conflict: answer with the existing row. Re-post only when it never
-    // reached Discord AND is older than 30 s; the conditional UPDATE below is
-    // the single-winner lease for that re-post (metadata.repostAt).
-    // Both age checks use the DATABASE clock (no app/DB skew).
+    // Lost the insert race to a concurrent request with the same key.
     const existing = await findExisting()
     if (!existing) return apiError(409, 'conflict')
-    if (existing.discordMessageId) {
-      return apiJson(200, { messageId: existing.id, discordMessageId: existing.discordMessageId, created: false })
-    }
-    const [leased] = await db
-      .update(ticketMessages)
-      .set({ metadata: sql`${ticketMessages.metadata} || jsonb_build_object('repostAt', now())` })
-      .where(
-        and(
-          eq(ticketMessages.id, existing.id),
-          sql`${ticketMessages.discordMessageId} IS NULL`,
-          sql`${ticketMessages.createdAt} < now() - make_interval(secs => ${REPOST_AFTER_SEC})`,
-          sql`(${ticketMessages.metadata}->>'repostAt' IS NULL OR (${ticketMessages.metadata}->>'repostAt')::timestamptz < now() - make_interval(secs => ${REPOST_AFTER_SEC}))`,
-        ),
-      )
-      .returning()
-    if (!leased) {
-      // No lease: either the first attempt is still in flight (row < 30 s
-      // old), another replay holds the re-post lease, or the row was just
-      // delivered. Only a non-null discordMessageId means "delivered"; an
-      // undelivered row is NOT reported as success (the in-flight attempt may
-      // still fail, and then nobody would retry).
-      const st = await inFlightStatus(existing.id)
-      if (st?.discordMessageId) return apiJson(200, { messageId: existing.id, discordMessageId: st.discordMessageId, created: false })
-      return apiError(409, 'in_progress', { 'Retry-After': String(st?.retryAfterSec ?? REPOST_AFTER_SEC) }, { messageId: existing.id })
-    }
-    const repost = await deliverMessageRow(ctx, ticket, leased, identity, deps)
-    if (!repost.ok) return repost.response
-    return apiJson(200, { messageId: existing.id, discordMessageId: repost.discordMessageId, created: false })
+    return replay(existing)
   }
 
   // (3) Post, (4) record the Discord id.

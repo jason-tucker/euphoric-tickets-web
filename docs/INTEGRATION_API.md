@@ -78,6 +78,8 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
    - it never reached Discord and is more than 30 s old (DB clock) → it is re-posted exactly once, under a conditional lease, and the lease winner gets `200 {…, created:false}`;
    - it never reached Discord and the first attempt (or another replay's re-post) may still be in flight → `409 {"error":"in_progress","messageId"}` with `Retry-After` (seconds until a replay may re-post). Retry with the same key.
 
+   A replay must name the **same** `actorDiscordId` as the original request (or omit it if the original did); otherwise it gets `409 {"error":"idempotency_conflict","messageId"}`. A re-post always uses the identity stored on the original row: that actor's nickname and avatar if the actor still passes the actor check, otherwise the integration's own name. It never posts under the replay request's actor.
+
    **Only a non-null `discordMessageId` means the message was delivered.**
 3. Otherwise post through the ticket channel's webhook. When the ticket has no webhook, web first calls the bot's `/webhook/ensure` and stores the URL.
 4. `UPDATE discord_message_id`. The response is `201 {messageId, discordMessageId, created:true}`.
