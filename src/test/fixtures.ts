@@ -146,7 +146,7 @@ export function fakeDeps(
       openTicket: vi.fn(async () => {
         throw new Error('openTicket not faked')
       }),
-      closeTicket: vi.fn(async () => ({ ok: true as const })),
+      closeTicket: vi.fn(async () => ({ ok: true as const, closedBy: 'bot' as const })),
       ensureWebhook: vi.fn(async () => ({
         webhookUrl: `https://discord.com/api/v10/webhooks/${snowflake()}/${randomBytes(24).toString('base64url')}`,
         webhookId: snowflake(),

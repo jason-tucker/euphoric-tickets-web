@@ -5,7 +5,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { db } from '@/db/client'
-import { auditLogs, integrationAudit, integrations, ticketMessages, tickets } from '@/db/schema'
+import { auditLogs, businesses, integrationAudit, integrations, ticketMessages, tickets } from '@/db/schema'
 import {
   apiRequest,
   describeDb,
@@ -522,8 +522,21 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     const ok = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => member([staffRole]) as never) } })
     expect((await call(ok, staff, 'a4')).status).toBe(201)
     expect(vi.mocked(ok.discord.postWebhook).mock.calls[0]![0].username).toBe('Staff Person')
-    // Team-wide staff and admin roles also count.
+    // Team-wide staff and admin roles also count (the staff set is the
+    // role-based union category ∪ team staff ∪ team admin).
     expect(staffRoleIdsForCategory({ staffRoleIds: 'T1', adminRoleIds: 'A1' }, { staffRoleIds: 'C1,C2' }).sort()).toEqual(['A1', 'C1', 'C2', 'T1'])
+    const teamRole = snowflake()
+    await db.update(businesses).set({ staffRoleIds: teamRole }).where(eq(businesses.id, w.biz.id))
+    for (const [role, idem] of [[teamRole, 'a4t'], [w.biz.adminRoleIds, 'a4a']] as const) {
+      const d = fakeDeps({ discord: { fetchGuildMember: vi.fn(async () => member([role]) as never) } })
+      expect((await call(d, staff, idem)).status, idem).toBe(201)
+    }
+    // Permissions never count: a member whose only role is unrelated (say it
+    // carries ManageGuild/ADMINISTRATOR in Discord) is not staff here.
+    const permsOnly = fakeDeps({
+      discord: { fetchGuildMember: vi.fn(async () => member([snowflake()], { permissions: '8' }) as never) },
+    })
+    expect((await call(permsOnly, staff, 'a4p')).status).toBe(403)
     // The opener counts; a reserved-word name falls back to the integration name.
     const opener = fakeDeps({
       discord: {
@@ -578,7 +591,7 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
     await db.update(integrations).set({ scopes: ['tickets:read', 'tickets:write', 'tickets:close'] }).where(eq(integrations.id, w.main.integration.id))
     const closeTicket = vi.fn(async () => {
       await db.update(tickets).set({ status: 'closed', closedAt: new Date() }).where(eq(tickets.id, w.ticket.id))
-      return { ok: true as const }
+      return { ok: true as const, closedBy: 'bot' as const }
     })
     const closing = fakeDeps({ bot: { closeTicket } })
     const r = await patch(w.main.key, w.ticket.id, { status: 'closed', reason: 'All songs decided' }, closing)
@@ -587,6 +600,7 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
     const body = await r.json()
     expect(body.status).toBe('closed')
     expect(body.closedAt).not.toBeNull()
+    expect(body.closedBy).toBe('bot')
 
     expect((await patch(w.main.key, w.ticket.id, { status: 'closed' }, closing)).status).toBe(409)
     expect((await patch(w.main.key, w.ticket.id, { status: 'waiting' }, closing)).status).toBe(409)
@@ -594,6 +608,25 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
     const audit = await db.select().from(integrationAudit).where(eq(integrationAudit.integrationId, w.main.integration.id))
     expect(audit.some((a) => a.action === 'ticket.closed')).toBe(true)
     expect(JSON.stringify(audit)).not.toContain('etk.')
+  })
+
+  it('forwards the close actor and returns + audits the bot-reported closedBy', async () => {
+    const w = await world()
+    const actor = snowflake()
+    for (const [closedBy, expected] of [['actor', 'actor'], [null, null]] as const) {
+      const t = await makeIntegrationTicket({ businessId: w.biz.id, integrationId: w.main.integration.id, openerUserId: w.opener.id, categoryId: w.cat.id })
+      const closeTicket = vi.fn(async () => {
+        await db.update(tickets).set({ status: 'closed', closedAt: new Date() }).where(eq(tickets.id, t.id))
+        return { ok: true as const, closedBy }
+      })
+      const r = await patch(w.main.key, t.id, { status: 'closed', actorDiscordId: actor }, fakeDeps({ bot: { closeTicket } }))
+      expect(r.status).toBe(200)
+      expect((await r.json()).closedBy).toBe(expected)
+      expect(closeTicket).toHaveBeenCalledWith(expect.objectContaining({ ticketId: t.id, businessId: w.biz.id, actorDiscordId: actor }))
+      const audit = await db.select().from(integrationAudit).where(eq(integrationAudit.integrationId, w.main.integration.id))
+      const row = audit.find((a) => a.action === 'ticket.closed' && (a.metadata as { ticketId?: number }).ticketId === t.id)
+      expect(row?.metadata).toMatchObject({ actorDiscordId: actor, closedBy: expected })
+    }
   })
 
   it('maps bot close answers and gates the close actor on actor_impersonation', async () => {

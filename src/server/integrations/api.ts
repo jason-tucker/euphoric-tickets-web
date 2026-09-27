@@ -162,8 +162,14 @@ function botUnavailable(err: unknown, where: string): Response {
 }
 
 // The staff role set for a ticket's category: the category's own staff
-// roles, the team-wide "Team Member" roles, and the team's admin ("Team
-// Manager") roles. Mirrors the web's resolveTicketAccess staff tiers.
+// roles ∪ the team-wide "Team Member" roles (businesses.staff_role_ids) ∪ the
+// team's admin ("Team Manager") roles (businesses.admin_role_ids).
+//
+// This is THE staff set for integration actor checks, and the bot's
+// close-actor rule uses the identical union. It is purely role-based:
+// Discord ManageGuild / ADMINISTRATOR permissions and the sudo flag do NOT
+// make an actor staff here. (The ticket opener additionally counts for POST
+// /messages only; see checkActor.)
 export function staffRoleIdsForCategory(
   business: Pick<Business, 'staffRoleIds' | 'adminRoleIds'>,
   category: { staffRoleIds: string } | null,
@@ -173,10 +179,11 @@ export function staffRoleIdsForCategory(
 
 type ActorOk = { ok: true; member: DiscordGuildMember & { avatar?: string | null; pending?: boolean }; userId: string | null }
 
-// actorDiscordId rule (plan §4.3): the integration must have
-// actor_impersonation, AND a LIVE bot-token lookup must show the actor is a
-// (non-pending) guild member who is staff for the ticket's category or is the
-// ticket's opener. Otherwise 403 `actor_forbidden`.
+// actorDiscordId rule for POST /messages (plan §4.3): the integration must
+// have actor_impersonation, AND a LIVE bot-token lookup must show the actor is
+// a (non-pending) guild member who holds a role in staffRoleIdsForCategory, or
+// is the ticket's opener. Otherwise 403 `actor_forbidden`. Only the member's
+// role list is consulted — never permissions or sudo.
 async function checkActor(
   ctx: IntegrationContext,
   ticket: Ticket,
@@ -394,8 +401,10 @@ export async function handlePatchTicket(req: Request, rawId: string, deps: ApiDe
   if (ticket.status === 'closed') return apiError(409, 'already_closed')
 
   if (input.status === 'closed') {
-    // The bot decides the closer: the actor if given AND staff for the
-    // category, else the bot itself. Web only gates impersonation here.
+    // The bot decides the closer: the actor if given AND in the shared staff
+    // set (staffRoleIdsForCategory — the opener does NOT count for close),
+    // else the bot itself; it reports which as closedBy. Web only gates
+    // impersonation here.
     if (input.actorDiscordId && !ctx.integration.actorImpersonation) return apiError(403, 'actor_forbidden')
     let res
     try {
@@ -413,11 +422,18 @@ export async function handlePatchTicket(req: Request, rawId: string, deps: ApiDe
       integrationId: ctx.integration.id,
       businessId: ctx.business.id,
       action: 'ticket.closed',
-      metadata: { ticketId: ticket.id, actorDiscordId: input.actorDiscordId ?? null },
+      metadata: { ticketId: ticket.id, actorDiscordId: input.actorDiscordId ?? null, closedBy: res.closedBy },
     })
     const fresh = (await loadScopedTicket(ctx, ticket.id)) ?? ticket
     const v = await ticketView(fresh, ctx.business)
-    return apiJson(200, { status: 'closed', claimedBy: v.claimedBy, closedAt: v.closedAt, webUrl: v.webUrl, discordChannelUrl: v.discordChannelUrl })
+    return apiJson(200, {
+      status: 'closed',
+      claimedBy: v.claimedBy,
+      closedAt: v.closedAt,
+      webUrl: v.webUrl,
+      discordChannelUrl: v.discordChannelUrl,
+      closedBy: res.closedBy,
+    })
   }
 
   // Non-closing workflow status. Conditional on "not closed" so a racing

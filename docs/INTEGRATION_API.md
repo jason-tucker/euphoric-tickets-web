@@ -58,7 +58,7 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 
 `{status: in_progress|waiting|on_hold|completed|closed, actorDiscordId?, reason?≤500}`
 
-- `closed` goes to the bot's close route. The bot closes as the actor if one is given and is staff for the category; otherwise it closes as the bot itself. `actorDiscordId` also requires `actor_impersonation`, else `403 actor_forbidden`.
+- `closed` goes to the bot's close route. The bot closes as the actor if one is given and is in the **staff set** (below; the opener does **not** count for close); otherwise it closes as the bot itself. The response is `200 {status:'closed', claimedBy, closedAt, webUrl, discordChannelUrl, closedBy}`, where `closedBy` is `'actor'` or `'bot'` as reported by the bot (`null` only if the bot did not say). `closedBy` is also written to the integration audit. `actorDiscordId` also requires `actor_impersonation`, else `403 actor_forbidden`.
 - Without `tickets:close`, closing returns `403`.
 - A ticket that is already closed returns `409 already_closed`.
 - Other statuses are set directly. A silent `-# Ticket status set to X by <integration>` footer is posted, and the change is written to `audit_logs` with `via: integration:<slug>`.
@@ -78,7 +78,14 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
 - A bot failure returns `502 bot_unavailable`.
 - A closed ticket returns `409 ticket_closed`, except that a replay of a key accepted before the close still gets `200`.
 
-**`actorDiscordId`** requires `actor_impersonation` **and** a live bot-token member lookup. The actor must be a non-pending member who holds one of the category's staff roles, the team-wide staff roles or the team admin roles, **or** be the ticket's opener. Otherwise the response is `403 actor_forbidden`. The post then uses the actor's server nickname and avatar.
+**`actorDiscordId`** requires `actor_impersonation` **and** a live bot-token member lookup. The actor must be a non-pending member who is in the **staff set**, **or** be the ticket's opener. Otherwise the response is `403 actor_forbidden`. The post then uses the actor's server nickname and avatar.
+
+**The staff set** (used for every integration actor check, on the web and in the bot's close-actor rule alike) is the role-based union of:
+- the category's `staff_role_ids`,
+- the team's `businesses.staff_role_ids` ("Team Member" roles), and
+- the team's `businesses.admin_role_ids` ("Team Manager" roles).
+
+Only the member's roles count. Discord's **Manage Server** / **Administrator** permissions and the web's **sudo** flag do **not** make an actor staff. The ticket's opener additionally counts for `POST /messages` only, never for close.
 
 **What gets posted:**
 - The body is markdown-escaped, and mentions are defused.
@@ -103,7 +110,7 @@ The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/
 | Route | Web sends | Web accepts |
 |---|---|---|
 | `open` | `{integrationId, integrationSlug, integrationName, businessId, categoryKey, openerDiscordId, subject, card, externalRef}` | `201/200 {ticketId:int, channelId:snowflake, created:bool}`; `404`; `403 {error:'opener_pending'\|'category_forbidden'}`; `409`; `503` |
-| `close` | `{ticketId, businessId, actorDiscordId?, reason?}` | `200 {closed:true}`; `409`; `404` |
+| `close` | `{ticketId, businessId, actorDiscordId?, reason?}` | `200 {closed:true, closedBy:'actor'\|'bot'}`; `409`; `404` |
 | `webhook/ensure` | `{ticketId, businessId}` | `200 {webhookUrl}` where the URL is a Discord execute URL `https://discord.com/api[/vN]/webhooks/<id>/<token>` |
 
 The status code is authoritative. For 403 the web reads the code from `{error}` (or `{code}`); anything that is not `opener_pending` is treated as `category_forbidden`. Any other status, a malformed body, or a timeout (20 s for open, 10 s for the others) becomes `502 bot_unavailable`. After an open succeeds, the web re-reads the ticket under the caller's scope and requires `external_ref` to match, so a mismatch is also a 502.

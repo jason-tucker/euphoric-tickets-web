@@ -110,11 +110,22 @@ export async function botOpenTicket(req: BotOpenRequest): Promise<BotOpenResult>
 // ---- close ---------------------------------------------------------------
 
 export type BotCloseRequest = { ticketId: number; businessId: string; actorDiscordId?: string; reason?: string }
-export type BotCloseResult = { ok: true } | { ok: false; status: 409; code: 'already_closed' } | { ok: false; status: 404; code: 'not_found' }
+// closedBy: 'actor' when the bot closed as actorDiscordId (the actor passed
+// the shared staff-set check), 'bot' when it fell back to closing as itself.
+// null only if the bot did not say (tolerated: the ticket IS closed, so a
+// missing attribution must not turn a completed close into a 502).
+export type CloseAttribution = 'actor' | 'bot' | null
+export type BotCloseResult =
+  | { ok: true; closedBy: CloseAttribution }
+  | { ok: false; status: 409; code: 'already_closed' }
+  | { ok: false; status: 404; code: 'not_found' }
 
 export async function botCloseTicket(req: BotCloseRequest): Promise<BotCloseResult> {
   const r = await postInternal('/api/internal/tickets/close', req, DEFAULT_TIMEOUT_MS)
-  if (r.status === 200 && r.body?.closed === true) return { ok: true }
+  if (r.status === 200 && r.body?.closed === true) {
+    const by = r.body.closedBy
+    return { ok: true, closedBy: by === 'actor' || by === 'bot' ? by : null }
+  }
   if (r.status === 409) return { ok: false, status: 409, code: 'already_closed' }
   if (r.status === 404) return { ok: false, status: 404, code: 'not_found' }
   throw new BotUnavailableError(`http_${r.status}`)
