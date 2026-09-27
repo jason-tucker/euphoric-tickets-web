@@ -75,23 +75,61 @@ describeDb('Integration API — auth', () => {
     expect(res.status).toBe(401)
   })
 
-  it('rate-limits failed auth per IP (then even a valid key from that IP gets 429)', async () => {
+  it('brakes failing requests per bucket, but a valid key always succeeds even when its bucket is exhausted', async () => {
     const w = await world()
-    const ip = '203.0.113.77'
-    for (let i = 0; i < RATE.authFailuresPerIp; i++) {
-      const r = await handleGetTicket(apiRequest('GET', '/x', { key: 'etk.AAAAAAAAAA.' + 'A'.repeat(43), ip }), '1')
+    const bad = 'etk.AAAAAAAAAA.' + 'A'.repeat(43)
+    // Default (untrusted proxy headers): every failure shares one bucket, so
+    // spoofing cf-connecting-ip / x-forwarded-for buys nothing.
+    for (let i = 0; i < RATE.authFailuresPerBucket; i++) {
+      const r = await handleGetTicket(
+        apiRequest('GET', '/x', { key: bad, ip: `203.0.113.${i}`, headers: { 'cf-connecting-ip': `198.51.100.${i}` } }),
+        '1',
+      )
       expect(r.status).toBe(401)
     }
-    const blocked = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key, ip }), String(w.ticket.id))
-    expect(blocked.status).toBe(429)
-    expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0)
-    // cf-connecting-ip takes precedence over XFF for the bucket.
-    const other = await handleGetTicket(
-      apiRequest('GET', '/x', { key: w.main.key, ip, headers: { 'cf-connecting-ip': '198.51.100.9' } }),
-      String(w.ticket.id),
-    )
-    expect(other.status).toBe(200)
+    const braked = await handleGetTicket(apiRequest('GET', '/x', { key: bad, ip: '192.0.2.1' }), '1')
+    expect(braked.status).toBe(429)
+    expect(Number(braked.headers.get('Retry-After'))).toBeGreaterThan(0)
+    // Header-less requests are braked too (and cost no DB lookup).
+    expect((await handleGetTicket(apiRequest('GET', '/x', {}), '1')).status).toBe(429)
+    // The exploit scenario: the bucket is exhausted, yet the legitimate key works.
+    const ok = await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key, ip: '203.0.113.0' }), String(w.ticket.id))
+    expect(ok.status).toBe(200)
   })
+
+  it('with INTEGRATION_TRUST_PROXY_HEADERS: per-IP buckets, and a spoofed victim IP cannot lock the victim out', async () => {
+    const w = await world()
+    process.env.INTEGRATION_TRUST_PROXY_HEADERS = '1'
+    try {
+      const victim = '172.20.0.5'
+      for (let i = 0; i < RATE.authFailuresPerBucket; i++) {
+        expect((await handleGetTicket(apiRequest('GET', '/x', { ip: '10.0.0.66', headers: { 'cf-connecting-ip': victim } }), '1')).status).toBe(401)
+      }
+      expect((await handleGetTicket(apiRequest('GET', '/x', { ip: victim }), '1')).status).toBe(429)
+      // Another bucket still gets plain 401s.
+      expect((await handleGetTicket(apiRequest('GET', '/x', { ip: '172.20.0.6' }), '1')).status).toBe(401)
+      // The victim's valid key is unaffected.
+      expect((await handleGetTicket(apiRequest('GET', '/x', { key: w.main.key, ip: victim }), String(w.ticket.id))).status).toBe(200)
+    } finally {
+      delete process.env.INTEGRATION_TRUST_PROXY_HEADERS
+    }
+  })
+
+  it('30k header-less failures from distinct IPs keep the failed-auth map ≤ cap with bounded per-hit work', async () => {
+    process.env.INTEGRATION_TRUST_PROXY_HEADERS = '1'
+    try {
+      for (let i = 0; i < 30_000; i++) {
+        const ip = `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`
+        const r = await handleGetTicket(apiRequest('GET', '/x', { ip, headers: { 'cf-connecting-ip': ip } }), '1')
+        if (r.status !== 401) throw new Error(`unexpected ${r.status} at ${i}`)
+      }
+      const lim = globalThis.__integrationLimiters!.authFail
+      expect(lim.size).toBeLessThanOrEqual(RATE.authFailureMaxBuckets)
+      expect(lim.stats.maxHitWork).toBeLessThanOrEqual(9)
+    } finally {
+      delete process.env.INTEGRATION_TRUST_PROXY_HEADERS
+    }
+  }, 60_000)
 
   it('rate-limits 60/min per key', async () => {
     const w = await world()

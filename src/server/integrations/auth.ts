@@ -1,14 +1,19 @@
 // Integration API authentication + scoping (plan §4.2).
 //
 // Order (every /api/v1/* request):
-//   1. per-IP failed-auth brake — an IP with ≥ RATE.authFailuresPerIp recent
-//      401s gets 429 before any key work;
-//   2. parse `Authorization: Bearer etk.<prefix>.<secret>`;
-//   3. look the prefix up; ALWAYS one sha256 + one timingSafeEqual (a dummy
-//      compare when the prefix is unknown or the header is malformed);
-//   4. unknown / wrong / disabled → 401 `unauthorized` (+ record an IP failure);
-//   5. per-key limits (60/min; opens additionally 10/min) → 429;
-//   6. required scope missing → 403 `scope_missing`.
+//   1. parse `Authorization: Bearer etk.<prefix>.<secret>`. A missing or
+//      malformed header costs no DB round-trip;
+//   2. look the prefix up (only for a well-formed header); ALWAYS one sha256
+//      + one timingSafeEqual (a dummy compare when the prefix is unknown or
+//      the header is malformed);
+//   3. unknown / wrong / disabled → the failed-auth brake: record a failure
+//      for the client bucket (rateLimit.ts clientBucket) and answer 401
+//      `unauthorized`, or 429 once that bucket has ≥ RATE.authFailuresPerBucket
+//      recent failures. The brake is consulted ONLY for failing requests, so a
+//      valid, enabled key is never blocked by it (no lockout of a legitimate
+//      integration by someone else's failures);
+//   4. per-key limits (60/min; opens additionally 10/min) → 429;
+//   5. required scope missing → 403 `scope_missing`.
 //
 // Never logs the Authorization header or any part of the key.
 
@@ -16,7 +21,7 @@ import { eq, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { businesses, integrations, type Business, type Integration, type IntegrationScope } from '@/db/schema'
 import { parseAuthorizationHeader, verifySecret } from './keys'
-import { clientIp, limiters } from './rateLimit'
+import { clientBucket, limiters } from './rateLimit'
 import { apiError } from './http'
 
 export type IntegrationContext = { integration: Integration; business: Business }
@@ -30,12 +35,6 @@ export async function authenticateIntegration(
   opts: { scope: IntegrationScope; open?: boolean },
 ): Promise<AuthResult> {
   const lim = limiters()
-  const ip = clientIp(req.headers)
-
-  const blocked = lim.authFail.check(ip)
-  if (!blocked.allowed) {
-    return { ok: false, response: apiError(429, 'rate_limited', { 'Retry-After': String(blocked.retryAfterSec) }) }
-  }
 
   const parsed = parseAuthorizationHeader(req.headers.get('authorization'))
   let row: Integration | undefined
@@ -45,10 +44,7 @@ export async function authenticateIntegration(
   // Exactly one hash + constant-time compare on every path (dummy when no row).
   const secretOk = verifySecret(parsed?.secret ?? '', row?.keyHash ?? null)
 
-  if (!parsed || !row || !secretOk || !row.enabled) {
-    lim.authFail.hit(ip)
-    return { ok: false, response: apiError(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' }) }
-  }
+  if (!parsed || !row || !secretOk || !row.enabled) return { ok: false, response: authFailure(req) }
 
   const perKey = lim.perKey.hit(row.id)
   if (!perKey.allowed) {
@@ -68,8 +64,7 @@ export async function authenticateIntegration(
   const [business] = await db.select().from(businesses).where(eq(businesses.id, row.businessId)).limit(1)
   if (!business) {
     // The integration's team is gone (cascade should have removed the row).
-    lim.authFail.hit(ip)
-    return { ok: false, response: apiError(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' }) }
+    return { ok: false, response: authFailure(req) }
   }
 
   if (!row.lastUsedAt || Date.now() - row.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS) {
@@ -81,6 +76,15 @@ export async function authenticateIntegration(
   }
 
   return { ok: true, ctx: { integration: row, business } }
+}
+
+// A failed authentication: record it against the client bucket and answer
+// 401, or 429 once the bucket is over the brake. Refused (429) hits are not
+// recorded, so the bucket drains on schedule.
+function authFailure(req: Request): Response {
+  const brake = limiters().authFail.hit(clientBucket(req.headers))
+  if (!brake.allowed) return apiError(429, 'rate_limited', { 'Retry-After': String(brake.retryAfterSec) })
+  return apiError(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' })
 }
 
 export function hasScope(integration: Pick<Integration, 'scopes'>, scope: IntegrationScope): boolean {

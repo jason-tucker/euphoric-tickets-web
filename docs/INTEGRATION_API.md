@@ -19,7 +19,9 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 
 - Keys are base62. The secret is 32 CSPRNG bytes. Only `sha256(secret)` is stored, and it is compared in constant time. An unknown prefix gets a dummy compare.
 - A bad, unknown or disabled key returns `401 {"error":"unauthorized"}`.
-- After 20 failed attempts in 10 minutes from one IP, every request from that IP returns `429 rate_limited` with `Retry-After`. The IP is `cf-connecting-ip`, falling back to the first `x-forwarded-for` hop.
+- **Failed-auth brake.** The key is always verified first. Only a request that **fails** authentication is counted: after 20 failures in 10 minutes from one client bucket, further **failing** requests from that bucket get `429 rate_limited` with `Retry-After` instead of `401`. A valid, enabled key is never blocked by the brake, so someone else's failures cannot lock an integration out. A request with no (or a malformed) `Authorization` header costs no database lookup.
+  - **Client bucket.** tickets-web cannot see the TCP peer from a route handler, and on the internal networks `cf-connecting-ip` / `x-forwarded-for` are whatever the caller sends. So by default those headers are **ignored** and all failing requests share one bucket (`untrusted`). Set `INTEGRATION_TRUST_PROXY_HEADERS=1` only if a proxy you control sits in front of `/api/v1` and overwrites both headers; then the bucket is `cf-connecting-ip`, else the first `x-forwarded-for` hop, which must be a literal IP (IPv4 per address, IPv6 per /64, IPv4-mapped IPv6 as IPv4; anything else shares an `invalid` bucket).
+  - **Bounded state.** At most 10 000 buckets are tracked (the oldest is evicted), and each request does a small, constant amount of limiter work.
 - Each key may make 60 requests a minute. Opens are additionally capped at 10 a minute. Exceeding either returns `429` with `Retry-After`.
 - A missing scope returns `403 {"error":"scope_missing","required":"<scope>"}`.
 - Scopes: `tickets:read`, `tickets:write`, `tickets:close`, `guild:read`.
@@ -180,7 +182,7 @@ X-Euphoric-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, `${t}.${deliveryId}.$
 | Symptom | Cause | Fix |
 |---|---|---|
 | Every call `401` | wrong key, key rotated, or integration disabled | re-issue the key on `/admin/integrations` |
-| `429` for everything from one caller | 20+ failed auths from that IP in 10 min | fix the caller's key; the window clears in 10 min |
+| `429 rate_limited` on requests with a bad key | 20+ failed auths from that bucket in 10 min (by default all failures share one bucket) | fix the caller's key; valid keys are never braked, and the window clears in 10 min |
 | Opens return `502 bot_unavailable` | `INTERNAL_TOKEN` or `BOT_INTERNAL_URL` unset or mismatched, bot down, or guild unavailable | check the bot's health and both `.env` files |
 | Messages `502 discord_unavailable` | Discord error or deleted webhook | retry the same `Idempotency-Key` after 30 s; the webhook is re-ensured |
 | Deliveries `blocked_address` | receiver resolves outside `expected_network_cidr` (hooks network recreated with a new subnet) | update the allowlist row's CIDR |
