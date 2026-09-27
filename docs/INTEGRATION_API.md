@@ -42,7 +42,8 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 ```
 
 - Unknown keys are rejected. `card.link.url` must satisfy `new URL(url).origin === link_origin` and be **at most 512 characters** (Discord's link-button limit), both as sent and once normalised by `new URL`; otherwise `422`.
-- The whole body must fit in 13 500 bytes of UTF-8 JSON, so the bot's 16 KB bridge cap is never hit.
+- **Plain text, not markdown.** `subject`, `card.title` and every `card.lines[]` entry are treated as plain text: the web escapes Discord markdown (backslash, `*`, `_`, `~`, backtick, `|`, `>`, `[`, `]`, `<`, and line-leading heading/list/subtext markers) and defuses `@everyone` / `@here` **before** forwarding them to the bot, and the bot does not escape again. A masked link such as `[Approve](https://…)` therefore renders literally in the welcome card. Escaping can lengthen a field; the escaped value is trimmed to the bot's limit (subject and title 100, each line 200 characters) and ends in `…` when trimmed. The stored ticket subject is the escaped form. `card.link.label` is a button label (never markdown) and is forwarded as-is.
+- The whole body must fit in 13 500 bytes of UTF-8 JSON, both as sent and once escaped, so the bot's 16 KB bridge cap is never hit.
 - The category must be in `allowed_category_keys` **and** exist in the key's team; otherwise `403 category_forbidden`.
 - Responses:
   - `201 {ticketId, number, webUrl, discordChannelUrl, created:true}`
@@ -59,7 +60,7 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 
 ### `PATCH /api/v1/tickets/:id` — `tickets:write` (`closed` also needs `tickets:close`)
 
-`{status: in_progress|waiting|on_hold|completed|closed, actorDiscordId?, reason?≤500}`
+`{status: in_progress|waiting|on_hold|completed|closed, actorDiscordId?, reason?≤500}`. `reason` is plain text: it is markdown-escaped with mentions defused (and trimmed to 500 characters) before it reaches the bot, which quotes it in the opener's DM.
 
 - `closed` goes to the bot's close route. The bot closes as the actor if one is given and is in the **staff set** (below; the opener does **not** count for close); otherwise it closes as the bot itself. The response is `200 {status:'closed', claimedBy, closedAt, webUrl, discordChannelUrl, closedBy}`, where `closedBy` is `'actor'` or `'bot'` as reported by the bot (`null` only if the bot did not say). `closedBy` is also written to the integration audit. `actorDiscordId` also requires `actor_impersonation`, else `403 actor_forbidden`.
 - Without `tickets:close`, closing returns `403`.

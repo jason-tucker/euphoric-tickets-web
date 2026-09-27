@@ -39,7 +39,7 @@ import { writeAudit } from '@/server/audit'
 import { authenticateIntegration, hasScope, type IntegrationContext } from './auth'
 import { writeIntegrationAudit } from './audit'
 import { BotUnavailableError, DISCORD_WEBHOOK_URL_RE, defaultBotOps, type BotOps } from './botClient'
-import { composeIntegrationMessage, escapeDiscordMarkdown, safeWebhookUsername } from './discordText'
+import { composeIntegrationMessage, escapeDiscordMarkdown, escapeForBot, safeWebhookUsername } from './discordText'
 import { BodyError, apiError, apiJson, parseTicketId, readJsonBody, validationError } from './http'
 
 // ---- dependency seams -------------------------------------------------------
@@ -290,6 +290,23 @@ export async function handleOpenTicket(req: Request, deps: ApiDeps = defaultApiD
     .limit(1)
   if (!category) return apiError(403, 'category_forbidden')
 
+  // The bot renders subject and card as Discord markdown in its own messages
+  // (welcome card, templates) and does not escape them, so escape + defuse
+  // mentions here and fit the bot's field limits (subject/title 100, line 200).
+  const forwarded = {
+    subject: escapeForBot(input.subject, 100),
+    card: {
+      title: escapeForBot(input.card.title, 100),
+      lines: input.card.lines.map((l) => escapeForBot(l, 200)),
+      link: input.card.link,
+    },
+  }
+  if (Buffer.byteLength(JSON.stringify({ ...input, ...forwarded }), 'utf8') > BOT_BODY_BUDGET) {
+    return apiError(422, 'validation', undefined, {
+      issues: [{ path: 'card', message: `request too large for the bot bridge once escaped (max ${BOT_BODY_BUDGET} bytes of UTF-8 JSON)` }],
+    })
+  }
+
   let result
   try {
     result = await deps.bot.openTicket({
@@ -299,8 +316,8 @@ export async function handleOpenTicket(req: Request, deps: ApiDeps = defaultApiD
       businessId: ctx.business.id,
       categoryKey: input.categoryKey,
       openerDiscordId: input.openerDiscordId,
-      subject: input.subject,
-      card: input.card,
+      subject: forwarded.subject,
+      card: forwarded.card,
       externalRef: input.externalRef,
     })
   } catch (err) {
@@ -414,7 +431,8 @@ export async function handlePatchTicket(req: Request, rawId: string, deps: ApiDe
         businessId: ctx.business.id,
         integrationId: ctx.integration.id,
         ...(input.actorDiscordId ? { actorDiscordId: input.actorDiscordId } : {}),
-        ...(input.reason ? { reason: input.reason } : {}),
+        // The bot puts the reason in the opener's DM unescaped: escape here.
+        ...(input.reason ? { reason: escapeForBot(input.reason, 500) } : {}),
       })
     } catch (err) {
       return botUnavailable(err, 'close')

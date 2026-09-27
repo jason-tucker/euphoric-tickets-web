@@ -45,18 +45,30 @@ export function integrationFooter(integrationName: string, itemRef?: string | nu
   return `-# via ${name}${ref}`
 }
 
+// Trim already-escaped text to `max` characters (ending in '…') without
+// leaving a dangling '\' escape or a lone high surrogate.
+export function clampEscaped(escaped: string, max: number): string {
+  if (escaped.length <= max) return escaped
+  let out = escaped.slice(0, Math.max(0, max - 1))
+  const last = out.charCodeAt(out.length - 1)
+  if (last >= 0xd800 && last <= 0xdbff) out = out.slice(0, -1)
+  // Drop a trailing odd run of backslashes (a cut escape sequence).
+  const run = /\\+$/.exec(out)?.[0].length ?? 0
+  if (run % 2 === 1) out = out.slice(0, -1)
+  return `${out}…`
+}
+
+// Integration text that the BOT renders (card title/lines, subject, close
+// reason): escape markdown + defuse mentions here, at the API boundary — the
+// bot does not escape again — and fit the bot's per-field length limit.
+export function escapeForBot(text: string, max: number): string {
+  return clampEscaped(escapeDiscordMarkdown(text), max)
+}
+
 // Escaping can up to double the body, so trim the ESCAPED body (never the
 // footer) to fit Discord's 2000-char cap, without leaving a dangling '\'.
 export function composeIntegrationMessage(body: string, integrationName: string, itemRef?: string | null): string {
   const footer = integrationFooter(integrationName, itemRef)
-  let escaped = escapeDiscordMarkdown(body)
-  const room = 2000 - footer.length - 1
-  if (escaped.length > room) {
-    escaped = escaped.slice(0, room - 1)
-    // Drop a trailing odd run of backslashes (a cut escape sequence).
-    const run = /\\+$/.exec(escaped)?.[0].length ?? 0
-    if (run % 2 === 1) escaped = escaped.slice(0, -1)
-    escaped += '…'
-  }
+  const escaped = clampEscaped(escapeDiscordMarkdown(body), 2000 - footer.length - 1)
   return `${escaped}\n${footer}`
 }

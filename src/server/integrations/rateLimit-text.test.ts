@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { RATE, SlidingWindowLimiter, UNTRUSTED_BUCKET, clientBucket, ipBucket, trustProxyHeaders } from './rateLimit'
 import {
+  clampEscaped,
   composeIntegrationMessage,
   escapeDiscordMarkdown,
+  escapeForBot,
   integrationFooter,
   isAcceptableWebhookUsername,
   safeWebhookUsername,
@@ -158,6 +160,19 @@ describe('Discord text shaping', () => {
     expect(msg.endsWith('\n-# via EFM Music · Song #1')).toBe(true)
     const bodyPart = msg.split('\n')[0]!.replace(/…$/, '')
     expect((/\\+$/.exec(bodyPart)?.[0].length ?? 0) % 2).toBe(0)
+  })
+
+  it('escapeForBot escapes, then clamps to the bot field limit safely', () => {
+    expect(escapeForBot('[x](https://a) <@1>', 100)).toBe('\\[x\\](https://a) \\<@1\\>')
+    const clamped = escapeForBot('_'.repeat(100), 100)
+    expect(clamped.length).toBeLessThanOrEqual(100)
+    expect(clamped.endsWith('…')).toBe(true)
+    expect((/\\+$/.exec(clamped.slice(0, -1))?.[0].length ?? 0) % 2).toBe(0)
+    // Never ends in a lone high surrogate.
+    const emoji = clampEscaped('a' + '🎵'.repeat(10), 5)
+    expect(emoji.length).toBeLessThanOrEqual(5)
+    expect(emoji).toBe('a🎵…')
+    expect(escapeForBot('short', 100)).toBe('short')
   })
 
   it('falls back when a username contains Discord-reserved words', () => {

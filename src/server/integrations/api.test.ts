@@ -348,6 +348,37 @@ describeDb('POST /api/v1/tickets (open)', () => {
     expect((await again.json()).created).toBe(false)
   })
 
+  it('escapes markdown and defuses mentions in subject / card title / card lines before the bot sees them', async () => {
+    const w = await world()
+    const body = openBody({
+      subject: '**Urgent** @everyone <@&123456789012345678>',
+      card: {
+        title: '# Batch _12_',
+        lines: ['[Approve batch](https://evil.example/login)', '*'.repeat(200), 'plain line'],
+        link: { label: 'Open [portal]', url: 'https://music.test/batches/12' },
+      },
+    })
+    const created = await makeIntegrationTicket(
+      { businessId: w.biz.id, integrationId: w.main.integration.id, openerUserId: w.opener.id, categoryId: w.cat.id },
+      { externalRef: body.externalRef as string },
+    )
+    const openTicket = vi.fn(async () => ({ ok: true as const, ticketId: created.id, channelId: created.discordChannelId!, created: true }))
+    const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), fakeDeps({ bot: { openTicket } }))
+    expect(r.status).toBe(201)
+    const sent = (openTicket.mock.calls[0] as unknown as [{ subject: string; card: { title: string; lines: string[]; link: { label: string } } }])[0]
+    expect(sent.subject).toBe('\\*\\*Urgent\\*\\* @\u200beveryone \\<@&123456789012345678\\>')
+    expect(sent.card.title).toBe('\\# Batch \\_12\\_')
+    // The masked link renders literally (no clickable phishing link).
+    expect(sent.card.lines[0]).toBe('\\[Approve batch\\](https://evil.example/login)')
+    // Escaping doubles '*'; the line is clamped to the bot's 200 without a dangling '\\'.
+    expect(sent.card.lines[1]!.length).toBeLessThanOrEqual(200)
+    expect(sent.card.lines[1]!.endsWith('…')).toBe(true)
+    expect((/\\+$/.exec(sent.card.lines[1]!.slice(0, -1))?.[0].length ?? 0) % 2).toBe(0)
+    expect(sent.card.lines[2]).toBe('plain line')
+    // A button label is plain text in Discord; it is forwarded as-is.
+    expect(sent.card.link.label).toBe('Open [portal]')
+  })
+
   it('maps bot errors to the public codes', async () => {
     const w = await world()
     const cases: Array<[unknown, number, string, string | null]> = [
@@ -630,9 +661,15 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
       return { ok: true as const, closedBy: 'bot' as const }
     })
     const closing = fakeDeps({ bot: { closeTicket } })
-    const r = await patch(w.main.key, w.ticket.id, { status: 'closed', reason: 'All songs decided' }, closing)
+    const r = await patch(w.main.key, w.ticket.id, { status: 'closed', reason: 'All songs decided — see [here](https://evil.example) @here' }, closing)
     expect(r.status).toBe(200)
-    expect(closeTicket).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id, integrationId: w.main.integration.id, reason: 'All songs decided' })
+    // The close reason reaches the opener's DM via the bot: escaped at the boundary.
+    expect(closeTicket).toHaveBeenCalledWith({
+      ticketId: w.ticket.id,
+      businessId: w.biz.id,
+      integrationId: w.main.integration.id,
+      reason: 'All songs decided — see \\[here\\](https://evil.example) @\u200bhere',
+    })
     const body = await r.json()
     expect(body.status).toBe('closed')
     expect(body.closedAt).not.toBeNull()
