@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.12.0] — 2026-09-26 — Integration API: other services can open, update and follow tickets
+
+A general, multi-tenant API so other services can talk to the ticket system (plan: vault "EFM Music Portal — Plan" §4, v3.2). Its first client is the EFM Music Portal: each music batch or request becomes a ticket that behaves **exactly like a bot-opened ticket**. Public replies flow back through signed webhooks; internal staff notes never do. Full contract: [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md). Schema list for the bot mirror: [`docs/INTEGRATION_SCHEMA.md`](docs/INTEGRATION_SCHEMA.md).
+
+### Added
+- **`/api/v1/*` Integration API**, reachable on the internal docker networks only. The edge block for `^/api/(internal|v1)/` is plan step P1d.
+  - **Endpoints:**
+    - `POST /api/v1/tickets`
+    - `GET|PATCH /api/v1/tickets/:id`
+    - `POST /api/v1/tickets/:id/messages`
+    - `GET /api/v1/guild/roles`
+    - `GET /api/v1/members/:discordId`
+  - **Keys:** `etk.<prefix10>.<secret43>`, base62 from 32 CSPRNG bytes. Only `sha256(secret)` is stored, and it is compared with `timingSafeEqual`; an unknown prefix gets a dummy compare.
+  - **Limits:** 401s are rate-limited per IP (`cf-connecting-ip`, then `x-forwarded-for`). Each key gets 60 requests a minute, and opens are capped at 10 a minute.
+  - **Scopes:** `tickets:read`, `tickets:write`, `tickets:close` and `guild:read`.
+  - **Scoping:** every `/tickets/:id*` route 404s unless `integration_id` **and** `business_id` both match the key. Categories are looked up by (key team, `categoryKey`) and must be in `allowed_category_keys`. `card.link.url` must have the integration's exact `link_origin`.
+- **Opens go through the bot** (`POST <BOT_INTERNAL_URL>/api/internal/tickets/open`, exactly the §4.4 contract), so the channel, card, pings and audit match a panel open.
+  - Close uses `/tickets/close` and needs `tickets:close`.
+  - A missing channel webhook is created with `/tickets/webhook/ensure`, and the web stores it.
+  - The bridge authenticates with `x-internal-token: INTERNAL_TOKEN` only. There is no bot-token fallback on these new calls.
+  - Bot errors map to the public codes: `409 opening_in_progress` with `Retry-After: 5`, and `502 bot_unavailable`.
+- **Idempotent integration messages.**
+  - **Order:** `INSERT … ON CONFLICT (ticket_id, idempotency_key) DO NOTHING RETURNING`, then post through the channel webhook, then `UPDATE discord_message_id`. Two concurrent requests with the same key produce **one** Discord post.
+  - **Retry:** a message that never reached Discord is re-posted once it is older than 30 s, under a DB-clock conditional lease.
+  - **Formatting:** text is markdown-escaped with mentions defused, `allowed_mentions: {parse: []}` is set, and the server appends a `-# via <integration> · <itemRef>` footer. The webhook username falls back when it contains a word Discord reserves.
+  - **`actorDiscordId`** needs `actor_impersonation` **and** a live bot-token role check: the category's or team's staff roles, or the ticket's opener.
+- **Signed outbound webhooks.** The dispatcher starts from `src/instrumentation.ts` in the Node runtime only.
+  - **Singleton:** it runs only while holding a `pg_advisory_lock` on a dedicated reserved connection, re-checked on every sweep. NOTIFY is only a wake-up; the 15 s sweep is the source of truth.
+  - **Message cursor:** (`created_at`, `id`) per ticket with a 60 s lookback, filtered by `author_kind IS DISTINCT FROM 'integration' AND source <> 'internal'`. `UNIQUE (integration_id, event, source_key)` absorbs the overlap. Status, claim and close events come from diffing `integration_ticket_state`.
+  - **Signature:** `X-Euphoric-Signature: t=<unix>,v1=<HMAC-SHA256(secret, t.deliveryId.rawBody)>`, recomputed on every attempt, plus `X-Euphoric-Delivery`.
+  - **Delivery:** `redirect: 'manual'`, with backoff for 24 h. Only the status code and an error class are logged.
+- **SSRF policy for webhooks.** A webhook URL must exactly match a sudo-managed allowlist row (scheme, host, port, path). At send time an undici `connect` hook resolves the host, checks every address and pins the socket IP. Allowlisted rows must resolve inside `expected_network_cidr` and never to `127/8`, `169.254/16`, `0/8`, `::1`, `::` or `fe80::/10`; anything else falls back to the public-only guard.
+- **Webhook signing secrets at rest:** encrypted with AES-256-GCM using `INTEGRATION_ENC_KEY` (env only), with the integration id bound as AAD.
+- **`/admin/integrations` (sudo only).** Create an integration, with the key and the webhook secret shown once. Also:
+  - edit scopes, allowed categories, link origin and actor impersonation;
+  - manage allowlist rows (narrow private CIDRs only) and the webhook URL;
+  - rotate the key or the secret;
+  - enable or disable the integration;
+  - mark team categories **integration-only**;
+  - view the delivery log and the audit trail.
+
+  Team admins get a read-only Integrations card on `/b/<slug>/settings`.
+- **Schema, all additive** (`drizzle-kit push`). New tables: `integrations`, `integration_webhook_allowlist`, `integration_deliveries`, `integration_ticket_state`, `integration_open_claims` and `integration_audit`. New columns:
+  - `tickets`: `integration_id`, `external_ref` and `integration_card`, with a unique index on (`integration_id`, `external_ref`);
+  - `ticket_messages`: `metadata` (`NOT NULL DEFAULT '{}'`), `author_kind` (`NOT NULL DEFAULT 'human'`) and `idempotency_key`, with a unique index on (`ticket_id`, `idempotency_key`);
+  - `ticket_categories`: `integration_only`.
+
+  Every existing insert path keeps `author_kind='human'`.
+- **`scripts/schema-push-gate.sh`** runs `drizzle-kit push --force` twice against a **scratch** DB (it refuses to run without `SCHEMA_GATE_SCRATCH=yes`). It fails on `DROP`/`TRUNCATE` in run 1, or on any statement in run 2. It is copied into the image at `/opt/drizzle/`, and it caught and fixed two real non-convergences before merge: an over-long composite PK name, and drizzle-kit's array-default re-diff.
+- **Tests:** vitest suites for keys, crypto and signatures, the rate limiter, text shaping, the SSRF/CIDR logic (including real sockets), every `/api/v1` route (auth, scoping 404s, validation, bot error mapping, idempotency, actor rules), the dispatcher (a burst of 5 replies gives exactly 5 deliveries, an internal note gives 0, the `author_kind` default, state events, signing, backoff and expiry, and the singleton lock) and the admin actions.
+  - The DB suites run when `TEST_DATABASE_URL` points at a scratch Postgres.
+  - CI now starts a `postgres:16-alpine` service for them.
+
+### Changed
+- **`/t/new`** hides `integration_only` categories, and `openTicketAction` refuses a crafted post for one.
+- **`postWebhook`** (`src/lib/discord.ts`) now throws `DiscordHttpError`. The message is unchanged, and the error now carries `.status`.
+
+### Operator notes
+- New env vars:
+  - `INTEGRATION_ENC_KEY` (`openssl rand -base64 32`): keep it out of dumps and git;
+  - `INTEGRATION_DISPATCHER=off`: optional kill-switch.
+- The Integration API needs `INTERNAL_TOKEN` and `BOT_INTERNAL_URL`. Deploy **web before the bot**, and check the DB columns in between (plan §5).
+- Add a GitHub custom secret-scanning pattern for `etk\.[0-9A-Za-z]{10}\.[0-9A-Za-z]{43}`.
+
+v0.12.0 · 3915528
+
 ## [0.11.1] — 2026-07-06 — Docs: README sync with the team-wide staff tier, `/demo`, `/teams`, `/help`, and the unified console
 
 ### Fixed
