@@ -256,6 +256,7 @@ export function classifySendError(err: unknown): string {
   for (let depth = 0; e && depth < 5; depth++) {
     const x = e as { name?: string; code?: string; cause?: unknown }
     if (x.name === 'BlockedAddressError') return 'blocked_address'
+    if (x.name === 'WebhookDnsError') return 'dns'
     if (x.name === 'TimeoutError' || x.name === 'AbortError') return 'timeout'
     if (x.code === 'UND_ERR_CONNECT_TIMEOUT') return 'connect_timeout'
     if (x.code === 'ECONNREFUSED') return 'connect_refused'
@@ -522,7 +523,6 @@ export class IntegrationDispatcher {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __integrationDispatcher: IntegrationDispatcher | undefined
 }
 

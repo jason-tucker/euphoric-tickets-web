@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fetch as undiciFetch } from 'undici'
 import {
   BlockedAddressError,
+  WebhookDnsError,
   assertAddressAllowed,
   createPinnedAgent,
   ipInCidr,
@@ -118,7 +119,9 @@ describe('send-time address policy', () => {
     await expect(
       resolvePinnedAddress('music-web', cidr, lookup({ 'music-web': ['172.30.40.5', '127.0.0.1'] })),
     ).rejects.toThrow(BlockedAddressError)
-    await expect(resolvePinnedAddress('nx', cidr, lookup({}))).rejects.toThrow(BlockedAddressError)
+    // A name that does not resolve is a DNS failure, not a policy refusal.
+    await expect(resolvePinnedAddress('nx', cidr, lookup({}))).rejects.toThrow(WebhookDnsError)
+    await expect(resolvePinnedAddress('nx', cidr, async () => { throw new Error('ENOTFOUND') })).rejects.toThrow(WebhookDnsError)
     await expect(resolvePinnedAddress('[::1]', cidr)).rejects.toThrow(BlockedAddressError)
     await expect(resolvePinnedAddress('127.0.0.1', cidr)).rejects.toThrow(BlockedAddressError)
   })

@@ -88,7 +88,6 @@ export const RATE = {
 type Limiters = { perKey: SlidingWindowLimiter; opens: SlidingWindowLimiter; authFail: SlidingWindowLimiter }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __integrationLimiters: Limiters | undefined
 }
 

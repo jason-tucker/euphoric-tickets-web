@@ -82,3 +82,14 @@ export function errorClass(err: unknown): string {
   }
   return 'unknown'
 }
+
+// Route-level catch-all: an unexpected error becomes 500 `internal` and is
+// logged as a class only (driver errors carry query parameters).
+export async function guardApi(where: string, fn: () => Promise<Response>): Promise<Response> {
+  try {
+    return await fn()
+  } catch (err) {
+    console.error(`[integration-api] ${where} failed`, { errorClass: errorClass(err) })
+    return apiError(500, 'internal')
+  }
+}

@@ -25,6 +25,15 @@ export class BlockedAddressError extends Error {
   }
 }
 
+// The name did not resolve at all (not a policy refusal). Kept distinct so the
+// delivery log says `dns`, e.g. when the hooks network was recreated.
+export class WebhookDnsError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WebhookDnsError'
+  }
+}
+
 // ---- URL normalisation + allowlist match ---------------------------------
 
 export type WebhookTarget = { scheme: 'http' | 'https'; host: string; port: number; path: string }
@@ -239,9 +248,9 @@ export async function resolvePinnedAddress(
   try {
     addrs = await lookup(host)
   } catch {
-    throw new BlockedAddressError('dns resolution failed')
+    throw new WebhookDnsError('dns resolution failed')
   }
-  if (addrs.length === 0) throw new BlockedAddressError('host did not resolve')
+  if (addrs.length === 0) throw new WebhookDnsError('host did not resolve')
   for (const a of addrs) assertAddressAllowed(a.address, policy)
   return addrs[0]!.address
 }
