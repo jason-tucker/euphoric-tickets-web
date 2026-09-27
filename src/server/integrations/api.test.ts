@@ -320,6 +320,7 @@ describeDb('POST /api/v1/tickets (open)', () => {
       [{ ok: false, status: 403, code: 'opener_pending' }, 403, 'opener_pending', null],
       [{ ok: false, status: 403, code: 'category_forbidden' }, 403, 'category_forbidden', null],
       [{ ok: false, status: 409, code: 'opening_in_progress' }, 409, 'opening_in_progress', '5'],
+      [{ ok: false, status: 409, code: 'ticket_channel_missing' }, 409, 'ticket_channel_missing', null],
     ]
     for (const [result, status, code, retry] of cases) {
       const deps = fakeDeps({ bot: { openTicket: vi.fn(async () => result as never) } })
@@ -466,7 +467,7 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     const deps = fakeDeps()
     const r = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'e1', deps)
     expect(r.status).toBe(201)
-    expect(deps.bot.ensureWebhook).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id })
+    expect(deps.bot.ensureWebhook).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id, integrationId: w.main.integration.id })
     const [t] = await db.select().from(tickets).where(eq(tickets.id, w.ticket.id))
     expect(t!.discordWebhookUrl).toMatch(/^https:\/\/discord\.com\/api\/v10\/webhooks\//)
 
@@ -596,7 +597,7 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
     const closing = fakeDeps({ bot: { closeTicket } })
     const r = await patch(w.main.key, w.ticket.id, { status: 'closed', reason: 'All songs decided' }, closing)
     expect(r.status).toBe(200)
-    expect(closeTicket).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id, reason: 'All songs decided' })
+    expect(closeTicket).toHaveBeenCalledWith({ ticketId: w.ticket.id, businessId: w.biz.id, integrationId: w.main.integration.id, reason: 'All songs decided' })
     const body = await r.json()
     expect(body.status).toBe('closed')
     expect(body.closedAt).not.toBeNull()
@@ -622,7 +623,7 @@ describeDb('PATCH /api/v1/tickets/:id', () => {
       const r = await patch(w.main.key, t.id, { status: 'closed', actorDiscordId: actor }, fakeDeps({ bot: { closeTicket } }))
       expect(r.status).toBe(200)
       expect((await r.json()).closedBy).toBe(expected)
-      expect(closeTicket).toHaveBeenCalledWith(expect.objectContaining({ ticketId: t.id, businessId: w.biz.id, actorDiscordId: actor }))
+      expect(closeTicket).toHaveBeenCalledWith(expect.objectContaining({ ticketId: t.id, businessId: w.biz.id, integrationId: w.main.integration.id, actorDiscordId: actor }))
       const audit = await db.select().from(integrationAudit).where(eq(integrationAudit.integrationId, w.main.integration.id))
       const row = audit.find((a) => a.action === 'ticket.closed' && (a.metadata as { ticketId?: number }).ticketId === t.id)
       expect(row?.metadata).toMatchObject({ actorDiscordId: actor, closedBy: expected })

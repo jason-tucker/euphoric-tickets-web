@@ -308,7 +308,8 @@ export async function handleOpenTicket(req: Request, deps: ApiDeps = defaultApiD
   }
 
   if (!result.ok) {
-    if (result.status === 409) return apiError(409, result.code, { 'Retry-After': '5' })
+    if (result.code === 'opening_in_progress') return apiError(409, result.code, { 'Retry-After': '5' })
+    // ticket_channel_missing is not transient: no Retry-After.
     return apiError(result.status, result.code)
   }
 
@@ -411,6 +412,7 @@ export async function handlePatchTicket(req: Request, rawId: string, deps: ApiDe
       res = await deps.bot.closeTicket({
         ticketId: ticket.id,
         businessId: ctx.business.id,
+        integrationId: ctx.integration.id,
         ...(input.actorDiscordId ? { actorDiscordId: input.actorDiscordId } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
       })
@@ -518,7 +520,7 @@ async function deliverMessageRow(
   let webhookUrl = ticket.discordWebhookUrl && DISCORD_WEBHOOK_URL_RE.test(ticket.discordWebhookUrl) ? ticket.discordWebhookUrl : null
   if (!webhookUrl) {
     try {
-      const ensured = await deps.bot.ensureWebhook({ ticketId: ticket.id, businessId: ctx.business.id })
+      const ensured = await deps.bot.ensureWebhook({ ticketId: ticket.id, businessId: ctx.business.id, integrationId: ctx.integration.id })
       webhookUrl = ensured.webhookUrl
       await db
         .update(tickets)

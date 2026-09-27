@@ -48,6 +48,7 @@ Authorization: Bearer etk.<prefix10>.<secret43>
   - `404 opener_not_member`
   - `403 opener_pending | category_forbidden`
   - `409 opening_in_progress` with `Retry-After: 5`
+  - `409 ticket_channel_missing`: this `externalRef` already has a ticket, but its Discord channel no longer exists, so it cannot be adopted. Not transient (no `Retry-After`); staff must resolve the old ticket, or open under a new `externalRef`.
   - `502 bot_unavailable`
 
 ### `GET /api/v1/tickets/:id` — `tickets:read`
@@ -109,11 +110,11 @@ The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/
 
 | Route | Web sends | Web accepts |
 |---|---|---|
-| `open` | `{integrationId, integrationSlug, integrationName, businessId, categoryKey, openerDiscordId, subject, card, externalRef}` | `201/200 {ticketId:int, channelId:snowflake, created:bool}`; `404`; `403 {error:'opener_pending'\|'category_forbidden'}`; `409`; `503` |
-| `close` | `{ticketId, businessId, actorDiscordId?, reason?}` | `200 {closed:true, closedBy:'actor'\|'bot'}`; `409`; `404` |
-| `webhook/ensure` | `{ticketId, businessId}` | `200 {webhookUrl}` where the URL is a Discord execute URL `https://discord.com/api[/vN]/webhooks/<id>/<token>` |
+| `open` | `{integrationId, integrationSlug, integrationName, businessId, categoryKey, openerDiscordId, subject, card, externalRef}` | `201/200 {ticketId:int, channelId:snowflake, created:bool}`; `404`; `403 {error:'opener_pending'\|'category_forbidden'}`; `409 {error:'opening_in_progress'\|'ticket_channel_missing'}`; `503` |
+| `close` | `{ticketId, businessId, integrationId, actorDiscordId?, reason?}` | `200 {closed:true, closedBy:'actor'\|'bot'}`; `409`; `404` |
+| `webhook/ensure` | `{ticketId, businessId, integrationId}` | `200 {webhookUrl}` where the URL is a Discord execute URL `https://discord.com/api[/vN]/webhooks/<id>/<token>` |
 
-The status code is authoritative. For 403 the web reads the code from `{error}` (or `{code}`); anything that is not `opener_pending` is treated as `category_forbidden`. Any other status, a malformed body, or a timeout (20 s for open, 10 s for the others) becomes `502 bot_unavailable`. After an open succeeds, the web re-reads the ticket under the caller's scope and requires `external_ref` to match, so a mismatch is also a 502.
+The status code is authoritative. For 403 the web reads the code from `{error}` (or `{code}`); anything that is not `opener_pending` is treated as `category_forbidden`. For 409 on open, `ticket_channel_missing` is passed through; any other 409 is `opening_in_progress`. The bot requires `integrationId` on `close` and `webhook/ensure` and refuses a ticket that is not bound to that integration and business. Any other status, a malformed body, or a timeout (20 s for open, 10 s for the others) becomes `502 bot_unavailable`. After an open succeeds, the web re-reads the ticket under the caller's scope and requires `external_ref` to match, so a mismatch is also a 502.
 
 ## Outbound webhooks (plan §4.5)
 

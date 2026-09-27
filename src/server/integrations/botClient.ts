@@ -82,7 +82,7 @@ export type BotOpenResult =
   | { ok: true; ticketId: number; channelId: string; created: boolean }
   | { ok: false; status: 404; code: 'opener_not_member' }
   | { ok: false; status: 403; code: 'opener_pending' | 'category_forbidden' }
-  | { ok: false; status: 409; code: 'opening_in_progress' }
+  | { ok: false; status: 409; code: 'opening_in_progress' | 'ticket_channel_missing' }
 
 const openOk = z.object({
   ticketId: z.number().int().positive(),
@@ -102,14 +102,20 @@ export async function botOpenTicket(req: BotOpenRequest): Promise<BotOpenResult>
   if (r.status === 403) {
     return { ok: false, status: 403, code: code === 'opener_pending' ? 'opener_pending' : 'category_forbidden' }
   }
-  if (r.status === 409) return { ok: false, status: 409, code: 'opening_in_progress' }
+  if (r.status === 409) {
+    // The ref already has a ticket whose Discord channel is gone, so the bot
+    // refuses to adopt it; any other 409 is a concurrent open still running.
+    return { ok: false, status: 409, code: code === 'ticket_channel_missing' ? 'ticket_channel_missing' : 'opening_in_progress' }
+  }
   // 503 guild_unavailable and anything else.
   throw new BotUnavailableError(r.status === 503 ? 'guild_unavailable' : `http_${r.status}`)
 }
 
 // ---- close ---------------------------------------------------------------
 
-export type BotCloseRequest = { ticketId: number; businessId: string; actorDiscordId?: string; reason?: string }
+// integrationId: the bot requires it on close and webhook/ensure and checks
+// that the ticket is bound to that integration (and business).
+export type BotCloseRequest = { ticketId: number; businessId: string; integrationId: string; actorDiscordId?: string; reason?: string }
 // closedBy: 'actor' when the bot closed as actorDiscordId (the actor passed
 // the shared staff-set check), 'bot' when it fell back to closing as itself.
 // null only if the bot did not say (tolerated: the ticket IS closed, so a
@@ -139,7 +145,9 @@ export const DISCORD_WEBHOOK_URL_RE =
 
 const ensureOk = z.object({ webhookUrl: z.string().regex(DISCORD_WEBHOOK_URL_RE) })
 
-export async function botEnsureWebhook(req: { ticketId: number; businessId: string }): Promise<{ webhookUrl: string; webhookId: string }> {
+export type BotEnsureWebhookRequest = { ticketId: number; businessId: string; integrationId: string }
+
+export async function botEnsureWebhook(req: BotEnsureWebhookRequest): Promise<{ webhookUrl: string; webhookId: string }> {
   const r = await postInternal('/api/internal/tickets/webhook/ensure', req, DEFAULT_TIMEOUT_MS)
   if (r.status !== 200) throw new BotUnavailableError(`http_${r.status}`)
   const p = ensureOk.safeParse(r.body)
