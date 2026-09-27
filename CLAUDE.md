@@ -97,8 +97,8 @@ A user can belong to several businesses. The top-nav has a business switcher. UR
 | `/admin/integrations`, `/admin/integrations/[id]` | Sudo | Integration API clients: create (API key + webhook secret shown once), scopes, allowed categories, link origin, actor impersonation, webhook allowlist + URL, rotate, enable/disable, per-category `integration_only`, delivery log, audit. No `/demo` mirror (secrets page — see `src/app/demo/CLAUDE.md`) |
 | `/demo/*` | Anonymous | Public, interactive, read-only-against-the-system mirror of the whole app on synthetic data; all edits persist in the visitor's browser only (never DB/Discord). 4 personas via the `demo_persona` cookie |
 | `/api/auth/[...nextauth]` | — | Auth.js handler |
-| `/api/v1/tickets` (POST), `/api/v1/tickets/[id]` (GET, PATCH), `/api/v1/tickets/[id]/messages` (POST), `/api/v1/guild/roles` (GET), `/api/v1/members/[discordId]` (GET) | Integration (Bearer `etk.` key + scopes) | Integration API, internal docker networks only: a `Host` not in `INTERNAL_API_HOSTS` gets 404 in-app, and the edge must 404 `^/api/(internal\|v1)/` (P1d). Contract: [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md); logic in `src/server/integrations/` |
-| `/api/internal/notify` (POST) | Bot (`x-internal-token`) | Bot → web notify bridge (see below) |
+| `/api/v1/tickets` (POST), `/api/v1/tickets/[id]` (GET, PATCH), `/api/v1/tickets/[id]/messages` (POST), `/api/v1/guild/roles` (GET), `/api/v1/members/[discordId]` (GET) | Integration (Bearer `etk.` key + scopes) | Integration API, internal docker networks only: a `Host` not in `INTERNAL_API_HOSTS` gets 404 in-app, and the edge 404s `^/api/(internal\|v1)/` on `tickets.euphoric.fm` (Cloudflare tunnel rule #5, 2026-09-27; P1d). Contract: [`docs/INTEGRATION_API.md`](docs/INTEGRATION_API.md); logic in `src/server/integrations/` |
+| `/api/internal/notify` (POST) | Bot (`x-internal-token`) | Bot → web notify bridge (see below). The bot calls it on its `WEB_INTERNAL_URL` (private network); the public edge 404s `/api/internal/*` |
 
 Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
 

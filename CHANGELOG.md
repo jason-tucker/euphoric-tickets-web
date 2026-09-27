@@ -11,6 +11,7 @@ Plan step P1c (vault "EFM Music Portal — Plan" §4.6 step 5). **Deploy this we
 
 ### Changed
 - `.env.example`, `CLAUDE.md`, `README.md`, `docs/INTEGRATION_API.md` and the threat model document `INTERNAL_TOKEN` as required. `docker-compose.combined.yml` refuses to start (`:?`) without it instead of passing an empty value.
+- `docs/INTEGRATION_API.md` and `CLAUDE.md` no longer say `/api/internal/*` is reached through the public URL: the bot has used `WEB_INTERNAL_URL` since bot v0.8.0, and the public edge on `tickets.euphoric.fm` 404s `^/api/(internal|v1)/` (Cloudflare tunnel rule #5, added 2026-09-27).
 
 ### Tests
 - The helper rejects a missing, empty or short token (and never echoes it); the notify route returns `401` for a wrong, missing or bot token and for an invalid configured token, and `400` for the right token with a bad body; `register()` exits `1` on a missing or short token; the bot client fails closed as `not_configured` without calling the bot.
