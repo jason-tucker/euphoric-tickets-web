@@ -686,11 +686,13 @@ export async function handlePostMessage(req: Request, rawId: string, deps: ApiDe
     if ((input.actorDiscordId ?? null) !== storedActor) {
       return apiError(409, 'idempotency_conflict', undefined, { messageId: existing.id })
     }
-    if (existing.discordMessageId || ticket.status === 'closed') {
-      // Delivered — or a key accepted before the ticket closed (never
-      // re-posted into a closed ticket): the stored answer.
+    if (existing.discordMessageId) {
+      // Delivered (even if the ticket has closed since): the stored answer.
       return apiJson(200, { messageId: existing.id, discordMessageId: existing.discordMessageId, created: false })
     }
+    // Never delivered, and the ticket is now closed: it is never re-posted
+    // into a closed ticket, and an undelivered row is never reported as 200.
+    if (ticket.status === 'closed') return apiError(409, 'ticket_closed', undefined, { messageId: existing.id })
     const [leased] = await db
       .update(ticketMessages)
       .set({ metadata: sql`${ticketMessages.metadata} || jsonb_build_object('repostAt', now())` })

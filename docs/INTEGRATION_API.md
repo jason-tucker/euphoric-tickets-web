@@ -77,6 +77,7 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
    - the stored row reached Discord → `200 {messageId, discordMessageId, created:false}`;
    - it never reached Discord and is more than 30 s old (DB clock) → it is re-posted exactly once, under a conditional lease, and the lease winner gets `200 {…, created:false}`;
    - it never reached Discord and the first attempt (or another replay's re-post) may still be in flight → `409 {"error":"in_progress","messageId"}` with `Retry-After` (seconds until a replay may re-post). Retry with the same key.
+   - it never reached Discord and the ticket is now closed → `409 {"error":"ticket_closed","messageId"}` (not retryable).
 
    A replay must name the **same** `actorDiscordId` as the original request (or omit it if the original did); otherwise it gets `409 {"error":"idempotency_conflict","messageId"}`. A re-post always uses the identity stored on the original row: that actor's nickname and avatar if the actor still passes the actor check, otherwise the integration's own name. It never posts under the replay request's actor.
 
@@ -87,7 +88,7 @@ The header `Idempotency-Key: [A-Za-z0-9._:-]{1,128}` is required. The body is `{
 **Failure responses:**
 - A Discord failure returns `502 discord_unavailable` with `Retry-After: 30`. The row is kept, so retry with the same key after 30 s. A deleted webhook (404/401) is forgotten and re-ensured on the next try.
 - A bot failure returns `502 bot_unavailable`.
-- A closed ticket returns `409 ticket_closed`, except that a replay of a key accepted before the close still gets `200`.
+- A closed ticket returns `409 ticket_closed`. A replay of a key accepted before the close gets `200` only if that message was delivered (non-null `discordMessageId`); an undelivered one is never re-posted into a closed ticket and gets `409 {"error":"ticket_closed","messageId"}`.
 
 **`actorDiscordId`** requires `actor_impersonation` **and** a live bot-token member lookup. The actor must be a non-pending member who is in the **staff set**, **or** be the ticket's opener. Otherwise the response is `403 actor_forbidden`. The post then uses the actor's server nickname and avatar.
 

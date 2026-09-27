@@ -683,6 +683,25 @@ describeDb('POST /api/v1/tickets/:id/messages', () => {
     expect(deps.calls.posts).toBe(1)
   })
 
+  it('a replay of an UNDELIVERED key on a closed ticket is 409 ticket_closed with its messageId, never 200 or a re-post', async () => {
+    const w = await world()
+    const failing = fakeDeps({ discord: { postWebhook: vi.fn(async () => { throw new DiscordHttpError(500, 'boom') }) } })
+    const first = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'undelivered', failing)
+    expect(first.status).toBe(502)
+    const { messageId } = await first.json()
+    // Old enough that an open ticket would re-post it.
+    await db.execute(sql`UPDATE ticket_messages SET created_at = now() - interval '31 seconds' WHERE id = ${messageId}::uuid`)
+    await db.update(tickets).set({ status: 'closed', closedAt: new Date() }).where(eq(tickets.id, w.ticket.id))
+
+    const ok = fakeDeps()
+    const r = await post(w.main.key, w.ticket.id, { kind: 'system', body: 'x' }, 'undelivered', ok)
+    expect(r.status).toBe(409)
+    expect(await r.json()).toEqual({ error: 'ticket_closed', messageId })
+    expect(ok.calls.posts).toBe(0)
+    const [row] = await db.select().from(ticketMessages).where(eq(ticketMessages.id, messageId))
+    expect(row!.discordMessageId).toBeNull()
+  })
+
   it('enforces the actorDiscordId rule (impersonation + live staff/opener role check)', async () => {
     const w = await world()
     const staffRole = w.cat.staffRoleIds
