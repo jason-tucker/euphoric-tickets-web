@@ -5,12 +5,13 @@
 // Backslash-escape Discord markdown so integration text renders literally:
 //   inline  \ * _ ~ ` | > [ ] <   (the '<' kills <@id>, <#id>, <t:…> tokens)
 //   block   line-leading "# ", "## ", "### ", "-# ", "- ", "* ", "+ ", "1. "
+//           (after any run of Unicode space separators or tabs, e.g. NBSP)
 // and defuse @everyone / @here with a zero-width joiner. allowed_mentions
 // parse:[] already prevents pings; this also stops them rendering as mentions.
 export function escapeDiscordMarkdown(input: string): string {
   return input
     .replace(/[\\*_~`|>[\]<]/g, '\\$&')
-    .replace(/^([ \t]*)(#{1,3}[ \t]|-#[ \t]|[-+][ \t]|\d+\.[ \t])/gm, '$1\\$2')
+    .replace(/^([\p{Zs}\t]*)(#{1,3}[\p{Zs}\t]|-#[\p{Zs}\t]|[-+][\p{Zs}\t]|\d+\.[\p{Zs}\t])/gmu, '$1\\$2')
     .replace(/@(everyone|here)/gi, '@​$1')
 }
 

@@ -411,6 +411,36 @@ describeDb('POST /api/v1/tickets (open)', () => {
     expect(sent.card.link.label).toBe('Open [portal]')
   })
 
+  it('trims the subject BEFORE escaping, so an NBSP-prefixed heading is escaped and the bot stores it unchanged', async () => {
+    const w = await world()
+    for (const [subject, expected] of [
+      ['\u00a0# heading ', '\\# heading'],
+      ['\u00a0\u2003-# subtext\u00a0', '\\-# subtext'],
+      ['  **bold**  ', '\\*\\*bold\\*\\*'],
+    ] as const) {
+      resetLimiters()
+      const body = openBody({ subject })
+      const created = await makeIntegrationTicket(
+        { businessId: w.biz.id, integrationId: w.main.integration.id, openerUserId: w.opener.id, categoryId: w.cat.id },
+        { externalRef: body.externalRef as string },
+      )
+      const openTicket = vi.fn(async () => ({ ok: true as const, ticketId: created.id, channelId: created.discordChannelId!, created: true }))
+      const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), fakeDeps({ bot: { openTicket } }))
+      expect(r.status, JSON.stringify(subject)).toBe(201)
+      const sent = (openTicket.mock.calls[0] as unknown as [{ subject: string }])[0]
+      expect(sent.subject).toBe(expected)
+      // What the bot stores (it trims) is exactly what was escaped.
+      expect(sent.subject.trim()).toBe(sent.subject)
+    }
+    // Whitespace-only, NBSP included, is still blank → 422.
+    resetLimiters()
+    const blank = await handleOpenTicket(
+      apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: openBody({ subject: '\u00a0 \u2003' }) }),
+      fakeDeps(),
+    )
+    expect(blank.status).toBe(422)
+  })
+
   it('maps bot errors to the public codes', async () => {
     const w = await world()
     const cases: Array<[unknown, number, string, string | null]> = [

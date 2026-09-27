@@ -253,8 +253,15 @@ const openSchema = z
   .object({
     categoryKey: z.string().min(1).max(64),
     openerDiscordId: SNOWFLAKE,
-    // The bot refuses a whitespace-only subject (400 → our 502); refuse it here as 422.
-    subject: LINE(100).refine((v) => v.trim().length > 0, 'must not be blank'),
+    // Trimmed BEFORE it is escaped: the bot stores the subject trimmed, and a
+    // trim after escaping could expose a line-leading block marker (e.g.
+    // '\u00a0# heading'). Blank after trimming → 422 (the bot would 400 → 502).
+    subject: z
+      .string()
+      .trim()
+      .min(1, 'must not be blank')
+      .max(100)
+      .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), 'control characters are not allowed'),
     card: z
       .object({
         title: LINE(100),

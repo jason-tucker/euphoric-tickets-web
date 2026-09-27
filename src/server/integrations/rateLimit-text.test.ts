@@ -147,6 +147,17 @@ describe('Discord text shaping', () => {
     expect(escapeDiscordMarkdown('a\\b')).toBe('a\\\\b')
   })
 
+  it('escapes block markers behind NBSP / other Unicode space separators', () => {
+    expect(escapeDiscordMarkdown('\u00a0# heading')).toBe('\u00a0\\# heading')
+    expect(escapeDiscordMarkdown('\u00a0\u00a0-# subtext')).toBe('\u00a0\u00a0\\-# subtext')
+    expect(escapeDiscordMarkdown('x\n\u2003\t## two\n\u3000- item\n\u202f1. first')).toBe(
+      'x\n\u2003\t\\## two\n\u3000\\- item\n\u202f\\1. first',
+    )
+    // A marker followed by NBSP is escaped too; mid-line markers are untouched.
+    expect(escapeDiscordMarkdown('#\u00a0heading')).toBe('\\#\u00a0heading')
+    expect(escapeDiscordMarkdown('a # b -# c')).toBe('a # b -# c')
+  })
+
   it('appends the server footer `-# via <integration> · <itemRef>`', () => {
     expect(integrationFooter('EFM Music', 'Song #3')).toBe('-# via EFM Music · Song #3')
     expect(integrationFooter('EFM *Music*')).toBe('-# via EFM \\*Music\\*')
