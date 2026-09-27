@@ -138,19 +138,19 @@ Integration columns on existing tables: `tickets.integration_id / external_ref /
 ```bash
 pnpm install
 docker compose up -d db
-cp .env.example .env  # fill AUTH_SECRET, AUTH_DISCORD_ID, AUTH_DISCORD_SECRET
+cp .env.example .env  # fill AUTH_SECRET, AUTH_DISCORD_ID, AUTH_DISCORD_SECRET, INTERNAL_TOKEN (openssl rand -hex 32)
 pnpm db:push
 pnpm dev
 ```
 
 Add `http://localhost:3000/api/auth/callback/discord` as a redirect on the Discord application before logging in.
 
-Beyond the three `AUTH_*` vars, several runtime features require additional env vars that are read directly via `process.env` (not Zod-validated in `env.ts`):
+Beyond the three `AUTH_*` vars, several runtime features require additional env vars that are read directly via `process.env` (not Zod-validated in `env.ts`; `INTERNAL_TOKEN` is validated at boot instead):
 
 | Variable | Purpose |
 |---|---|
 | `DISCORD_BOT_TOKEN` | Permission resolution (Ticket Master role check), member fetch for admin checks, Discord channel ops — **required** for any protected route to work correctly. |
-| `INTERNAL_TOKEN` | Shared secret for the web↔bot internal bridge (`/api/internal/notify`, and the Integration API's `/api/internal/tickets/{open,close,webhook/ensure}` calls to the bot, which have no bot-token fallback). Set the same value in the bot's env. |
+| `INTERNAL_TOKEN` | **Required, ≥ 32 characters** (`openssl rand -hex 32`). The only shared secret for the web↔bot internal channel (`x-internal-token`): `/api/internal/notify` inbound, and the DM, bot-control, TicketTool and Integration API (`/api/internal/tickets/{open,close,webhook/ensure}`) calls to the bot. There is **no** `DISCORD_BOT_TOKEN` fallback. The server refuses to boot (exit 1) when it is missing or short (`src/instrumentation.ts`); read it only through `src/server/internalToken.ts`. Set the same value in the bot's env. |
 | `BOT_INTERNAL_URL` | Base URL of the bot's internal HTTP server (e.g. `http://euphoric-tickets:8787`). Required for web→bot DM and bot-name/force-leave Sudo controls. |
 | `PUBLIC_BASE_URL` | Public site URL, used in notification links and cookie domain. |
 | `INTEGRATION_ENC_KEY` | 32 bytes (base64 or 64 hex; `openssl rand -base64 32`). Encrypts integration webhook signing secrets at rest (AES-256-GCM). Env only — never in git or dumps; losing it means rotating every integration's webhook secret. Required for `/admin/integrations` and the dispatcher. |
@@ -162,7 +162,7 @@ Beyond the three `AUTH_*` vars, several runtime features require additional env 
 
 The web and bot share one Postgres database (this repo owns the schema and runs `drizzle-kit push`; the bot mirrors the schema files and only connects). Two internal HTTP endpoints bridge the halves:
 
-- **`POST /api/internal/notify`** (this app) — the bot POSTs here on new Discord messages to trigger notification fan-out (ntfy / Discord DM). Guarded by `INTERNAL_TOKEN` (constant-time compare).
+- **`POST /api/internal/notify`** (this app) — the bot POSTs here on new Discord messages to trigger notification fan-out (ntfy / Discord DM). Guarded by `INTERNAL_TOKEN` only (constant-time compare; an invalid configured token rejects every request).
 - **`POST <BOT_INTERNAL_URL>/api/internal/...`** (bot) — the web calls the bot to send DMs (`/api/internal/dm`) and to push bot-name changes or force-leave a guild from the Sudo dashboard.
 - **`POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}`** (bot) — the Integration API's bridge (plan §4.4): opens go through the bot so the channel, card and pings match a panel open; close and webhook/ensure carry `integrationId`, which the bot verifies against the ticket. See `docs/INTEGRATION_API.md`.
 
@@ -182,6 +182,7 @@ docker compose -f /home/botuser/projects/euphoric-tickets-web/docker-compose.yml
 ## Anti-patterns
 
 - **Don't** post to Discord as the bot from the web layer. Always per-user webhook spoof.
+- **Don't** use `DISCORD_BOT_TOKEN` (or any fallback) as the internal web↔bot secret. Internal calls use `getInternalToken()` / `internalTokenOrNull()` from `src/server/internalToken.ts` only.
 - **Don't** trust `session.user.guilds` after ~10 minutes — Discord may have removed the user from a guild. Re-fetch on permission failure rather than caching aggressively.
 - **Don't** add SQL migration files. The entrypoint pushes the schema.
 - **Don't** add Cloudflare proxy on the public hostname — same FiveM CEF constraint as `info.euphoric.fm`.

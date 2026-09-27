@@ -127,7 +127,7 @@ Besides the admin actions and `ticket.opened` / `ticket.closed` (with `closedBy`
 
 ## Web → bot bridge (plan §4.4)
 
-The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}` with the header `x-internal-token: $INTERNAL_TOKEN`. There is **no** `DISCORD_BOT_TOKEN` fallback; if the token is missing, the call fails closed as `bot_unavailable`. The request bodies are exactly the §4.4 table, and the business is always passed by id.
+The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}` with the header `x-internal-token: $INTERNAL_TOKEN`. There is **no** `DISCORD_BOT_TOKEN` fallback anywhere on the internal channel (removed from the older bridges in v0.12.2). The token must be at least 32 characters: the web refuses to boot without a valid one, and if it is somehow invalid at call time the call fails closed as `bot_unavailable`. The request bodies are exactly the §4.4 table, and the business is always passed by id.
 
 | Route | Web sends | Web accepts |
 |---|---|---|
@@ -204,7 +204,7 @@ X-Euphoric-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, `${t}.${deliveryId}.$
   - the delivery log and the audit trail.
 
   Team admins see a read-only list on `/b/<slug>/settings`.
-- **Env:** `INTEGRATION_ENC_KEY` holds 32 bytes, base64 or 64 hex characters (`openssl rand -base64 32`). It must stay out of dumps and git. Losing it makes stored webhook secrets undecryptable: deliveries fail with `decrypt_failed`, and you rotate each integration's secret. `INTERNAL_TOKEN` and `BOT_INTERNAL_URL` are required for the bridge.
+- **Env:** `INTEGRATION_ENC_KEY` holds 32 bytes, base64 or 64 hex characters (`openssl rand -base64 32`). It must stay out of dumps and git. Losing it makes stored webhook secrets undecryptable: deliveries fail with `decrypt_failed`, and you rotate each integration's secret. `INTERNAL_TOKEN` (≥ 32 characters, checked at boot) and `BOT_INTERNAL_URL` are required for the bridge.
 - **Secret scanning:** add a GitHub custom secret-scanning pattern for `etk\.[0-9A-Za-z]{10}\.[0-9A-Za-z]{43}`. This is a repository setting, so a human does it.
 
 ### Failure modes
