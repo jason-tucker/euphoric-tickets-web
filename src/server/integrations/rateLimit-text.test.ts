@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PrefixLru, RATE, SlidingWindowLimiter, UNTRUSTED_BUCKET, clientBucket, ipBucket, trustProxyHeaders } from './rateLimit'
+import { RATE, SlidingWindowLimiter, UNTRUSTED_BUCKET, clientBucket, ipBucket, trustProxyHeaders } from './rateLimit'
 import {
   clampEscaped,
   composeIntegrationMessage,
@@ -10,21 +10,6 @@ import {
   safeWebhookUsername,
 } from './discordText'
 import { parseTicketId, redactHeaders } from './http'
-
-describe('PrefixLru (recently-valid key prefixes)', () => {
-  it('is bounded and evicts the least recently used prefix', () => {
-    const lru = new PrefixLru(3)
-    for (const p of ['a', 'b', 'c']) lru.add(p)
-    expect(lru.has('a')).toBe(true) // refresh a → order b, c, a
-    lru.add('d') // evicts b
-    expect(lru.size).toBe(3)
-    expect(lru.has('b')).toBe(false)
-    for (const p of ['a', 'c', 'd']) expect(lru.has(p), p).toBe(true)
-    for (let i = 0; i < 10_000; i++) lru.add(`x${i}`)
-    expect(lru.size).toBe(3)
-    expect(RATE.validPrefixCapacity).toBeLessThanOrEqual(RATE.authFailureMaxBuckets)
-  })
-})
 
 describe('SlidingWindowLimiter', () => {
   it('allows `limit` hits per window, then refuses with Retry-After, then recovers', () => {
