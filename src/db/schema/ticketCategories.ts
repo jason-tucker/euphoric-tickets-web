@@ -57,6 +57,15 @@ export const ticketCategories = pgTable(
     // buttons for it. Sudo toggles it on /admin/integrations.
     integrationOnly: boolean('integration_only').notNull().default(false),
 
+    // v0.12.3: when true (the default — existing behaviour), the bot's
+    // ticket-open message pings the opener AND every staff role of this
+    // category. When false it pings ONLY the opener; staff still get channel
+    // access (permissions untouched) and the welcome card still lists the
+    // staff roles without pinging them. Used for high-volume categories such
+    // as the EFM Music Portal's newsong / songedit / songremoval. Editable on
+    // the team settings page and on /admin/integrations/[id].
+    pingStaffOnOpen: boolean('ping_staff_on_open').notNull().default(true),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({ businessKey: uniqueIndex('ticket_categories_business_key_uq').on(t.businessId, t.key) }),

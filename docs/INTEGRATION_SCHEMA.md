@@ -129,9 +129,10 @@ Index `ticket_messages_ticket_idempotency_uq` UNIQUE (`ticket_id`, `idempotency_
 
 ### `ticket_categories`
 
-| column | type | null | default |
-|---|---|---|---|
-| `integration_only` | boolean | NOT NULL | `false` |
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| `integration_only` | boolean | NOT NULL | `false` | |
+| `ping_staff_on_open` | boolean | NOT NULL | `true` | added in web v0.12.3 / bot v0.8.3. `false` = the bot's ticket-open message pings only the opener (`allowedMentions.roles: []`); staff channel permissions are unchanged. `true` (default) keeps the old behaviour for every existing category. Any bot path that rewrites category rows (settings modal / JSON editor) must carry this column through unchanged |
 
 ## Schema-push gate
 

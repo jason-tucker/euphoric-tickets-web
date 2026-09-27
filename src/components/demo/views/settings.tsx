@@ -206,6 +206,8 @@ function CategoryEditor({ category, onSave, onDelete }: { category: DemoCategory
   const [description, setDescription] = useState(category.description ?? '')
   const [sortOrder, setSortOrder] = useState(category.sortOrder)
   const [staffOnly, setStaffOnly] = useState(category.staffOnly)
+  // Older browser overlays predate this field — treat missing as the default (on).
+  const [pingStaffOnOpen, setPingStaffOnOpen] = useState(category.pingStaffOnOpen !== false)
   const [kind, setKind] = useState(category.kind)
   const [done, setDone] = useState(false)
 
@@ -238,8 +240,12 @@ function CategoryEditor({ category, onSave, onDelete }: { category: DemoCategory
             Staff-only destination
           </label>
         </div>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={pingStaffOnOpen} onChange={(e) => setPingStaffOnOpen(e.target.checked)} className="h-4 w-4" />
+          Ping staff roles when a ticket opens
+        </label>
         <div className="flex items-center gap-3">
-          <Button size="sm" variant="secondary" onClick={() => { onSave({ label, emoji: emoji || null, description: description || null, sortOrder, staffOnly, kind }); setDone(true) }}>Save</Button>
+          <Button size="sm" variant="secondary" onClick={() => { onSave({ label, emoji: emoji || null, description: description || null, sortOrder, staffOnly, pingStaffOnOpen, kind }); setDone(true) }}>Save</Button>
           {done && <span className="text-xs text-emerald-500">Saved ✓</span>}
           <Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>
         </div>
@@ -273,6 +279,7 @@ function AddCategory({ businessId, onAdd }: { businessId: string; onAdd: (c: Dem
           staffRoleIds: '',
           firstMessageTemplate: null,
           staffOnly: false,
+          pingStaffOnOpen: true,
           kind: 'normal',
         })
         setKey('')

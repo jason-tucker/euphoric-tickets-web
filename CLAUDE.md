@@ -127,7 +127,7 @@ Server actions live alongside their pages (`actions.ts` next to `page.tsx`).
 | `integration_ticket_state` | Dispatcher cursor + last seen status/assignee per integration ticket |
 | `integration_open_claims` | Bot-side single-winner claim per (integration, external_ref) for idempotent opens |
 
-Integration columns on existing tables: `tickets.integration_id / external_ref / integration_card`, `ticket_messages.author_kind / idempotency_key / metadata`, `ticket_categories.integration_only`. Full list for the bot mirror: [`docs/INTEGRATION_SCHEMA.md`](docs/INTEGRATION_SCHEMA.md).
+Integration columns on existing tables: `tickets.integration_id / external_ref / integration_card`, `ticket_messages.author_kind / idempotency_key / metadata`, `ticket_categories.integration_only`, `ticket_categories.ping_staff_on_open` (v0.12.3 — off = the bot pings only the opener on open, staff keep access). Full list for the bot mirror: [`docs/INTEGRATION_SCHEMA.md`](docs/INTEGRATION_SCHEMA.md).
 
 `ticket_messages.source = 'discord'` rows arrive via the bot's relay: the bot POSTs to `/api/internal/notify` on new Discord messages, which triggers notification fan-out; the bot also writes `ticket_messages` rows directly into the shared DB.
 
