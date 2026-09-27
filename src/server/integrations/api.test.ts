@@ -214,10 +214,15 @@ describeDb('POST /api/v1/tickets (open)', () => {
       openBody({ card: { title: 't', lines: Array(26).fill('l'), link: { label: 'l', url: 'https://music.test/' } } }),
       openBody({ card: { title: 't', lines: ['x'.repeat(201)], link: { label: 'l', url: 'https://music.test/' } } }),
       openBody({ card: { title: 't', lines: [], link: { label: 'x'.repeat(41), url: 'https://music.test/' } } }),
+      // Discord's link-button limit is 512 characters (a 640-char URL used to half-open a ticket).
+      openBody({ card: { title: 't', lines: [], link: { label: 'l', url: `https://music.test/${'a'.repeat(513 - 'https://music.test/'.length)}` } } }),
+      // 512 raw characters, but longer once percent-encoded by URL normalisation.
+      openBody({ card: { title: 't', lines: [], link: { label: 'l', url: `https://music.test/${'é'.repeat(200)}` } } }),
       // Within every per-field limit but over the bot's 16 KB body cap in UTF-8.
       openBody({ card: { title: 't', lines: Array(25).fill('♪'.repeat(200)), link: { label: 'l', url: 'https://music.test/' } } }),
     ]
     for (const body of bad) {
+      resetLimiters() // more cases than the 10/min open limit
       const r = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)
       expect(r.status).toBe(422)
     }
@@ -229,6 +234,19 @@ describeDb('POST /api/v1/tickets (open)', () => {
     const huge = await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body: 'x'.repeat(40_000) }), deps)
     expect(huge.status).toBe(413)
     expect(deps.bot.openTicket).not.toHaveBeenCalled()
+  })
+
+  it('accepts a card.link.url of exactly 512 characters', async () => {
+    const w = await world()
+    const url = `https://music.test/${'a'.repeat(512 - 'https://music.test/'.length)}`
+    expect(url).toHaveLength(512)
+    const body = openBody({ card: { title: 't', lines: [], link: { label: 'l', url } } })
+    const created = await makeIntegrationTicket(
+      { businessId: w.biz.id, integrationId: w.main.integration.id, openerUserId: w.opener.id, categoryId: w.cat.id },
+      { externalRef: body.externalRef as string },
+    )
+    const deps = fakeDeps({ bot: { openTicket: vi.fn(async () => ({ ok: true as const, ticketId: created.id, channelId: created.discordChannelId!, created: true })) } })
+    expect((await handleOpenTicket(apiRequest('POST', '/api/v1/tickets', { key: w.main.key, body }), deps)).status).toBe(201)
   })
 
   it('422s a card.link.url whose origin is not link_origin', async () => {

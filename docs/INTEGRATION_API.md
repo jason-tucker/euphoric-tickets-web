@@ -35,11 +35,11 @@ Authorization: Bearer etk.<prefix10>.<secret43>
 
 ```json
 { "categoryKey": "newsong", "openerDiscordId": "…", "subject": "≤100",
-  "card": { "title": "≤100", "lines": ["≤200", "… ≤25 lines"], "link": { "label": "≤40", "url": "https://<link_origin>/…" } },
+  "card": { "title": "≤100", "lines": ["≤200", "… ≤25 lines"], "link": { "label": "≤40", "url": "https://<link_origin>/… (≤512)" } },
   "externalRef": "≤100 visible ASCII" }
 ```
 
-- Unknown keys are rejected. `card.link.url` must satisfy `new URL(url).origin === link_origin`, otherwise `422`.
+- Unknown keys are rejected. `card.link.url` must satisfy `new URL(url).origin === link_origin` and be **at most 512 characters** (Discord's link-button limit), both as sent and once normalised by `new URL`; otherwise `422`.
 - The whole body must fit in 13 500 bytes of UTF-8 JSON, so the bot's 16 KB bridge cap is never hit.
 - The category must be in `allowed_category_keys` **and** exist in the key's team; otherwise `403 category_forbidden`.
 - Responses:

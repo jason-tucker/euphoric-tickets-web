@@ -217,6 +217,8 @@ async function checkActor(
 
 // Leaves ~2.5 KB of the bot's 16 KB cap for the integration id/slug/name/business id.
 export const BOT_BODY_BUDGET = 13_500
+// Discord rejects a link button whose URL is longer than 512 characters.
+export const LINK_URL_MAX = 512
 
 const openSchema = z
   .object({
@@ -227,7 +229,7 @@ const openSchema = z
       .object({
         title: LINE(100),
         lines: z.array(LINE(200)).max(25),
-        link: z.object({ label: LINE(40), url: z.string().max(2000).url() }).strict(),
+        link: z.object({ label: LINE(40), url: z.string().max(LINK_URL_MAX).url() }).strict(),
       })
       .strict(),
     externalRef: REF(100),
@@ -251,14 +253,24 @@ export async function handleOpenTicket(req: Request, deps: ApiDeps = defaultApiD
 
   // Link origin must equal the integration's configured origin exactly.
   let linkOrigin: string | null = null
+  let linkHref = ''
   try {
-    linkOrigin = new URL(input.card.link.url).origin
+    const u = new URL(input.card.link.url)
+    linkOrigin = u.origin
+    linkHref = u.href
   } catch {
     linkOrigin = null
   }
   if (!ctx.integration.linkOrigin || linkOrigin !== ctx.integration.linkOrigin) {
     return apiError(422, 'validation', undefined, {
       issues: [{ path: 'card.link.url', message: 'origin is not the integration link_origin' }],
+    })
+  }
+  // URL normalisation (percent-encoding) can lengthen it; Discord checks the
+  // serialised form, so bound that too.
+  if (linkHref.length > LINK_URL_MAX) {
+    return apiError(422, 'validation', undefined, {
+      issues: [{ path: 'card.link.url', message: `at most ${LINK_URL_MAX} characters once normalised` }],
     })
   }
 
