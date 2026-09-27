@@ -32,6 +32,31 @@ afterEach(() => {
 const INTEGRATION_ID = '00000000-0000-4000-8000-0000000000aa'
 const TICKET = { ticketId: 7, businessId: '00000000-0000-4000-8000-000000000001', integrationId: INTEGRATION_ID }
 
+describe('INTERNAL_TOKEN (P1c: no bot-token fallback, ≥ 32 chars)', () => {
+  it('fails closed as not_configured without calling the bot when the token is missing or short', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.DISCORD_BOT_TOKEN = 'b'.repeat(72)
+    try {
+      for (const token of [undefined, 'y'.repeat(31)]) {
+        if (token === undefined) delete process.env.INTERNAL_TOKEN
+        else process.env.INTERNAL_TOKEN = token
+        const seen = stubBot(200, { closed: true })
+        await expect(botCloseTicket(TICKET)).rejects.toMatchObject({ errorClass: 'not_configured' })
+        expect(seen).toHaveLength(0)
+      }
+    } finally {
+      delete process.env.DISCORD_BOT_TOKEN
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('sends the dedicated token in x-internal-token', async () => {
+    const seen = stubBot(200, { closed: true, closedBy: 'bot' })
+    await botCloseTicket(TICKET)
+    expect(seen[0]!.headers['x-internal-token']).toBe('x'.repeat(40))
+  })
+})
+
 describe('botCloseTicket', () => {
   it('parses closedBy (actor | bot), tolerating a missing or unknown value as null', async () => {
     for (const [closedBy, expected] of [

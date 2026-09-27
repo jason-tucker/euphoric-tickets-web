@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tickets, users, userNotificationPrefs, type NotifyEvent } from '@/db/schema'
 import { assertPublicHttpUrl } from '@/lib/ssrf'
+import { internalTokenOrNull } from './internalToken'
 
 // P13 (lantern) — notification dispatcher. Both the web (reply/open server
 // actions) and the bot (via /api/internal/notify) call this. It reads
@@ -63,9 +64,8 @@ async function postNtfy(
 
 // Best-effort DM via the bot's internal endpoint.
 async function postBotDm(discordUserId: string, content: string): Promise<void> {
-  // Auth with INTERNAL_TOKEN if set, else the shared bot token (both services
-  // already have it). Only the bot's URL is genuinely required config.
-  const token = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
+  // Auth with the dedicated INTERNAL_TOKEN only (no bot-token fallback).
+  const token = internalTokenOrNull('notify')
   const base = process.env.BOT_INTERNAL_URL // e.g. http://euphoric-tickets:8787
   if (!token || !base) return
   try {

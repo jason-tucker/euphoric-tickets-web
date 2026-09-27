@@ -10,7 +10,9 @@ import 'server-only'
 // sends `<prefix><action> …` into the TicketTool channel.
 //
 // Mirrors the env + auth used by the P16 external-member DM in the ticket
-// actions: BOT_INTERNAL_URL + INTERNAL_TOKEN (falls back to the bot token).
+// actions: BOT_INTERNAL_URL + INTERNAL_TOKEN (no bot-token fallback).
+
+import { internalTokenOrNull } from './internalToken'
 
 export type TicketToolAction = 'closeRequest' | 'rename' | 'add' | 'remove'
 
@@ -20,8 +22,9 @@ export type TicketToolAction = 'closeRequest' | 'rename' | 'add' | 'remove'
 // from the settings save; returns the count (or null if the bot is unreachable).
 export async function reconcileTicketTool(businessId: string): Promise<number | null> {
   const botBase = process.env.BOT_INTERNAL_URL
-  const internalToken = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
-  if (!botBase || !internalToken) return null
+  if (!botBase) return null
+  const internalToken = internalTokenOrNull('tickettool')
+  if (!internalToken) return null
   try {
     const res = await fetch(`${botBase}/api/internal/tickettool/reconcile`, {
       method: 'POST',
@@ -43,7 +46,7 @@ export async function emitTicketToolCommand(input: {
   discordUserId?: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const botBase = process.env.BOT_INTERNAL_URL
-  const internalToken = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
+  const internalToken = botBase ? internalTokenOrNull('tickettool') : null
   if (!botBase || !internalToken) {
     return { ok: false, error: 'Bot internal endpoint not configured' }
   }

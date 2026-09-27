@@ -6,10 +6,9 @@
 //   POST <BOT_INTERNAL_URL>/api/internal/tickets/close
 //   POST <BOT_INTERNAL_URL>/api/internal/tickets/webhook/ensure
 //
-// Auth: header `x-internal-token: INTERNAL_TOKEN`. Unlike the older bridges
-// (notify / DM / bot-control), this module deliberately has NO fallback to
-// DISCORD_BOT_TOKEN: without INTERNAL_TOKEN it fails closed as
-// `bot_unavailable`. (Removing the legacy fallbacks elsewhere is P1c.)
+// Auth: header `x-internal-token: INTERNAL_TOKEN` (src/server/internalToken.ts).
+// There is NO fallback to DISCORD_BOT_TOKEN: without a valid INTERNAL_TOKEN
+// (set, ≥ 32 characters) it fails closed as `bot_unavailable`.
 //
 // Error bodies are read as `{ error: '<code>' }` (or `{ code }`); the HTTP
 // status is authoritative, and the code refines it only within the §4.4
@@ -18,6 +17,7 @@
 
 import { z } from 'zod'
 import type { IntegrationCard } from '@/db/schema'
+import { internalTokenOrNull } from '@/server/internalToken'
 
 export class BotUnavailableError extends Error {
   constructor(readonly errorClass: string) {
@@ -33,7 +33,7 @@ const DEFAULT_TIMEOUT_MS = 10_000
 
 async function postInternal(path: string, payload: unknown, timeoutMs: number): Promise<RawBotResponse> {
   const base = process.env.BOT_INTERNAL_URL
-  const token = process.env.INTERNAL_TOKEN
+  const token = base ? internalTokenOrNull('integrations/botClient') : null
   if (!base || !token) throw new BotUnavailableError('not_configured')
   let res: Response
   try {
