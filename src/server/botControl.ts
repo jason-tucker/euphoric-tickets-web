@@ -2,20 +2,23 @@ import 'server-only'
 
 // Web → bot control bridge for bot-owner (sudo) actions: leave a guild, set the
 // bot's username. Same transport as the TicketTool/DM bridges — POST to the
-// bot's internal HTTP (BOT_INTERNAL_URL) with the shared INTERNAL_TOKEN (falling
-// back to the bot token, which both services already share).
+// bot's internal HTTP (BOT_INTERNAL_URL) with the shared INTERNAL_TOKEN (no
+// bot-token fallback; see src/server/internalToken.ts).
+
+import { internalTokenOrNull } from './internalToken'
 
 type BotResult = { ok: true } | { ok: false; error: string }
 
 function botEndpoint(): { base: string; token: string } | null {
   const base = process.env.BOT_INTERNAL_URL
-  const token = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
-  return base && token ? { base, token } : null
+  if (!base) return null
+  const token = internalTokenOrNull('botControl')
+  return token ? { base, token } : null
 }
 
 async function postBot(path: string, body: unknown): Promise<BotResult> {
   const ep = botEndpoint()
-  if (!ep) return { ok: false, error: 'Bot internal endpoint not configured (BOT_INTERNAL_URL).' }
+  if (!ep) return { ok: false, error: 'Bot internal endpoint not configured (BOT_INTERNAL_URL / INTERNAL_TOKEN).' }
   try {
     const res = await fetch(`${ep.base}${path}`, {
       method: 'POST',

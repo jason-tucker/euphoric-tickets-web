@@ -91,7 +91,7 @@ How the two halves fit together:
 - **Internal endpoints.** The bot exposes `POST /api/internal/dm` (for the web
   to DM a user through the bot); the web exposes `POST /api/internal/notify`
   (for the bot to trigger notification fan-out). Both are authed by a shared
-  `INTERNAL_TOKEN`.
+  `INTERNAL_TOKEN` only (at least 32 characters, no bot-token fallback).
 
 **Auth & permissions.** Auth.js v5 with the Discord provider, JWT session. On
 sign-in the JWT carries a **guilds snapshot** (`/users/@me/guilds`), refreshed
@@ -122,7 +122,7 @@ any cookie sniffs match it **by prefix**.
 
 ```bash
 pnpm install
-cp .env.example .env   # AUTH_SECRET, AUTH_DISCORD_ID, AUTH_DISCORD_SECRET, DISCORD_BOT_TOKEN, DATABASE_URL
+cp .env.example .env   # AUTH_SECRET, AUTH_DISCORD_ID, AUTH_DISCORD_SECRET, DISCORD_BOT_TOKEN, DATABASE_URL, INTERNAL_TOKEN
 docker compose up -d db
 pnpm db:push           # push the Drizzle schema (no migration files)
 pnpm dev               # http://localhost:3000
@@ -145,7 +145,7 @@ the same Postgres the bot uses if you want both halves talking to one DB.
 | `AUTH_URL` | Dev only | e.g. `http://localhost:3000`. Unset in production — Caddy/cloudflared forwarding + a per-request URL rebuild cover it there. |
 | `DISCORD_BOT_TOKEN` | Yes | Picker data, channel ops, attachment refresh, member resolution, admin-role and team-wide staff-role checks. |
 | `PUBLIC_BASE_URL` | Rec. | Public site URL, used in notification links. |
-| `INTERNAL_TOKEN` | Rec. | Shared secret for the web↔bot internal endpoints (notify / DM). **Required** for the Integration API bridge (no fallback there). |
+| `INTERNAL_TOKEN` | Yes | Shared secret for every web↔bot internal call (notify, DM, bot control, TicketTool, Integration API bridge). At least 32 characters (`openssl rand -hex 32`); same value as the bot's. The server refuses to boot without it, and there is no `DISCORD_BOT_TOKEN` fallback. |
 | `BOT_INTERNAL_URL` | Rec. | e.g. `http://euphoric-tickets:8787` — where the bot's DM endpoint lives. **Required** for the Integration API. |
 | `INTEGRATION_ENC_KEY` | Integrations | 32 bytes (base64 or 64 hex) — AES-256-GCM key for stored webhook signing secrets. Env only; never in dumps or git. `openssl rand -base64 32`. |
 | `INTEGRATION_DISPATCHER` | No | `off` disables the outbound webhook dispatcher (a Postgres advisory lock already keeps it to one process). |
@@ -340,4 +340,4 @@ and the restic backup/restore drill live in **[`ops/README.md`](ops/README.md)**
 - See `CLAUDE.md` for the full working agreement and `CHANGELOG.md` for the
   per-release history (the system is at the lantern milestone P1–P19).
 
-`euphoric-tickets-web v0.12.1`
+`euphoric-tickets-web v0.12.2`

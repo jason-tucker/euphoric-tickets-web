@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.2] — 2026-09-27 — INTERNAL_TOKEN is required; no bot-token fallback
+
+Plan step P1c (vault "EFM Music Portal — Plan" §4.6 step 5). **Deploy this web build before bot v0.8.2**, and only with the same `INTERNAL_TOKEN` (≥ 32 characters) set in both services.
+
+### Security
+- **No `DISCORD_BOT_TOKEN` fallback on the internal channel.** Every `INTERNAL_TOKEN ?? DISCORD_BOT_TOKEN` is gone: the `/api/internal/notify` route, the DM bridge (`src/server/notify.ts`), the external-member invite DM (ticket actions), bot control (`src/server/botControl.ts`) and both TicketTool calls (`src/server/tickettool.ts`). Previously an unset `INTERNAL_TOKEN` silently made the Discord bot token the HTTP shared secret and sent it on the wire. All sites, and the Integration API bot client, now read the token through `src/server/internalToken.ts`, which requires at least 32 characters.
+- **Fail closed at boot.** `src/instrumentation.ts` validates `INTERNAL_TOKEN` in the Node runtime and exits with code 1 when it is missing or shorter than 32 characters (skipped only during `next build`). The exit is explicit because Next 15 logs a `register()` rejection and keeps the process running.
+- **Notify route never compares against an empty value.** An invalid configured token rejects every request with `401`; the constant-time compare is unchanged.
+
+### Changed
+- `.env.example`, `CLAUDE.md`, `README.md`, `docs/INTEGRATION_API.md` and the threat model document `INTERNAL_TOKEN` as required. `docker-compose.combined.yml` refuses to start (`:?`) without it instead of passing an empty value.
+- `docs/INTEGRATION_API.md` and `CLAUDE.md` no longer say `/api/internal/*` is reached through the public URL: the bot has used `WEB_INTERNAL_URL` since bot v0.8.0, and the public edge on `tickets.euphoric.fm` 404s `^/api/(internal|v1)/` (Cloudflare tunnel rule #5, added 2026-09-27).
+
+### Tests
+- The helper rejects a missing, empty or short token (and never echoes it); the notify route returns `401` for a wrong, missing or bot token and for an invalid configured token, and `400` for the right token with a bad body; `register()` exits `1` on a missing or short token; the bot client fails closed as `not_configured` without calling the bot.
+
+v0.12.2 · 12eff44
+
 ## [0.12.1] — 2026-09-27 — Integration API follow-ups
 
 ### Fixed

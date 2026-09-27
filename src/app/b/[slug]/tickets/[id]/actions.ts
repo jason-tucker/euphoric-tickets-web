@@ -34,6 +34,7 @@ import { avatarUrl, statusLabel } from '@/lib/format'
 import { notify } from '@/server/notify'
 import { writeAudit } from '@/server/audit'
 import { emitTicketToolCommand } from '@/server/tickettool'
+import { internalTokenOrNull } from '@/server/internalToken'
 import type { Ticket, TicketStatus } from '@/db/schema'
 import type { Session } from 'next-auth'
 
@@ -638,9 +639,9 @@ export async function addTicketMember(
     .onConflictDoNothing()
 
   // Best-effort DM with the web link via the bot internal endpoint. Auth with
-  // INTERNAL_TOKEN if set, else the shared bot token.
-  const internalToken = process.env.INTERNAL_TOKEN ?? process.env.DISCORD_BOT_TOKEN
+  // the dedicated INTERNAL_TOKEN only (no bot-token fallback).
   const botBase = process.env.BOT_INTERNAL_URL
+  const internalToken = botBase ? internalTokenOrNull('addTicketMember') : null
   const webBase = process.env.PUBLIC_BASE_URL ?? 'https://tickets.euphoric.fm'
   if (internalToken && botBase) {
     void fetch(`${botBase}/api/internal/dm`, {

@@ -15,7 +15,7 @@ content, token theft, SSRF, auth-bypass, cross-tenant attacks, CI/CD abuse.
 1. **Browser ↔ server** — the FiveM CEF iframe / any browser is untrusted. All authz is server-side (`requireSession`/`requireBusinessAccess`/`requireSudo`); `middleware.ts` is only a cosmetic pre-redirect.
 2. **Session snapshot ↔ live Discord** — `session.user.guilds` is a ≤10-min cached OAuth snapshot. Owner/Manage-Server bits come from it; role-level "Ticket Master" checks re-hit Discord live with the bot token.
 3. **Web ↔ Discord API / webhooks** — outbound to a fixed host (`discord.com`) and DB-stored webhook URLs (validated `startsWith https://discord.com/api/webhooks/`).
-4. **Web ↔ bot internal HTTP** — both directions authenticated by `INTERNAL_TOKEN`/bot token (now constant-time compared on the web side).
+4. **Web ↔ bot internal HTTP** — both directions authenticated by a dedicated `INTERNAL_TOKEN` (≥ 32 characters, required at boot in both services, constant-time compared). Since web v0.12.2 / bot v0.8.2 the bot token is never used as this secret.
 5. **Web ↔ user-supplied ntfy server** — the one user-controlled outbound destination; now SSRF-guarded.
 6. **CI ↔ deploy** — PRs run read-only CI; only push-to-`main` publishes. watchtower (docker socket) pulls to prod.
 7. **/demo ↔ real system** — `/demo/**` is isolated by construction: never imports `@/db/client` or `actions.ts`; all "writes" hit browser localStorage only.

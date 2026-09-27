@@ -1,4 +1,4 @@
-# Integration API (v0.12.1)
+# Integration API (v0.12.2)
 
 A general, multi-tenant way for other services to talk to the ticket system.
 Its first client is the EFM Music Portal: each music batch or request becomes
@@ -7,9 +7,9 @@ through signed webhooks; internal staff notes never do.
 
 Design source: the vault plan "EFM Music Portal — Plan" §4 (v3.2, approved). The schema is in [`INTEGRATION_SCHEMA.md`](./INTEGRATION_SCHEMA.md).
 
-**Reachability:** `/api/v1/*` is meant for the internal docker networks only. The edge must return 404 for `^/api/(internal|v1)/` (plan §4.6 P1d). There is no browser or CORS surface.
+**Reachability:** `/api/v1/*` is meant for the internal docker networks only. The public edge returns 404 for `^/api/(internal|v1)/` on `tickets.euphoric.fm`: Cloudflare tunnel path rule #5 → `http_status:404`, added 2026-09-27 (plan §4.6 P1d). There is no browser or CORS surface.
 
-**In-app host gate (defense in depth, before P1d):** every `/api/v1/*` request whose `Host` header is not listed in `INTERNAL_API_HOSTS` gets a bare `404` before any key work — including `OPTIONS` and methods a route does not implement, which would otherwise get Next's automatic `204` / `405` (an internal `Host` gets `204` / `405 {"error":"method_not_allowed"}` with `Allow`). The default is `tickets-web:3000,tickets-web` (the internal alias the music worker and the staging stack use). Requests through the public tunnel or Caddy carry `Host: tickets.euphoric.fm` / `tickets.euphoric.gg`, which an external caller cannot change into the internal alias through those proxies. Only `Host` is read, never `X-Forwarded-Host`. Assumption: neither proxy rewrites `Host` to the internal alias. To call the API through a published port for local testing (for example staging's `127.0.0.1:16095`), set `INTERNAL_API_HOSTS=tickets-web:3000,tickets-web,127.0.0.1:16095`; the variable replaces the list, and a blank value means the default. `/api/internal/*` is **not** gated this way yet, because the bot still reaches `/api/internal/notify` through the public URL until it deploys `WEB_INTERNAL_URL`; that gate is P1d.
+**In-app host gate (defense in depth behind the edge rule):** every `/api/v1/*` request whose `Host` header is not listed in `INTERNAL_API_HOSTS` gets a bare `404` before any key work — including `OPTIONS` and methods a route does not implement, which would otherwise get Next's automatic `204` / `405` (an internal `Host` gets `204` / `405 {"error":"method_not_allowed"}` with `Allow`). The default is `tickets-web:3000,tickets-web` (the internal alias the music worker and the staging stack use). Requests through the public tunnel or Caddy carry `Host: tickets.euphoric.fm` / `tickets.euphoric.gg`, which an external caller cannot change into the internal alias through those proxies. Only `Host` is read, never `X-Forwarded-Host`. Assumption: neither proxy rewrites `Host` to the internal alias. To call the API through a published port for local testing (for example staging's `127.0.0.1:16095`), set `INTERNAL_API_HOSTS=tickets-web:3000,tickets-web,127.0.0.1:16095`; the variable replaces the list, and a blank value means the default. `/api/internal/*` is not host-gated in-app. It is blocked at the public edge by the same tunnel rule, and the bot has called `/api/internal/notify` on `WEB_INTERNAL_URL` (the private Docker network) since bot v0.8.0, not through the public URL. Every `/api/internal/*` call, in both directions, authenticates with `INTERNAL_TOKEN` only (at least 32 characters): both services refuse to boot without a valid token (web v0.12.2, bot v0.8.2), and neither falls back to `DISCORD_BOT_TOKEN`.
 
 ---
 
@@ -127,7 +127,7 @@ Besides the admin actions and `ticket.opened` / `ticket.closed` (with `closedBy`
 
 ## Web → bot bridge (plan §4.4)
 
-The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}` with the header `x-internal-token: $INTERNAL_TOKEN`. There is **no** `DISCORD_BOT_TOKEN` fallback; if the token is missing, the call fails closed as `bot_unavailable`. The request bodies are exactly the §4.4 table, and the business is always passed by id.
+The web calls `POST <BOT_INTERNAL_URL>/api/internal/tickets/{open,close,webhook/ensure}` with the header `x-internal-token: $INTERNAL_TOKEN`. There is **no** `DISCORD_BOT_TOKEN` fallback anywhere on the internal channel (removed from the older bridges in v0.12.2). The token must be at least 32 characters: the web refuses to boot without a valid one, and if it is somehow invalid at call time the call fails closed as `bot_unavailable`. The request bodies are exactly the §4.4 table, and the business is always passed by id.
 
 | Route | Web sends | Web accepts |
 |---|---|---|
@@ -204,7 +204,7 @@ X-Euphoric-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, `${t}.${deliveryId}.$
   - the delivery log and the audit trail.
 
   Team admins see a read-only list on `/b/<slug>/settings`.
-- **Env:** `INTEGRATION_ENC_KEY` holds 32 bytes, base64 or 64 hex characters (`openssl rand -base64 32`). It must stay out of dumps and git. Losing it makes stored webhook secrets undecryptable: deliveries fail with `decrypt_failed`, and you rotate each integration's secret. `INTERNAL_TOKEN` and `BOT_INTERNAL_URL` are required for the bridge.
+- **Env:** `INTEGRATION_ENC_KEY` holds 32 bytes, base64 or 64 hex characters (`openssl rand -base64 32`). It must stay out of dumps and git. Losing it makes stored webhook secrets undecryptable: deliveries fail with `decrypt_failed`, and you rotate each integration's secret. `INTERNAL_TOKEN` (≥ 32 characters, checked at boot) and `BOT_INTERNAL_URL` are required for the bridge.
 - **Secret scanning:** add a GitHub custom secret-scanning pattern for `etk\.[0-9A-Za-z]{10}\.[0-9A-Za-z]{43}`. This is a repository setting, so a human does it.
 
 ### Failure modes
