@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.3] — 2026-09-27 — Per-category "ping staff roles when a ticket opens"
+
+Pairs with bot **v0.8.3**, which reads the new column. Deploy order does not matter: the column defaults to `true` (today's behaviour), and a bot that doesn't know it keeps pinging.
+
+### Added
+- **`ticket_categories.ping_staff_on_open`** (`boolean NOT NULL DEFAULT true`). When `false`, the bot's ticket-open message pings only the opener, not the category's staff roles. Staff channel permissions are unchanged, and the welcome card still lists the staff roles without pinging them. It applies to every way a ticket opens: panel button, slash command, web `/t/new` and the Integration API. It is for high-volume categories like the EFM Music Portal's `newsong` / `songedit` / `songremoval`, where each submission pinged three whole staff roles. Additive: `scripts/schema-push-gate.sh` passes against a database with the v0.12.2 schema and an existing category row. Run 1 is a single `ALTER TABLE "ticket_categories" ADD COLUMN "ping_staff_on_open" boolean DEFAULT true NOT NULL;` and run 2 is empty. `docs/INTEGRATION_SCHEMA.md` lists the column for the bot mirror.
+- **Team settings** (`/b/<slug>/settings`): the category add/edit form has a **"Ping staff roles when a ticket opens"** checkbox, on by default. The category list shows "no staff ping" when it is off.
+- **Sudo** (`/admin/integrations/<id>`): the integration-only categories card shows each category's staff-ping state with a toggle (`setCategoryPingStaffOnOpenAction`). Like the `integration_only` toggle, it re-checks sudo, only touches categories of the integration's own team, and writes the audit entry `category.ping_staff_on_open`.
+- `/demo` settings mirror the toggle (browser-only as always).
+
+### Tests
+- Sudo toggle: flips both ways, refuses another team's category, a bad id and a non-sudo caller, writes the audit entry, and leaves `integration_only` untouched.
+- Team settings add/update round-trips the checkbox both ways, preserves `integration_only` on edit, and can't touch another team's category. A category created without the field defaults to `true`.
+
+v0.12.3 · 2fc2c25
+
 ## [0.12.2] — 2026-09-27 — INTERNAL_TOKEN is required; no bot-token fallback
 
 Plan step P1c (vault "EFM Music Portal — Plan" §4.6 step 5). **Deploy this web build before bot v0.8.2**, and only with the same `INTERNAL_TOKEN` (≥ 32 characters) set in both services.
