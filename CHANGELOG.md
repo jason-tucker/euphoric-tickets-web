@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.4] — 2026-10-15 — Transcript link on the ticket page
+
+Pairs with the bot change that, when a ticket is closed from Discord, posts a plain-text transcript to copium.pics and saves the link into the existing `tickets.external_transcript_url` column. No schema change.
+
+### Added
+- **Ticket detail** (`/b/<slug>/tickets/<id>`): when the ticket has an `external_transcript_url`, a **View transcript** link sits next to **Open in Discord** in the header, and the **Conversation** card opens with a **Full transcript: <link>** line. Both open in a new tab (`rel="noopener noreferrer"`). The label is generic because TicketTool-imported transcript URLs live in the same column, and they now show too.
+- `src/lib/transcript.ts` `safeTranscriptUrl`: the column is bot-written but rendered as an `href`, so only a URL that parses as `http:`/`https:` is linked; `javascript:`, `data:`, other schemes, relative and malformed values render nothing.
+
+### Tests
+- `safeTranscriptUrl` passes http(s) URLs (trimmed), and returns `null` for empty values, `javascript:` / `data:` / `vbscript:` / `file:` / `ftp:` URLs, and relative or malformed input.
+
+v0.12.4 · 03c3f12
+
 ## [0.12.3] — 2026-09-27 — Per-category "ping staff roles when a ticket opens"
 
 Pairs with bot **v0.8.3**, which reads the new column. Deploy order does not matter: the column defaults to `true` (today's behaviour), and a bot that doesn't know it keeps pinging.
