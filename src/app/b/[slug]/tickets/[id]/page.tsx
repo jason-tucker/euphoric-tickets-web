@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { asc, eq, inArray } from 'drizzle-orm'
-import { ArrowLeft, Crown, ExternalLink, Hash, Server, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Crown, ExternalLink, FileText, Hash, Server, UserPlus, X } from 'lucide-react'
 import { DiscordPicker } from '@/components/app/discord-picker'
 import { LiveRefresh } from '@/components/app/live-refresh'
 import { TicketActionMenu } from '@/components/app/ticket-action-menu'
@@ -18,6 +18,7 @@ import { requireSession, resolveBusinessAccess, resolveTicketAccess } from '@/se
 import { db } from '@/db/client'
 import { auditLogs, businesses, businessMembers, tickets, ticketCategories, ticketExternalMembers, ticketMessages, users } from '@/db/schema'
 import { relativeTime } from '@/lib/format'
+import { safeTranscriptUrl } from '@/lib/transcript'
 import {
   addInternalNote,
   addTicketMember,
@@ -262,6 +263,10 @@ export default async function TicketDetailPage({
       ? `https://discord.com/channels/${access.business.discordGuildId}/${t.discordChannelId}`
       : null
 
+  // Bot-written (copium.pics paste on close, or a TicketTool import). Only
+  // http(s) URLs are rendered as links.
+  const transcriptUrl = safeTranscriptUrl(t.externalTranscriptUrl)
+
   // TicketTool-owned ticket: euphoric controls it only via TicketTool's $
   // commands (rename / add / remove / closeRequest), never by mutating the
   // channel. Hide the native lifecycle controls for these.
@@ -349,6 +354,19 @@ export default async function TicketDetailPage({
                   className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                 >
                   Open in Discord <ExternalLink className="h-3 w-3" />
+                </a>
+              </>
+            )}
+            {transcriptUrl && (
+              <>
+                <span>·</span>
+                <a
+                  href={transcriptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  View transcript <FileText className="h-3 w-3" />
                 </a>
               </>
             )}
@@ -513,6 +531,20 @@ export default async function TicketDetailPage({
           )}
         </CardHeader>
         <CardContent className="space-y-3">
+          {transcriptUrl && (
+            <p className="inline-flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <FileText className="h-3 w-3" />
+              Full transcript:{' '}
+              <a
+                href={transcriptUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-w-0 items-center gap-1 break-all font-medium text-primary hover:underline"
+              >
+                {transcriptUrl} <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            </p>
+          )}
           {messages.length === 0 && auditRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No messages from the web yet. {t.discordChannelId
