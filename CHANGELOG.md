@@ -11,6 +11,8 @@ Pairs with the bot change that, when a ticket is closed from Discord, posts a pl
 ### Tests
 - `safeTranscriptUrl` passes http(s) URLs (trimmed), and returns `null` for empty values, `javascript:` / `data:` / `vbscript:` / `file:` / `ftp:` URLs, and relative or malformed input.
 
+v0.12.4 · 03c3f12
+
 ## [0.12.3] — 2026-09-27 — Per-category "ping staff roles when a ticket opens"
 
 Pairs with bot **v0.8.3**, which reads the new column. Deploy order does not matter: the column defaults to `true` (today's behaviour), and a bot that doesn't know it keeps pinging.
