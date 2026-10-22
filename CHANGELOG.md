@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.5] — 2026-10-22 — Project-manager skill
+
+No schema change.
+
+### Added
+- **Added `/project-manager` Claude Code skill** (`.claude/skills/project-manager/SKILL.md`). Delegates all requested work to agents with written prompts: Opus for planning, Sonnet for coding, Haiku for lookups and low-level tasks. Tooling only; no runtime change.
+
 ## [0.12.4] — 2026-10-15 — Transcript link on the ticket page
 
 Pairs with the bot change that, when a ticket is closed from Discord, posts a plain-text transcript to copium.pics and saves the link into the existing `tickets.external_transcript_url` column. No schema change.
